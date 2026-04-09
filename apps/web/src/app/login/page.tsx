@@ -8,6 +8,7 @@ export default function LoginPage() {
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const enableGoogleLogin = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_LOGIN === "true";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,6 +30,24 @@ export default function LoginPage() {
     }
 
     setLoading(false);
+  }
+
+  async function handleGoogleLogin() {
+    setLoading(true);
+    setError(null);
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${location.origin}/auth/callback`,
+      },
+    });
+
+    if (error) {
+      setError("Não foi possível iniciar login Google. Confira a configuração OAuth no Supabase.");
+      setLoading(false);
+    }
   }
 
   return (
@@ -86,6 +105,17 @@ export default function LoginPage() {
               >
                 {loading ? "Enviando..." : "Enviar link de acesso"}
               </button>
+
+              {enableGoogleLogin && (
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  disabled={loading}
+                  className="mt-3 w-full rounded-xl border border-border px-4 py-3 text-sm font-semibold text-foreground transition hover:border-accent disabled:opacity-50"
+                >
+                  {loading ? "Redirecionando..." : "Entrar com Google"}
+                </button>
+              )}
 
               <p className="mt-4 text-center text-xs text-muted">
                 Acesso restrito. Apenas usuários autorizados.
