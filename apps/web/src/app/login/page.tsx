@@ -69,11 +69,11 @@ export default function LoginPage() {
           <section className="panel rounded-[30px] p-7 lg:p-8">
             <div className="flex items-center gap-4">
               <Image
-                src="/icons/icon-192.png"
+                src="/logo.png"
                 alt="Logo do Big Odds Bot"
                 width={54}
                 height={54}
-                className="rounded-2xl border border-border"
+                className="rounded-2xl"
                 priority
               />
               <div>
