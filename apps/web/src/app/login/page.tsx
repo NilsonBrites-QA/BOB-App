@@ -4,6 +4,15 @@ import Image from "next/image";
 import { useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 
+function resolveAppOrigin() {
+  const envOrigin = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (envOrigin) {
+    return envOrigin.replace(/\/$/, "");
+  }
+
+  return window.location.origin;
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
@@ -15,12 +24,13 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    const appOrigin = resolveAppOrigin();
 
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${location.origin}/auth/callback`,
+        emailRedirectTo: `${appOrigin}/auth/callback`,
       },
     });
 
@@ -36,12 +46,13 @@ export default function LoginPage() {
   async function handleGoogleLogin() {
     setLoading(true);
     setError(null);
+    const appOrigin = resolveAppOrigin();
 
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${location.origin}/auth/callback`,
+        redirectTo: `${appOrigin}/auth/callback`,
       },
     });
 
