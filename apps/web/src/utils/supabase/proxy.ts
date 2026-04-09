@@ -9,7 +9,14 @@ function isPublic(pathname: string) {
 }
 
 export async function updateSession(request: NextRequest) {
-  const { supabaseUrl, supabasePublishableKey } = getSupabaseEnv();
+  let supabaseUrl: string;
+  let supabasePublishableKey: string;
+  try {
+    ({ supabaseUrl, supabasePublishableKey } = getSupabaseEnv());
+  } catch {
+    // Env vars ausentes — deixa a requisição passar sem autenticação
+    return NextResponse.next({ request: { headers: request.headers } });
+  }
 
   let response = NextResponse.next({
     request: { headers: request.headers },
