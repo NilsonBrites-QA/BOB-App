@@ -4,14 +4,6 @@
     {
       "path": "/api/cron/revalidate",
       "schedule": "0 10 * * 5"
-    },
-    {
-      "path": "/api/cron/revalidate",
-      "schedule": "0 10 * * 6"
-    },
-    {
-      "path": "/api/cron/revalidate",
-      "schedule": "0 10 * * 0"
     }
   ]
 }
