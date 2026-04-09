@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 
@@ -52,76 +53,111 @@ export default function LoginPage() {
 
   return (
     <div className="grid-lines min-h-screen">
-      <div className="flex min-h-screen items-center justify-center p-6">
-        <div className="w-full max-w-sm">
-          {/* Logo / título */}
-          <div className="mb-10 text-center">
-            <p className="kicker mb-3">Sistema Restrito</p>
-            <h1 className="text-4xl font-bold tracking-tight">BOB</h1>
-            <p className="mt-2 text-sm text-muted">Big Odds Bot</p>
-          </div>
-
-          {sent ? (
-            <div className="panel rounded-3xl p-8 text-center">
-              <div className="mb-4 text-3xl">✉️</div>
-              <h2 className="mb-2 text-lg font-semibold">Verifique seu e-mail</h2>
-              <p className="text-sm leading-7 text-muted">
-                Enviamos um link de acesso para <strong className="text-foreground">{email}</strong>.
-                O link expira em 1 hora.
-              </p>
-              <button
-                onClick={() => { setSent(false); setEmail(""); }}
-                className="mt-6 text-sm text-accent underline-offset-4 hover:underline"
-              >
-                Usar outro e-mail
-              </button>
+      <div className="mx-auto flex min-h-screen w-full max-w-5xl items-center justify-center px-6 py-12">
+        <div className="grid w-full items-start gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+          <section className="panel rounded-[30px] p-7 lg:p-8">
+            <div className="flex items-center gap-4">
+              <Image
+                src="/icons/icon-192.png"
+                alt="Logo do Big Odds Bot"
+                width={54}
+                height={54}
+                className="rounded-2xl border border-border"
+                priority
+              />
+              <div>
+                <p className="kicker text-xs text-muted">Sistema restrito</p>
+                <h1 className="text-3xl font-bold tracking-tight">Painel BOB</h1>
+              </div>
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="panel rounded-3xl p-8">
-              <h2 className="mb-6 text-lg font-semibold">Entrar</h2>
 
-              <label className="block">
-                <span className="mb-2 block text-xs font-medium uppercase tracking-widest text-muted">
-                  E-mail
-                </span>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="seu@email.com"
-                  className="w-full rounded-xl border border-border bg-surface-strong px-4 py-3 text-sm outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
-                />
-              </label>
+            <p className="mt-6 text-sm leading-7 text-muted">
+              Ambiente privado para análise da rodada, geração de variações e gestão de desempenho.
+              Apenas contas liberadas pelo administrador conseguem concluir acesso.
+            </p>
 
-              {error && (
-                <p className="mt-3 text-xs text-red-400">{error}</p>
-              )}
+            <div className="mt-6 grid gap-3">
+              <div className="rounded-2xl border border-border bg-surface-strong px-4 py-3">
+                <p className="text-xs text-muted">Regra de acesso</p>
+                <p className="mt-1 text-sm font-semibold">Whitelist ativa no painel Admin</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-surface-strong px-4 py-3">
+                <p className="text-xs text-muted">Método</p>
+                <p className="mt-1 text-sm font-semibold">Magic link por e-mail</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-surface-strong px-4 py-3">
+                <p className="text-xs text-muted">Segurança</p>
+                <p className="mt-1 text-sm font-semibold">Sessão curta + revisão manual de acesso</p>
+              </div>
+            </div>
+          </section>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="mt-6 w-full rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-              >
-                {loading ? "Enviando..." : "Enviar link de acesso"}
-              </button>
+          <div className="w-full">
+            <div className="mb-5 text-center lg:text-left">
+              <p className="kicker mb-2">Acesso</p>
+              <h2 className="text-2xl font-semibold">Entrar no cockpit</h2>
+            </div>
 
-              {enableGoogleLogin && (
+            {sent ? (
+              <div className="panel rounded-3xl p-8 text-center">
+                <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-accent/15 text-accent-strong">OK</div>
+                <h3 className="mb-2 text-xl font-semibold">Verifique seu e-mail</h3>
+                <p className="text-sm leading-7 text-muted">
+                  Enviamos um link de acesso para <strong className="text-foreground">{email}</strong>.
+                  O link expira em 1 hora.
+                </p>
                 <button
-                  type="button"
-                  onClick={handleGoogleLogin}
-                  disabled={loading}
-                  className="mt-3 w-full rounded-xl border border-border px-4 py-3 text-sm font-semibold text-foreground transition hover:border-accent disabled:opacity-50"
+                  onClick={() => { setSent(false); setEmail(""); }}
+                  className="mt-6 text-sm font-medium text-accent underline-offset-4 hover:underline"
                 >
-                  {loading ? "Redirecionando..." : "Entrar com Google"}
+                  Usar outro e-mail
                 </button>
-              )}
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="panel rounded-3xl p-8">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-medium uppercase tracking-widest text-muted">
+                    E-mail corporativo
+                  </span>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="nome@empresa.com"
+                    className="w-full rounded-xl border border-border bg-surface-strong px-4 py-3 text-sm outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
+                  />
+                </label>
 
-              <p className="mt-4 text-center text-xs text-muted">
-                Acesso restrito. Apenas usuários autorizados.
-              </p>
-            </form>
-          )}
+                {error && (
+                  <p className="mt-3 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="mt-6 w-full rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+                >
+                  {loading ? "Enviando..." : "Enviar link de acesso"}
+                </button>
+
+                {enableGoogleLogin && (
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    disabled={loading}
+                    className="mt-3 w-full rounded-xl border border-border px-4 py-3 text-sm font-semibold text-foreground transition hover:border-accent disabled:opacity-50"
+                  >
+                    {loading ? "Redirecionando..." : "Entrar com Google"}
+                  </button>
+                )}
+
+                <p className="mt-4 text-center text-xs text-muted">
+                  Sem liberação prévia no Admin, o acesso será negado.
+                </p>
+              </form>
+            )}
+          </div>
         </div>
       </div>
     </div>

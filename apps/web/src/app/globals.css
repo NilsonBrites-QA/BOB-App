@@ -1,16 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f3efe4;
-  --foreground: #17251a;
-  --surface: rgba(255, 252, 245, 0.9);
-  --surface-strong: #fffaf0;
-  --muted: #607062;
-  --accent: #1d5c41;
-  --accent-strong: #0d3d2a;
-  --accent-soft: #d9ead6;
-  --signal: #b78b2f;
-  --border: rgba(23, 37, 26, 0.12);
+  --background: #f2f0e8;
+  --foreground: #122018;
+  --surface: rgba(255, 255, 255, 0.78);
+  --surface-strong: #fcfaf4;
+  --muted: #5d695f;
+  --accent: #15563d;
+  --accent-strong: #0c3324;
+  --accent-soft: #d2e8dc;
+  --signal: #b88a2f;
+  --border: rgba(18, 32, 24, 0.13);
 }
 
 @theme inline {
@@ -38,9 +38,9 @@ html {
 
 body {
   background:
-    radial-gradient(circle at top left, rgba(183, 139, 47, 0.14), transparent 24%),
-    radial-gradient(circle at top right, rgba(29, 92, 65, 0.16), transparent 28%),
-    linear-gradient(180deg, #f7f4ec 0%, #f0ead9 100%);
+    radial-gradient(circle at 8% -4%, rgba(184, 138, 47, 0.18), transparent 22%),
+    radial-gradient(circle at 90% -10%, rgba(21, 86, 61, 0.16), transparent 24%),
+    linear-gradient(180deg, #f6f3ea 0%, #ece7d8 100%);
   color: var(--foreground);
   font-family: var(--font-space-grotesk), sans-serif;
 }
@@ -57,7 +57,9 @@ a {
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
-  box-shadow: 0 18px 50px rgba(35, 37, 24, 0.08);
+  box-shadow:
+    0 20px 55px rgba(21, 31, 24, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
   backdrop-filter: blur(12px);
 }
 
@@ -69,7 +71,12 @@ a {
 
 .grid-lines {
   background-image:
-    linear-gradient(rgba(23, 37, 26, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(23, 37, 26, 0.05) 1px, transparent 1px);
-  background-size: 24px 24px;
+    linear-gradient(rgba(18, 32, 24, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(18, 32, 24, 0.045) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.layout-container {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.08) 40%, transparent 100%);
 }

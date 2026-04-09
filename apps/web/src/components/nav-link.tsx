@@ -16,10 +16,10 @@ export function NavLink({ href, children }: NavLinkProps) {
     <Link
       href={href}
       className={[
-        "rounded-full px-4 py-2 text-sm font-medium transition",
+        "rounded-full px-4 py-2 text-sm font-semibold transition-colors",
         isActive
-          ? "bg-accent text-white"
-          : "bg-transparent text-foreground hover:bg-[rgba(29,92,65,0.09)]",
+          ? "bg-accent text-white shadow-[0_8px_20px_rgba(21,86,61,0.24)]"
+          : "bg-transparent text-foreground/90 hover:bg-[rgba(21,86,61,0.08)]",
       ].join(" ")}
     >
       {children}
