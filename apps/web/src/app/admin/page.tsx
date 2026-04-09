@@ -2,6 +2,8 @@ import { cookies } from "next/headers";
 import { SectionCard } from "@/components/section-card";
 import { adminControls, featureFlags, integrations, memoryLayers } from "@/lib/bob/mock-data";
 import { createClient } from "@/utils/supabase/server";
+import { prisma } from "@/lib/db";
+import { changeUserRole, grantUserAccess, toggleUserAccess } from "./access-actions";
 
 export default async function AdminPage() {
   const cookieStore = await cookies();
@@ -9,6 +11,32 @@ export default async function AdminPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  const currentUser = user?.email
+    ? await prisma.user.findUnique({
+        where: { email: user.email.toLowerCase() },
+        select: { role: true, active: true },
+      })
+    : null;
+
+  // Só admins podem abrir o painel administrativo.
+  if (!currentUser?.active || currentUser.role !== "ADMIN") {
+    return (
+      <div className="flex flex-1 flex-col gap-8 px-4 py-10 sm:px-6 lg:px-10">
+        <section className="panel rounded-[28px] p-8">
+          <p className="kicker text-sm text-muted">Acesso restrito</p>
+          <h1 className="mt-2 text-3xl font-semibold">Painel disponível apenas para administradores.</h1>
+          <p className="mt-3 max-w-3xl text-base leading-8 text-muted">
+            Solicite liberação ao admin principal do sistema para receber perfil ADMIN.
+          </p>
+        </section>
+      </div>
+    );
+  }
+
+  const users = await prisma.user.findMany({
+    orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+  });
 
   return (
     <div className="flex flex-1 flex-col gap-8 px-4 py-10 sm:px-6 lg:px-10">
@@ -125,6 +153,99 @@ export default async function AdminPage() {
                   <td className="px-4 py-3 text-muted">{layer.motorUsage}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel rounded-3xl p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="kicker text-xs text-muted">Controle de acesso</p>
+            <h2 className="mt-2 text-2xl font-semibold">Whitelist de usuários</h2>
+          </div>
+        </div>
+
+        <form action={grantUserAccess} className="mt-5 grid gap-3 rounded-[20px] border border-border bg-surface-strong p-4 sm:grid-cols-[1fr_auto_auto]">
+          <input
+            name="email"
+            type="email"
+            required
+            placeholder="novo.usuario@email.com"
+            className="rounded-xl border border-border bg-transparent px-4 py-2 text-sm"
+          />
+          <select name="role" defaultValue="VIEWER" className="rounded-xl border border-border bg-transparent px-3 py-2 text-sm">
+            <option value="VIEWER">VIEWER</option>
+            <option value="ADMIN">ADMIN</option>
+          </select>
+          <button type="submit" className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white">
+            Liberar acesso
+          </button>
+        </form>
+
+        <div className="mt-5 overflow-hidden rounded-[20px] border border-border">
+          <table className="w-full border-collapse text-left text-sm">
+            <thead className="bg-[rgba(29,92,65,0.06)] text-muted">
+              <tr>
+                <th className="px-4 py-3 font-medium">E-mail</th>
+                <th className="px-4 py-3 font-medium">Perfil</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const isPrimary = u.email.toLowerCase() === "nilson.brites@gmail.com";
+                return (
+                  <tr key={u.id} className="border-t border-border/70 align-top">
+                    <td className="px-4 py-3 font-medium">{u.email}</td>
+                    <td className="px-4 py-3">
+                      <form action={changeUserRole} className="flex items-center gap-2">
+                        <input type="hidden" name="userId" value={u.id} />
+                        <select
+                          name="role"
+                          defaultValue={u.role}
+                          disabled={isPrimary}
+                          className="rounded-lg border border-border bg-transparent px-2 py-1 text-xs"
+                        >
+                          <option value="VIEWER">VIEWER</option>
+                          <option value="ADMIN">ADMIN</option>
+                        </select>
+                        <button
+                          type="submit"
+                          disabled={isPrimary}
+                          className="rounded-lg border border-border px-2 py-1 text-xs text-muted disabled:opacity-50"
+                        >
+                          Salvar
+                        </button>
+                      </form>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={[
+                          "rounded-full px-2 py-1 text-xs font-semibold",
+                          u.active ? "bg-accent/15 text-accent-strong" : "bg-red-100 text-red-700",
+                        ].join(" ")}
+                      >
+                        {u.active ? "Ativo" : "Bloqueado"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <form action={toggleUserAccess}>
+                        <input type="hidden" name="userId" value={u.id} />
+                        <input type="hidden" name="active" value={String(!u.active)} />
+                        <button
+                          type="submit"
+                          disabled={isPrimary}
+                          className="rounded-lg border border-border px-2 py-1 text-xs text-muted disabled:opacity-50"
+                        >
+                          {u.active ? "Bloquear" : "Liberar"}
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
