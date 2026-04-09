@@ -1,0 +1,42 @@
+{
+  "name": "BOB — Big Odds Bot",
+  "short_name": "BOB",
+  "description": "Motor analítico para apostas esportivas com big odds no Brasileirão.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f4ef",
+  "theme_color": "#1d5c41",
+  "lang": "pt-BR",
+  "categories": ["sports", "finance"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard da rodada",
+      "short_name": "Dashboard",
+      "description": "Ver âncoras e variações da rodada atual",
+      "url": "/dashboard",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Investimento x Retorno",
+      "short_name": "ROI",
+      "description": "Acompanhar performance da temporada",
+      "url": "/investimento-retorno",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

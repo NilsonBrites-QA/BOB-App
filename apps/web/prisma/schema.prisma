@@ -1,0 +1,193 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// BOB — Big Odds Bot • Prisma Schema
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Usuários (whitelist) ────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email     String   @unique
+  name      String?
+  role      UserRole @default(VIEWER)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  VIEWER
+}
+
+// ─── Temporada ───────────────────────────────────────────────────────────────
+
+model Season {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  year      Int      @unique
+  league    String   @default("Brasileirao Serie A")
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  rounds    Round[]
+
+  @@map("seasons")
+}
+
+// ─── Rodada ──────────────────────────────────────────────────────────────────
+
+model Round {
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  seasonId     String      @map("season_id") @db.Uuid
+  number       Int
+  status       RoundStatus @default(DRAFT)
+  firstMatchAt DateTime?   @map("first_match_at")
+  cutoffAt     DateTime?   @map("cutoff_at") // calculado: firstMatchAt - 1h
+  deliveredAt  DateTime?   @map("delivered_at")
+  notes        String?
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  season       Season        @relation(fields: [seasonId], references: [id])
+  anchors      Anchor[]
+  variations   Variation[]
+  memoryEvents MemoryEvent[]
+  result       RoundResult?
+
+  @@unique([seasonId, number])
+  @@map("rounds")
+}
+
+enum RoundStatus {
+  DRAFT     // em construção
+  READY     // pronto para entrega
+  DELIVERED // entregue ao usuário
+  CLOSED    // resultado registrado
+}
+
+// ─── Âncora ──────────────────────────────────────────────────────────────────
+
+model Anchor {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  roundId   String    @map("round_id") @db.Uuid
+  team      String
+  opponent  String
+  score     Float // 0–100
+  reasons   Json      @default("[]") // string[]
+  rank      Int // 1–4
+  matchDate DateTime? @map("match_date")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  round     Round     @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@map("anchors")
+}
+
+// ─── Variação ────────────────────────────────────────────────────────────────
+
+model Variation {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  roundId         String          @map("round_id") @db.Uuid
+  code            String // V1, V2, V3, V4, V5
+  title           String
+  posture         String
+  projectedOdd    Float           @map("projected_odd")
+  gameCount       Int             @map("game_count")
+  anchorsTogether Boolean         @map("anchors_together")
+  summary         String          @db.Text
+  status          VariationStatus @default(ACTIVE)
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  round           Round           @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  picks           Pick[]
+
+  @@map("variations")
+}
+
+enum VariationStatus {
+  ACTIVE     // variação ativa
+  REVISED    // reanalise após novo dado
+  SUPERSEDED // substituída por nova versão
+}
+
+// ─── Pick (jogo dentro da variação) ──────────────────────────────────────────
+
+model Pick {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  variationId   String      @map("variation_id") @db.Uuid
+  fixtureId     String?     @map("fixture_id") // ID na API-Football
+  match         String      // "Flamengo x Palmeiras"
+  result        PickResult
+  odd           Float
+  isAnchor      Boolean     @default(false) @map("is_anchor")
+  position      Int         // ordem no bilhete
+  actualResult  String?     @map("actual_result") // HOME | DRAW | AWAY
+  correct       Boolean?    // null = não registrado; true/false = resultado conhecido
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  variation     Variation   @relation(fields: [variationId], references: [id], onDelete: Cascade)
+
+  @@map("picks")
+}
+
+enum PickResult {
+  HOME // 1
+  DRAW // X
+  AWAY // 2
+}
+
+// ─── Evento de Memória ────────────────────────────────────────────────────────
+
+model MemoryEvent {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  roundId        String?     @map("round_id") @db.Uuid
+  layer          MemoryLayer
+  type           String // lineup, injury, form, result, etc.
+  content        Json // dado bruto estruturado
+  source         String? // nome da API de origem
+  relevanceScore Float?      @map("relevance_score") // 0–1
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  round          Round?      @relation(fields: [roundId], references: [id], onDelete: SetNull)
+
+  @@map("memory_events")
+}
+
+enum MemoryLayer {
+  RAW        // dado bruto ingerido
+  NORMALIZED // dado processado
+  PATTERNS   // padrões identificados
+  DECISIONS  // decisões e justificativas
+}
+
+// ─── Resultado da Rodada ─────────────────────────────────────────────────────
+
+model RoundResult {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  roundId           String   @unique @map("round_id") @db.Uuid
+  variationPlayed   String?  @map("variation_played") // V1–V5 ou null
+  stakePerVariation Decimal  @map("stake_per_variation") @db.Decimal(10, 2)
+  totalStaked       Decimal  @map("total_staked") @db.Decimal(10, 2)
+  grossReturn       Decimal  @default(0) @map("gross_return") @db.Decimal(12, 2)
+  netReturn         Decimal  @default(0) @map("net_return") @db.Decimal(12, 2)
+  hit               Boolean  @default(false)
+  notes             String?  @db.Text
+  registeredAt      DateTime @default(now()) @map("registered_at")
+
+  round             Round    @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@map("round_results")
+}
+

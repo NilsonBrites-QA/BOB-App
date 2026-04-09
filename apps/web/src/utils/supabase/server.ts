@@ -3,19 +3,20 @@ import { cookies } from "next/headers";
 import { getSupabaseEnv } from "@/utils/supabase/config";
 
 export async function createClient(
-  cookieStore: Awaited<ReturnType<typeof cookies>> = await cookies(),
+  cookieStore?: Awaited<ReturnType<typeof cookies>>,
 ) {
+  const store = cookieStore ?? (await cookies());
   const { supabaseUrl, supabasePublishableKey } = getSupabaseEnv();
 
   return createServerClient(supabaseUrl, supabasePublishableKey, {
     cookies: {
       getAll() {
-        return cookieStore.getAll();
+        return store.getAll();
       },
       setAll(cookiesToSet) {
         try {
           cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
+            store.set(name, value, options);
           });
         } catch {
           // Em Server Components a atualização pode ser ignorada quando o proxy

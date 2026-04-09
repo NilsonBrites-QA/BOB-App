@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
 import { SiteShell } from "@/components/site-shell";
 import "./globals.css";
@@ -18,6 +18,16 @@ export const metadata: Metadata = {
   title: "BOB | Big Odds Bot",
   description:
     "Painel inicial do BOB com dashboard da rodada, admin de integrações e calculadora de investimento x retorno.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "BOB",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#1d5c41",
 };
 
 export default function RootLayout({

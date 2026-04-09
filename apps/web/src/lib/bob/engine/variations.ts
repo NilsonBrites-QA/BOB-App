@@ -1,0 +1,222 @@
+/**
+ * BOB — Gerador de Variações (Método Camillo)
+ *
+ * Recebe os 4 âncoras selecionados pelo motor de scoring e um pool de outros
+ * jogos da rodada, e gera as 5 variações canônicas do método.
+ *
+ * V1 Segurança    — 4 âncoras + 4 fills conservadores  (8–9 jogos)
+ * V2 Equilíbrio   — 3 âncoras + empates em score médio  (9 jogos)
+ * V3 Lógica Pura  — 4 âncoras + 5 fills todos favoritos (9 jogos)
+ * V4 Curta        — 3 âncoras + fills seletivos limpos   (7 jogos)
+ * V5 Extrema      — 2–3 âncoras + empates e azarões      (10 jogos)
+ *
+ * Determinístico: mesmo input, mesma saída. Sem LLM, sem randomização.
+ */
+
+import { type ScoredMatch } from "./scoring";
+import { type Variation, type VariationPick } from "../types";
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
+export type VariationInput = {
+  /** Até 4 âncoras retornadas por selectAnchors() */
+  anchors: ScoredMatch[];
+  /** Demais jogos da rodada já pontuados (não-âncoras) */
+  pool: ScoredMatch[];
+};
+
+// ─── Helpers de conversão ─────────────────────────────────────────────────────
+
+function toAnchorPick(m: ScoredMatch): VariationPick {
+  return { match: m.match, result: "1", odd: m.homeOdd, isAnchor: true };
+}
+
+function toWinPick(m: ScoredMatch): VariationPick {
+  return {
+    match: m.match,
+    result: m.suggestedResult,
+    odd: pickOdd(m, m.suggestedResult),
+  };
+}
+
+function toDrawPick(m: ScoredMatch): VariationPick {
+  return { match: m.match, result: "X", odd: m.drawOdd };
+}
+
+function toUpsetPick(m: ScoredMatch): VariationPick {
+  // Prefere azarão fora de casa; cai para empate se odd do visitante for muito alta
+  if (m.awayOdd <= 3.60) return { match: m.match, result: "2", odd: m.awayOdd };
+  return { match: m.match, result: "X", odd: m.drawOdd };
+}
+
+function pickOdd(m: ScoredMatch, result: "1" | "X" | "2"): number {
+  if (result === "1") return m.homeOdd;
+  if (result === "X") return m.drawOdd;
+  return m.awayOdd;
+}
+
+function projectedOdd(picks: VariationPick[]): number {
+  if (picks.length === 0) return 1;
+  return Math.round(picks.reduce((acc, p) => acc * p.odd, 1));
+}
+
+// ─── Classificadores de pool ──────────────────────────────────────────────────
+
+/** Jogo "sujo": alta incerteza, score baixo — evitar em variações conservadoras */
+function isDirty(m: ScoredMatch): boolean {
+  return m.score < 35;
+}
+
+/**
+ * Bom candidato a empate:
+ * - Odds de empate não absurdas (< 3.60)
+ * - Relação odd_empate / odd_mandante razoável (abaixo de 2.6x)
+ * - Score intermediário (35–65): nem âncora nem jogo sujíssimo
+ */
+function isDrawCandidate(m: ScoredMatch): boolean {
+  const ratio = m.drawOdd / m.homeOdd;
+  return (
+    !m.isAnchorCandidate &&
+    m.drawOdd < 3.60 &&
+    ratio < 2.6 &&
+    m.score >= 35
+  );
+}
+
+/**
+ * Bom fill (vitória do favorito):
+ * - Score ≥ 40, não âncora, não jogo sujo
+ * - Resultado sugerido = "1"
+ */
+function isFillCandidate(m: ScoredMatch): boolean {
+  return !m.isAnchorCandidate && m.score >= 40 && !isDirty(m);
+}
+
+/**
+ * Azarão válido para V5: vitória do visitante com odd < 3.60
+ */
+function isUpsetCandidate(m: ScoredMatch): boolean {
+  return !m.isAnchorCandidate && m.awayOdd < 3.60;
+}
+
+// ─── Gerador principal ────────────────────────────────────────────────────────
+
+export function generateVariations({ anchors, pool }: VariationInput): Variation[] {
+  // Pool ordenado por score decrescente
+  const sorted = [...pool].sort((a, b) => b.score - a.score);
+
+  const draws = sorted
+    .filter(isDrawCandidate)
+    .sort((a, b) => a.drawOdd / a.homeOdd - b.drawOdd / b.homeOdd); // menor ratio primeiro
+
+  const fills = sorted.filter(isFillCandidate);
+  const clean = sorted.filter((m) => !isDirty(m));
+  const upsets = sorted.filter(isUpsetCandidate).sort((a, b) => a.awayOdd - b.awayOdd);
+
+  // ── V1: Segurança (4 âncoras + 4 fills, ~8 jogos) ────────────────────────
+  const v1Picks: VariationPick[] = [
+    ...anchors.map(toAnchorPick),
+    ...fills.slice(0, 4).map(toWinPick),
+  ];
+
+  const v1: Variation = {
+    id: "V1",
+    title: "Segurança",
+    posture: "Todos os 4 âncoras vencem e a rodada fica mais enxuta.",
+    projectedOdd: projectedOdd(v1Picks),
+    gameCount: v1Picks.length,
+    anchorsTogether: true,
+    summary:
+      "Leitura de rodada mais limpa, cortando jogos com contexto nebuloso para preservar a força estrutural.",
+    picks: v1Picks,
+  };
+
+  // ── V2: Equilíbrio (3 âncoras + empates + fills, ~9 jogos) ───────────────
+  const v2Picks: VariationPick[] = [
+    ...anchors.slice(0, 3).map(toAnchorPick),
+    ...draws.slice(0, 3).map(toDrawPick),
+    ...fills.slice(0, 3).map(toWinPick),
+  ].slice(0, 9);
+
+  const v2: Variation = {
+    id: "V2",
+    title: "Equilíbrio",
+    posture: "Âncoras fortes com empates em jogos de score intermediário.",
+    projectedOdd: projectedOdd(v2Picks),
+    gameCount: v2Picks.length,
+    anchorsTogether: false,
+    summary:
+      "Aposta em empate onde o confronto tem tendência a travar o valor esperado e ainda sustenta as âncoras centrais.",
+    picks: v2Picks,
+  };
+
+  // ── V3: Lógica Pura (4 âncoras + 5 fills, ~9 jogos) ──────────────────────
+  const v3FillPicks = fills.slice(0, 5).map((m, i) =>
+    // Último fill inclui um empate para variedade de odd
+    i === 4 ? toDrawPick(m) : toWinPick(m),
+  );
+  const v3Picks: VariationPick[] = [
+    ...anchors.map(toAnchorPick),
+    ...v3FillPicks,
+  ].slice(0, 9);
+
+  const v3: Variation = {
+    id: "V3",
+    title: "Lógica Pura",
+    posture: "A rodada responde ao favoritismo e os 4 pilares confirmam ao mesmo tempo.",
+    projectedOdd: projectedOdd(v3Picks),
+    gameCount: v3Picks.length,
+    anchorsTogether: true,
+    summary:
+      "Variação central do método: todos os favoritos principais vencem e a leitura da rodada confirma o recorte mais racional.",
+    picks: v3Picks,
+  };
+
+  // ── V4: Curta de pressão (3 âncoras + 4 fills limpos, ~7 jogos) ──────────
+  const v4CleanFills = clean.filter(isFillCandidate).slice(0, 4);
+  const v4FillPicks = v4CleanFills.map((m, i) => {
+    // Último fill pode ser contrarian se tiver azarão viável
+    if (i === v4CleanFills.length - 1 && m.awayOdd <= 3.60) return toUpsetPick(m);
+    return toWinPick(m);
+  });
+  const v4Picks: VariationPick[] = [
+    ...anchors.slice(0, 3).map(toAnchorPick),
+    ...v4FillPicks,
+  ].slice(0, 7);
+
+  const v4: Variation = {
+    id: "V4",
+    title: "Curta de pressão",
+    posture: "Menos jogos, mas odd ainda alta para um cenário de corte seletivo.",
+    projectedOdd: projectedOdd(v4Picks),
+    gameCount: v4Picks.length,
+    anchorsTogether: false,
+    summary:
+      "Remove parte dos confrontos mais sujos da rodada e força um pacote mais agressivo em valor por seleção.",
+    picks: v4Picks,
+  };
+
+  // ── V5: Extrema (2–3 âncoras + empates e azarões, ~10 jogos) ─────────────
+  const v5AnchorPicks = anchors.slice(0, 2).map(toAnchorPick);
+  const v5DrawPicks = draws.slice(0, 5).map(toDrawPick);
+  const v5UpsetPicks = upsets.slice(0, 3).map(toUpsetPick);
+  const v5Picks: VariationPick[] = [
+    ...v5AnchorPicks,
+    ...v5DrawPicks,
+    ...v5UpsetPicks,
+  ].slice(0, 10);
+
+  const v5: Variation = {
+    id: "V5",
+    title: "Extrema",
+    posture: "Rodada com mais fricção, mais empates e pontos de ruptura controlados.",
+    projectedOdd: projectedOdd(v5Picks),
+    gameCount: v5Picks.length,
+    anchorsTogether: false,
+    summary:
+      "Variação de estresse do método, preservando o eixo das âncoras mas aceitando mais travas e um desenho mais raro.",
+    picks: v5Picks,
+  };
+
+  return [v1, v2, v3, v4, v5];
+}

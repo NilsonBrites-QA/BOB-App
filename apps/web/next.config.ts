@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Prisma Client precisa rodar no Node.js nativo, não no edge runtime
+  serverExternalPackages: ["@prisma/client", "prisma"],
 };
 
 export default nextConfig;

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { NavLink } from "@/components/nav-link";
+import { signOut } from "@/app/auth/actions";
 
 type SiteShellProps = {
   children: React.ReactNode;
@@ -25,6 +26,14 @@ export function SiteShell({ children }: SiteShellProps) {
             <NavLink href="/dashboard">Dashboard</NavLink>
             <NavLink href="/admin">Admin</NavLink>
             <NavLink href="/investimento-retorno">Investimento x Retorno</NavLink>
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="rounded-xl border border-border px-3 py-1.5 text-xs text-muted transition hover:border-accent hover:text-foreground"
+              >
+                Sair
+              </button>
+            </form>
           </nav>
         </div>
       </header>
