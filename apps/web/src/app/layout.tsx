@@ -20,6 +20,14 @@ export const metadata: Metadata = {
   description:
     "Painel inicial do BOB com dashboard da rodada, admin de integrações e calculadora de investimento x retorno.",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

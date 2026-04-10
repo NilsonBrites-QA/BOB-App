@@ -1,0 +1,25 @@
+{
+  "name": "BOB — Big Odds Bot",
+  "short_name": "BOB",
+  "description": "Motor analítico para apostas esportivas com big odds no Brasileirão.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f2f0e8",
+  "theme_color": "#15563d",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/web-app-manifest-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/web-app-manifest-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
