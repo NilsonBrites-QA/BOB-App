@@ -1,42 +1,54 @@
 {
   "name": "BOB — Big Odds Bot",
   "short_name": "BOB",
-  "description": "Motor analítico para apostas esportivas com big odds no Brasileirão.",
+  "description": "Motor anal\u00edtico para apostas esportivas com big odds no Brasileir\u00e3o.",
   "start_url": "/dashboard",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f5f4ef",
-  "theme_color": "#1d5c41",
+  "background_color": "#f2f0e8",
+  "theme_color": "#15563d",
   "lang": "pt-BR",
   "categories": ["sports", "finance"],
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "/web-app-manifest-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "/web-app-manifest-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/web-app-manifest-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/web-app-manifest-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
     {
       "name": "Dashboard da rodada",
       "short_name": "Dashboard",
-      "description": "Ver âncoras e variações da rodada atual",
+      "description": "Ver \u00e2ncoras e varia\u00e7\u00f5es da rodada atual",
       "url": "/dashboard",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/web-app-manifest-192x192.png", "sizes": "192x192" }]
     },
     {
       "name": "Investimento x Retorno",
       "short_name": "ROI",
       "description": "Acompanhar performance da temporada",
       "url": "/investimento-retorno",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/web-app-manifest-192x192.png", "sizes": "192x192" }]
     }
   ]
 }
