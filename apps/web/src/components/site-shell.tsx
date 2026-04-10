@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { NavLink } from "@/components/nav-link";
 import { signOut } from "@/app/auth/actions";
 import { createClient } from "@/utils/supabase/server";
@@ -10,6 +10,12 @@ type SiteShellProps = {
 };
 
 export async function SiteShell({ children }: SiteShellProps) {
+  // Páginas de auth não usam o shell (header/footer ficam fora)
+  const headersList = await headers();
+  const pathname = headersList.get("x-pathname") ?? "/";
+  const isAuthPage = pathname.startsWith("/login") || pathname.startsWith("/auth/");
+  if (isAuthPage) return <>{children}</>;
+
   const cookieStore = await cookies();
   const supabase = await createClient(cookieStore);
   const {
@@ -21,20 +27,16 @@ export async function SiteShell({ children }: SiteShellProps) {
   return (
     <div className="layout-container flex min-h-full flex-col">
       <header className="sticky top-0 z-20 border-b border-border bg-[rgba(252,250,244,0.86)] backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-10">
-          <Link href="/" className="flex items-center gap-3">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-10">
+          <Link href="/" className="flex items-center gap-2.5">
             <Image
               src="/bob-logo.png"
               alt="BOB"
-              width={44}
-              height={44}
-              className="rounded-2xl shadow-[0_8px_20px_rgba(18,32,24,0.16)]"
+              width={52}
+              height={52}
               priority
             />
-            <div>
-              <p className="text-base font-semibold tracking-tight">Big Odds Bot</p>
-              <p className="text-xs text-muted">Cérebro, memória e estratégia da rodada</p>
-            </div>
+            <span className="font-mono text-sm font-semibold tracking-tight">BOB</span>
           </Link>
 
           {isLoggedIn ? (
@@ -53,16 +55,7 @@ export async function SiteShell({ children }: SiteShellProps) {
                 </button>
               </form>
             </nav>
-          ) : (
-            <nav className="flex items-center">
-              <Link
-                href="/login"
-                className="rounded-xl border border-border px-3 py-1.5 text-xs text-muted transition hover:border-accent hover:text-foreground"
-              >
-                Entrar
-              </Link>
-            </nav>
-          )}
+          ) : null}
         </div>
       </header>
 

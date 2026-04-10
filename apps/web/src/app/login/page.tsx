@@ -71,9 +71,8 @@ export default function LoginPage() {
               <Image
                 src="/bob-logo.png"
                 alt="BOB"
-                width={54}
-                height={54}
-                className="rounded-2xl"
+                width={64}
+                height={64}
                 priority
               />
               <div>

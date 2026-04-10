@@ -18,8 +18,14 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.next({ request: { headers: request.headers } });
   }
 
+  const { pathname } = request.nextUrl;
+
+  // Passa o pathname como header para server components (ex: SiteShell)
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", pathname);
+
   let response = NextResponse.next({
-    request: { headers: request.headers },
+    request: { headers: requestHeaders },
   });
 
   const supabase = createServerClient(supabaseUrl, supabasePublishableKey, {
@@ -31,7 +37,7 @@ export async function updateSession(request: NextRequest) {
         cookiesToSet.forEach(({ name, value }) =>
           request.cookies.set(name, value),
         );
-        response = NextResponse.next({ request });
+        response = NextResponse.next({ request: { headers: requestHeaders } });
         cookiesToSet.forEach(({ name, value, options }) => {
           response.cookies.set(name, value, options);
         });
@@ -42,8 +48,6 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const { pathname } = request.nextUrl;
 
   // Rota pública — deixa passar
   if (isPublic(pathname)) return response;
