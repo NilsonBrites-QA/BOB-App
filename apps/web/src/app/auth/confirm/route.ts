@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
+import { createAuthRouteClient } from "@/utils/supabase/auth-route";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 const PRIMARY_ADMIN_EMAIL = "nilson.brites@gmail.com";
@@ -23,14 +23,17 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const token_hash = searchParams.get("token_hash");
-  const type = (searchParams.get("type") ?? "magiclink") as EmailOtpType;
+  const type = (searchParams.get("type") || "magiclink") as EmailOtpType;
   const next = searchParams.get("next") ?? "/dashboard";
 
   if (!code && !token_hash) {
     return NextResponse.redirect(`${origin}/auth/error?reason=missing_code`);
   }
 
-  const supabase = await createClient();
+  const successResponse = NextResponse.redirect(`${origin}${next}`);
+  const authClient = await createAuthRouteClient(successResponse);
+  const { supabase } = authClient;
+
   const { error } = token_hash
     ? await supabase.auth.verifyOtp({ token_hash, type })
     : await supabase.auth.exchangeCodeForSession(code!);
@@ -44,8 +47,9 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser();
 
   if (!user?.email) {
+    authClient.setResponse(NextResponse.redirect(`${origin}/auth/error?reason=no_email`));
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/auth/error?reason=no_email`);
+    return authClient.getResponse();
   }
 
   const normalizedEmail = user.email.toLowerCase();
@@ -65,9 +69,10 @@ export async function GET(request: Request) {
   });
 
   if (!whitelisted?.active) {
+    authClient.setResponse(NextResponse.redirect(`${origin}/auth/error?reason=not_authorized`));
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/auth/error?reason=not_authorized`);
+    return authClient.getResponse();
   }
 
-  return NextResponse.redirect(`${origin}${next}`);
+  return authClient.getResponse();
 }

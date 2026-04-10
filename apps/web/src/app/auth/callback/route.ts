@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
+import { createAuthRouteClient } from "@/utils/supabase/auth-route";
 
 const PRIMARY_ADMIN_EMAIL = "nilson.brites@gmail.com";
 
@@ -13,7 +13,10 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/auth/error?reason=missing_code`);
   }
 
-  const supabase = await createClient();
+  const successResponse = NextResponse.redirect(`${origin}${next}`);
+  const authClient = await createAuthRouteClient(successResponse);
+  const { supabase } = authClient;
+
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
@@ -26,8 +29,9 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser();
 
   if (!user?.email) {
+    authClient.setResponse(NextResponse.redirect(`${origin}/auth/error?reason=no_email`));
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/auth/error?reason=no_email`);
+    return authClient.getResponse();
   }
 
   const normalizedEmail = user.email.toLowerCase();
@@ -54,9 +58,10 @@ export async function GET(request: Request) {
   });
 
   if (!whitelisted?.active) {
+    authClient.setResponse(NextResponse.redirect(`${origin}/auth/error?reason=not_authorized`));
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/auth/error?reason=not_authorized`);
+    return authClient.getResponse();
   }
 
-  return NextResponse.redirect(`${origin}${next}`);
+  return authClient.getResponse();
 }
