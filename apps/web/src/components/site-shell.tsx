@@ -24,8 +24,8 @@ export async function SiteShell({ children }: SiteShellProps) {
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-10">
           <Link href="/" className="flex items-center gap-3">
             <Image
-              src="/logo.png"
-              alt="Logo do Big Odds Bot"
+              src="/bob-logo.png"
+              alt="BOB"
               width={44}
               height={44}
               className="rounded-2xl shadow-[0_8px_20px_rgba(18,32,24,0.16)]"

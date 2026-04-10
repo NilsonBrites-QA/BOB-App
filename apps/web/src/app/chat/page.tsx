@@ -22,10 +22,10 @@ type Message = {
 };
 
 const STARTERS = [
-  "Qual a diferença entre V1 e V5?",
-  "Como o BOB define uma âncora?",
-  "O que é Value Edge no método?",
-  "Por que o calendário influencia tanto?",
+  "Como o algoritmo escolhe uma âncora?",
+  "Explica a lógica do Value Edge",
+  "Qual a diferença real entre V1 e V5?",
+  "Por que o BOB não garante resultados?",
 ];
 
 export default function ChatPage() {
@@ -103,13 +103,13 @@ export default function ChatPage() {
         {messages.length === 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-8 pt-10">
             <div>
-              <p className="kicker text-xs text-muted">BOB · Chat analítico</p>
+              <p className="kicker text-xs text-muted">BOB · V2026</p>
               <h1 className="mt-2 text-3xl font-semibold leading-tight">
-                Pergunte sobre o Brasileirão,<br />método e estratégia.
+                Faz a pergunta.<br />O BOB responde com dados.
               </h1>
               <p className="mt-3 max-w-lg text-sm leading-7 text-muted">
-                Conversa direta com o BOB. Ele conhece o motor, os fatores, as variações
-                e o Brasileirão — mas não acessa dados em tempo real por aqui.
+                Conversa analítica sobre o Brasileirão, o método Camillo e o
+                funcionamento do algoritmo. Sem tempo real — com raciocínio.
               </p>
             </div>
 

@@ -1,84 +1,130 @@
 import Link from "next/link";
-import { SectionCard } from "@/components/section-card";
-import { currentRoundSnapshot, dailyManifesto, integrations, memoryLayers } from "@/lib/bob/mock-data";
+import { BOB_TRAITS, BOB_QUANTUM, BOB_VARIATIONS } from "@/lib/bob/personality";
 
 export default function Home() {
   return (
-    <div className="flex flex-1 flex-col gap-10 px-4 py-10 sm:px-6 lg:px-10">
+    <div className="flex flex-1 flex-col gap-8 px-4 py-10 sm:px-6 lg:px-10">
+
+      {/* ── Hero ──────────────────────────────────────────────────────── */}
       <section className="panel grid-lines overflow-hidden rounded-[28px] p-8 sm:p-10">
-        <div className="grid gap-10 lg:grid-cols-[1.3fr_0.9fr]">
-          <div className="space-y-6">
-            <p className="kicker text-sm text-muted">Início da implementação</p>
-            <div className="space-y-4">
-              <h1 className="max-w-3xl text-4xl font-semibold leading-tight sm:text-5xl">
-                BOB começou a ganhar forma como produto: análise da rodada,
-                cérebro estratégico e operação com memória persistente.
+        <div className="grid gap-10 lg:grid-cols-[1.35fr_0.95fr]">
+
+          {/* Identidade + CTAs */}
+          <div className="flex flex-col justify-between gap-8">
+            <div className="space-y-5">
+              <p className="kicker text-sm text-muted">BOB · Brasileirão 2026</p>
+              <h1 className="max-w-xl text-4xl font-semibold leading-tight sm:text-5xl">
+                {BOB_TRAITS.missao}
               </h1>
-              <p className="max-w-2xl text-lg leading-8 text-muted">
-                O primeiro incremento já organiza o app ao redor do método do
-                Camillo: 5 variações fixas, 4 âncoras por rodada, cutoff antes do
-                primeiro jogo, painel administrativo e calculadora de
-                investimento x retorno.
+              <p className="max-w-lg text-base leading-8 text-muted">
+                Motor determinístico, memória evolutiva e IAs analíticas em paralelo.
+                Cinco variações simultâneas por rodada. Cada decisão com justificativa auditável.
               </p>
             </div>
-
-            <div className="grid gap-4 sm:grid-cols-3">
-              <SectionCard title="Rodada atual" value={currentRoundSnapshot.label} description={currentRoundSnapshot.cutoffLabel} />
-              <SectionCard title="Integracoes" value={`${integrations.length} conectores`} description="Dados estáticos, estruturais e dinâmicos" />
-              <SectionCard title="Memória" value={`${memoryLayers.length} camadas`} description="Persistência total com uso seletivo no motor" />
-            </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-wrap gap-3">
               <Link
                 href="/dashboard"
                 className="rounded-full bg-accent px-6 py-3 text-center text-sm font-semibold text-white transition hover:bg-accent-strong"
               >
-                Abrir dashboard da rodada
+                Dashboard da rodada
               </Link>
               <Link
-                href="/investimento-retorno"
+                href="/chat"
                 className="rounded-full border border-border bg-surface-strong px-6 py-3 text-center text-sm font-semibold transition hover:border-accent hover:text-accent"
               >
-                Simular investimento x retorno
+                Falar com o BOB
               </Link>
             </div>
           </div>
 
-          <aside className="panel rounded-3xl bg-[rgba(255,250,240,0.75)] p-6">
-            <p className="kicker text-xs text-muted">Manifesto do BOB</p>
-            <div className="mt-4 space-y-4">
-              <p className="text-lg leading-8">{dailyManifesto.dailyOpening}</p>
-              <div className="rounded-[20px] bg-accent px-5 py-4 text-white">
-                <p className="kicker text-xs text-white/70">Entrega</p>
-                <p className="mt-2 text-sm leading-7">{dailyManifesto.deliverySignature}</p>
-              </div>
-              <p className="text-sm leading-7 text-muted">
-                A camada de personalidade já entra no produto, mas continua
-                isolada do motor analítico. O cérebro decide por dados e entrega
-                com convicção.
-              </p>
-            </div>
-          </aside>
+          {/* Manifesto */}
+          <div className="flex flex-col justify-center rounded-3xl bg-accent px-7 py-7 text-white">
+            <p className="kicker text-xs text-white/60">Manifesto</p>
+            <blockquote className="mt-4 text-base leading-8 text-white/90">
+              {BOB_QUANTUM.manifesto}
+            </blockquote>
+            <p className="mt-5 font-mono text-xs text-white/40">— BOB</p>
+          </div>
+
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-3">
-        <SectionCard
-          title="Dashboard"
-          value="Âncoras, variações e cutoff"
-          description="Primeira visão operacional da rodada com pesos, âncoras simuladas e variações mockadas."
-        />
-        <SectionCard
-          title="Admin"
-          value="Integrações e custos"
-          description="Base inicial do painel para governança de APIs, prompts, cache e memória autônoma."
-        />
-        <SectionCard
-          title="Calculadora"
-          value="Temporada do BR"
-          description="Simula custo por rodada, investimento anual, ponto de retorno e lucro líquido por big odd."
-        />
+      {/* ── Capacidades ───────────────────────────────────────────────── */}
+      <section className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
+
+        {/* 01 — Motor: bloco dominante */}
+        <article className="panel rounded-3xl p-7">
+          <p className="font-mono text-xs text-muted">01</p>
+          <h2 className="mt-3 text-2xl font-semibold">Motor determinístico</h2>
+          <p className="mt-3 max-w-lg text-sm leading-7 text-muted">
+            Quinze fatores ponderados por backtests — forma, mando de campo, H2H,
+            gols, ausências, árbitro, calendário, Value Edge e mais.
+            Pick só entra se a probabilidade calculada superar o preço de mercado.
+            Lógica 100% auditável, sem caixa-preta.
+          </p>
+          <div className="mt-6 grid grid-cols-3 gap-3">
+            {(
+              [
+                { label: "Fatores analíticos", value: "15" },
+                { label: "Âncoras por rodada", value: "até 4" },
+                { label: "Variações geradas", value: "V1–V5" },
+              ] as const
+            ).map((item) => (
+              <div
+                key={item.label}
+                className="rounded-[18px] border border-border bg-surface-strong px-4 py-3"
+              >
+                <p className="font-mono text-2xl font-semibold">{item.value}</p>
+                <p className="mt-1 text-xs leading-5 text-muted">{item.label}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        {/* 02 + 03 — empilhados */}
+        <div className="flex flex-col gap-4">
+          <article className="panel flex-1 rounded-3xl p-6">
+            <p className="font-mono text-xs text-muted">02</p>
+            <h2 className="mt-2 text-lg font-semibold">Dual-Mind IA</h2>
+            <p className="mt-2 text-sm leading-7 text-muted">
+              Claude Sonnet analisa. GPT-4o questiona. O calibrador determinístico
+              decide com evidência de rodadas anteriores.
+            </p>
+          </article>
+          <article className="panel flex-1 rounded-3xl p-6">
+            <p className="font-mono text-xs text-muted">03</p>
+            <h2 className="mt-2 text-lg font-semibold">Autonomia total</h2>
+            <p className="mt-2 text-sm leading-7 text-muted">
+              Crons T&#8209;48h, T&#8209;1h e pós-rodada. Pipeline completo sem intervenção
+              humana — da coleta ao fechamento da rodada.
+            </p>
+          </article>
+        </div>
+
       </section>
+
+      {/* ── Variações ─────────────────────────────────────────────────── */}
+      <section className="panel rounded-3xl p-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-4">
+          <p className="kicker text-xs text-muted">Método Camillo · Cinco variações por rodada</p>
+          <p className="max-w-lg text-xs text-muted">{BOB_QUANTUM.superposicao}</p>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-5">
+          {(Object.entries(BOB_VARIATIONS) as [string, { nome: string; postura: string; descricao: string }][]).map(
+            ([code, v]) => (
+              <div
+                key={code}
+                className="rounded-[20px] border border-border bg-surface-strong px-4 py-4"
+              >
+                <p className="font-mono text-xs text-muted">{code}</p>
+                <p className="mt-1 text-sm font-semibold">{v.nome}</p>
+                <p className="mt-1 text-xs leading-5 text-muted">{v.postura}</p>
+              </div>
+            )
+          )}
+        </div>
+      </section>
+
     </div>
   );
 }
