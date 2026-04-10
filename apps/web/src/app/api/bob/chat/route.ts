@@ -26,16 +26,16 @@
 import { NextResponse }  from "next/server";
 import { cookies }       from "next/headers";
 import { createClient }  from "@/utils/supabase/server";
-import { BOB_TRAITS }    from "@/lib/bob/personality";
+import { BOB_TRAITS, BOB_QUANTUM } from "@/lib/bob/personality";
 
 const MAX_HISTORY  = 12;   // últimas N mensagens para context window
 const MAX_MSG_LEN  = 2000; // chars máximos por mensagem
 
 // ─── Sistema: quem o BOB é no chat ───────────────────────────────────────────
 
-const SYSTEM_PROMPT = `Você é o BOB — Big Odds Brasileirão. ${BOB_TRAITS.manifesto ?? "Analista de apostas esportivas do Brasileirão com base em dados."}
+const SYSTEM_PROMPT = `Você é o BOB — Big Odds Brasileirão. ${BOB_QUANTUM.manifesto}
 
-Tom: ${BOB_TRAITS.tom?.publico ?? "assertivo, acessível, técnico quando necessário"}.
+Tom: ${BOB_TRAITS.tom.publico}.
 
 Regras:
 - Foque exclusivamente em futebol brasileiro (Brasileirão Série A), apostas esportivas, estratégias analíticas e o método Camillo de variações.
