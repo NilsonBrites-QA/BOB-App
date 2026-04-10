@@ -44,3 +44,6 @@ prisma/migrations/
 
 # ── Editor ────────────────────────────────────────────────────────────────────
 .vscode/settings.json
+
+.vercel
+.env*.local
