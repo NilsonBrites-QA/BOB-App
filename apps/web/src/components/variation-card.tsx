@@ -1,4 +1,5 @@
 import type { Variation } from "@/lib/bob/types";
+import { Term } from "@/components/glossary";
 
 type VariationCardProps = {
   variation: Variation;
@@ -9,7 +10,7 @@ export function VariationCard({ variation }: VariationCardProps) {
     <article className="panel rounded-3xl p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="kicker text-xs text-muted">{variation.id}</p>
+          <p className="kicker text-xs text-muted"><Term k={variation.id}>{variation.id}</Term></p>
           <h3 className="mt-2 text-2xl font-semibold">{variation.title}</h3>
         </div>
         <div className="rounded-full bg-accent-soft px-4 py-2 text-right">
@@ -50,7 +51,7 @@ export function VariationCard({ variation }: VariationCardProps) {
                   <span className="font-medium">{pick.match}</span>
                   {pick.isAnchor ? (
                     <span className="ml-2 rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-white">
-                      âncora
+                      <Term k="âncora">âncora</Term>
                     </span>
                   ) : null}
                 </td>

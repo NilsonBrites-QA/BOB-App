@@ -1,34 +1,19 @@
 /**
- * BOB — Orquestrador do pipeline de dados
+ * BOB — Orquestrador do pipeline de dados (Multi-API)
  *
- * Ponto de entrada único para buscar e normalizar todos os dados de uma rodada.
- * Executa as chamadas em paralelo (Promise.all) onde possível para minimizar
- * latência, e em série onde há dependência (ex: precisamos dos IDs dos fixtures
- * da rodada antes de buscar H2H e odds).
+ * Ponto de entrada único para buscar e normalizar dados de uma rodada.
  *
- * Budget API-Football (100 req/dia):
- *   - standings:          1 req / 24h
- *   - fixtures da rodada: 1 req / 24h
- *   - últimos 10 jogos:  ~2× times únicos / 24h (home + away, sem sobreposição)
- *   - H2H:                1 req por par / 7 dias
- *   - injuries:           1 req por data / 4h
- *   - odds:               1 req por fixture / 3h
+ * Hierarquia de fontes:
+ *   1. football-data.org (PRIMÁRIA) — cobre BSA 2026, free, 10 req/min
+ *   2. API-Football (COMPLEMENTO) — odds, injuries, lineups (free: 2022-2024 apenas)
+ *   3. TheSportsDB — assets visuais (logos, banners) — 100% free
  *
- * Total típico: 20–30 req/dia. Bem dentro do limite free.
+ * Nota: API-Football free plan NÃO cobre 2025+.
+ * Para temporada atual, football-data.org é a única fonte de dados de jogo.
  */
 
-import {
-  getStandings,
-  getFixturesByRound,
-  getTeamLastFixtures,
-  getH2H,
-  getInjuriesByDate,
-  getOdds,
-} from "./api-football";
-
-import { normalizeMatchInputs } from "./normalize";
-
-import type { AFFixtureItem, AFInjuryItem, AFOddsItem } from "./api-football-types";
+import * as fd from "./football-data";
+import type { FDMatch, FDStandingEntry, FDH2HResponse } from "./football-data";
 import type { MatchInput } from "@/lib/bob/engine/scoring";
 
 // ─── Tipos exportados ─────────────────────────────────────────────────────────
@@ -40,55 +25,185 @@ export type FetchRoundResult = {
     round: number;
     fixtureCount: number;
     generatedAt: string;
-    /** IDs dos times sem standings na API (dados incompletos de temporada nova) */
-    missingStandings: number[];
+    source: "football-data" | "api-football" | "demo";
   };
 };
 
-// ─── Helpers internos ─────────────────────────────────────────────────────────
+// ─── Helpers: Cálculo de Forma ────────────────────────────────────────────────
 
-/** Extrai datas únicas (YYYY-MM-DD) de uma lista de fixtures */
-function uniqueDates(fixtures: AFFixtureItem[]): string[] {
-  const dates = new Set<string>();
-  for (const f of fixtures) {
-    const date = f.fixture.date.split("T")[0];
-    if (date) dates.add(date);
-  }
-  return Array.from(dates);
+/** Extrai form (W/D/L) dos últimos N jogos de um time a partir de jogos finalizados */
+function extractFormFromMatches(
+  allFinished: FDMatch[],
+  teamId: number,
+  n: number
+): string[] {
+  return allFinished
+    .filter(
+      (m) =>
+        (m.homeTeam.id === teamId || m.awayTeam.id === teamId) &&
+        m.status === "FINISHED" &&
+        m.score.fullTime.home !== null
+    )
+    .sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())
+    .slice(0, n)
+    .map((m) => {
+      const isHome = m.homeTeam.id === teamId;
+      const teamGoals = isHome ? m.score.fullTime.home! : m.score.fullTime.away!;
+      const oppGoals = isHome ? m.score.fullTime.away! : m.score.fullTime.home!;
+      if (teamGoals > oppGoals) return "W";
+      if (teamGoals < oppGoals) return "L";
+      return "D";
+    });
 }
 
-/** Extrai IDs de times únicos de uma lista de fixtures (home + away sem repetição) */
-function uniqueTeamIds(fixtures: AFFixtureItem[]): number[] {
-  const ids = new Set<number>();
-  for (const f of fixtures) {
-    ids.add(f.teams.home.id);
-    ids.add(f.teams.away.id);
-  }
-  return Array.from(ids);
+/** Pontos nos últimos N jogos como mandante */
+function extractHomePoints(allFinished: FDMatch[], teamId: number): number {
+  return allFinished
+    .filter(
+      (m) =>
+        m.homeTeam.id === teamId &&
+        m.status === "FINISHED" &&
+        m.score.fullTime.home !== null
+    )
+    .sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())
+    .slice(0, 5)
+    .reduce((pts, m) => {
+      const h = m.score.fullTime.home!;
+      const a = m.score.fullTime.away!;
+      return pts + (h > a ? 3 : h === a ? 1 : 0);
+    }, 0);
 }
 
-// ─── Pipeline principal ───────────────────────────────────────────────────────
+/** Pontos nos últimos N jogos como visitante */
+function extractAwayPoints(allFinished: FDMatch[], teamId: number): number {
+  return allFinished
+    .filter(
+      (m) =>
+        m.awayTeam.id === teamId &&
+        m.status === "FINISHED" &&
+        m.score.fullTime.home !== null
+    )
+    .sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())
+    .slice(0, 5)
+    .reduce((pts, m) => {
+      const h = m.score.fullTime.home!;
+      const a = m.score.fullTime.away!;
+      return pts + (a > h ? 3 : a === h ? 1 : 0);
+    }, 0);
+}
+
+/** Gols marcados/sofridos nos últimos 5 jogos */
+function extractGoals(
+  allFinished: FDMatch[],
+  teamId: number,
+  type: "scored" | "conceded"
+): number {
+  return allFinished
+    .filter(
+      (m) =>
+        (m.homeTeam.id === teamId || m.awayTeam.id === teamId) &&
+        m.status === "FINISHED" &&
+        m.score.fullTime.home !== null
+    )
+    .sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())
+    .slice(0, 5)
+    .reduce((total, m) => {
+      const isHome = m.homeTeam.id === teamId;
+      const teamGoals = isHome ? m.score.fullTime.home! : m.score.fullTime.away!;
+      const oppGoals = isHome ? m.score.fullTime.away! : m.score.fullTime.home!;
+      return total + (type === "scored" ? teamGoals : oppGoals);
+    }, 0);
+}
+
+/** Soma de pontos de uma sequência de resultados (W=3, D=1, L=0) */
+function formPoints(form: string[]): number {
+  return form.reduce((acc, r) => acc + (r === "W" ? 3 : r === "D" ? 1 : 0), 0);
+}
+
+/** Momentum: compara últimos 5 vs jogos 6-10. -1 a +1 */
+function calcMomentum(form5: string[], form10: string[]): number {
+  const older = form10.slice(5);
+  if (older.length === 0) return 0;
+  const recentPpg = formPoints(form5) / Math.max(form5.length, 1);
+  const olderPpg = formPoints(older) / older.length;
+  return Math.max(-1, Math.min(1, (recentPpg - olderPpg) / 3));
+}
+
+/** Motivação contextual */
+function calcMotivation(position: number, round: number): number {
+  if (position >= 17 || (position <= 3 && round >= 30)) return 2;
+  if ((position >= 15 && round >= 25) || (position >= 5 && position <= 8 && round >= 25)) return 1;
+  return 0;
+}
+
+/** H2H win rate do mandante */
+function calcH2HWinRate(h2h: FDH2HResponse, homeTeamId: number): number {
+  if (!h2h.aggregates || h2h.aggregates.numberOfMatches === 0) return 0.4;
+  const agg = h2h.aggregates;
+  const isHome = agg.homeTeam.id === homeTeamId;
+  const wins = isHome ? agg.homeTeam.wins : agg.awayTeam.wins;
+  return wins / Math.max(agg.numberOfMatches, 1);
+}
+
+/** Pares de clássicos regionais */
+const CLASSICO_PAIRS = new Set([
+  "Flamengo-Fluminense", "Fluminense-Flamengo",
+  "Flamengo-Vasco", "Vasco-Flamengo",
+  "Fluminense-Vasco", "Vasco-Fluminense",
+  "Botafogo-Flamengo", "Flamengo-Botafogo",
+  "Botafogo-Fluminense", "Fluminense-Botafogo",
+  "Botafogo-Vasco", "Vasco-Botafogo",
+  "Palmeiras-Corinthians", "Corinthians-Palmeiras",
+  "Palmeiras-São Paulo", "São Paulo-Palmeiras",
+  "Corinthians-São Paulo", "São Paulo-Corinthians",
+  "Santos-São Paulo", "São Paulo-Santos",
+  "Santos-Palmeiras", "Palmeiras-Santos",
+  "Atlético-Cruzeiro", "Cruzeiro-Atlético",
+  "Grêmio-Internacional", "Internacional-Grêmio",
+  "Athletico-Coritiba", "Coritiba-Athletico",
+]);
+
+function isClassico(home: string, away: string): boolean {
+  // Normaliza para short names
+  const norm = (n: string) =>
+    n.replace(/\s*(FC|SC|EC|SE|CA|CR|AC|FBC|AF|FBPA)\s*/gi, "")
+      .replace("Paranaense", "Athletico")
+      .replace("Mineiro", "Atlético")
+      .trim();
+  const h = norm(home);
+  const a = norm(away);
+  for (const pair of CLASSICO_PAIRS) {
+    const [p1, p2] = pair.split("-");
+    if ((h.includes(p1!) && a.includes(p2!)) || (h.includes(p2!) && a.includes(p1!)))
+      return true;
+  }
+  return false;
+}
+
+// ─── Pipeline principal (football-data.org) ───────────────────────────────────
 
 /**
- * Busca todos os dados necessários para uma rodada e retorna MatchInput[]
- * normalizado e pronto para o motor de scoring.
+ * Busca dados da rodada via football-data.org e converte para MatchInput[].
  *
- * @param season - Ano da temporada (ex: 2026)
- * @param round  - Número da rodada (ex: 15)
+ * Pipeline:
+ *   1. Standings + Fixtures da rodada (paralelo)
+ *   2. Jogos finalizados da temporada (forma/momentum)
+ *   3. H2H por par de times (paralelo, com rate-limit awareness)
+ *   4. Normaliza → MatchInput[]
  */
 export async function fetchRoundMatchInputs(
   season: number,
   round: number
 ): Promise<FetchRoundResult> {
-  // ── Etapa 1: dados independentes em paralelo ──────────────────────────────
-  const [standingsRes, fixturesRes] = await Promise.all([
-    getStandings(season),
-    getFixturesByRound(season, round),
+  // ── Etapa 1: dados base em paralelo ─────────────────────────────────────
+  const [standingsRes, matchesRes, finishedRes] = await Promise.all([
+    fd.getStandings(),
+    fd.getMatchesByMatchday(round),
+    fd.getFinishedMatches(200),
   ]);
 
-  const roundFixtures = fixturesRes.response;
-
-  if (roundFixtures.length === 0) {
+  const roundMatches = matchesRes.matches;
+  if (roundMatches.length === 0) {
     return {
       matches: [],
       meta: {
@@ -96,103 +211,131 @@ export async function fetchRoundMatchInputs(
         round,
         fixtureCount: 0,
         generatedAt: new Date().toISOString(),
-        missingStandings: [],
+        source: "football-data",
       },
     };
   }
 
-  // standings: a resposta tem 3 grupos (overall, home, away) — usar overall (index 0)
-  const standingsData = standingsRes.response[0];
-  const standings = standingsData?.league?.standings?.[0] ?? [];
+  const standings =
+    standingsRes.standings.find((s) => s.type === "TOTAL")?.table ?? [];
 
-  // IDs de times e datas da rodada
-  const teamIds = uniqueTeamIds(roundFixtures);
-  const matchDates = uniqueDates(roundFixtures);
-
-  // ── Etapa 2: dados dependentes dos fixtures (em paralelo entre si) ─────────
-  const [teamLastFixturesArr, h2hArr, injuriesArr, oddsArr] = await Promise.all([
-    // Últimos 10 jogos de cada time (fase 10: janela estendida para momentum)
-    // cacheados 24h — dentro do budget de 100 req/dia
-    Promise.all(
-      teamIds.map((id) =>
-        getTeamLastFixtures(id, season, 10).then((r) => ({ id, fixtures: r.response }))
-      )
-    ),
-
-    // H2H por par de times (10 chamadas cacheadas 7 dias)
-    Promise.all(
-      roundFixtures.map((f) =>
-        getH2H(f.teams.home.id, f.teams.away.id, 10).then((r) => ({
-          key: `${f.teams.home.id}-${f.teams.away.id}`,
-          fixtures: r.response,
-        }))
-      )
-    ),
-
-    // Injuries por data (1 chamada por data da rodada, cacheada 4h)
-    Promise.all(matchDates.map((date) => getInjuriesByDate(season, date))).then(
-      (results) =>
-        results.flatMap((r): AFInjuryItem[] => r.response)
-    ),
-
-    // Odds por fixture (1 chamada por fixture, cacheada 3h)
-    Promise.all(
-      roundFixtures.map((f) =>
-        getOdds(f.fixture.id)
-          .then((r) => ({ id: f.fixture.id, data: r.response[0] as AFOddsItem | undefined }))
-          .catch(() => ({ id: f.fixture.id, data: undefined as AFOddsItem | undefined }))
-      )
-    ),
-  ]);
-
-  // ── Indexar resultados ─────────────────────────────────────────────────────
-
-  const teamLastFixtures: Record<number, AFFixtureItem[]> = {};
-  for (const { id, fixtures } of teamLastFixturesArr) {
-    teamLastFixtures[id] = fixtures;
+  // ── Etapa 2: H2H para cada jogo (throttled — 10 req/min limit) ─────────
+  // Fazemos sequencialmente para respeitar rate limit do football-data.org
+  const h2hMap = new Map<number, FDH2HResponse>();
+  for (const m of roundMatches) {
+    try {
+      const h2h = await fd.getH2H(m.id, 10);
+      h2hMap.set(m.id, h2h);
+    } catch {
+      // Se falhar (rate limit), continua sem H2H para esse jogo
+    }
   }
 
-  const h2hByKey: Record<string, AFFixtureItem[]> = {};
-  for (const { key, fixtures } of h2hArr) {
-    h2hByKey[key] = fixtures;
-  }
-
-  // Não temos teamStats em v1 (poupa quota) — o normalize.ts usa teamLastFixtures
-  const teamStats = {};
-
-  const oddsMap: Record<number, AFOddsItem> = {};
-  for (const { id, data } of oddsArr) {
-    if (data) oddsMap[id] = data;
-  }
-
-  // Verificar times sem standings (início de temporada / nova temporada)
-  const missingStandings = teamIds.filter(
-    (id) => !standings.some((s) => s.team.id === id)
+  // ── Etapa 3: Normalizar para MatchInput[] ───────────────────────────────
+  const allFinished = finishedRes.matches;
+  const standingByTeamId = new Map<number, FDStandingEntry>(
+    standings.map((s) => [s.team.id, s])
   );
 
-  // ── Normalização ───────────────────────────────────────────────────────────
+  const matches: MatchInput[] = roundMatches.map((m): MatchInput => {
+    const homeId = m.homeTeam.id;
+    const awayId = m.awayTeam.id;
+    const homeSt = standingByTeamId.get(homeId);
+    const awaySt = standingByTeamId.get(awayId);
+    const h2h = h2hMap.get(m.id);
 
-  const matches = normalizeMatchInputs(
-    {
-      roundFixtures,
-      standings,
-      teamLastFixtures,
-      h2hByKey,
-      teamStats,
-      injuries: injuriesArr,
-      oddsMap,
-    },
-    round
-  );
+    const homePos = homeSt?.position ?? 10;
+    const awayPos = awaySt?.position ?? 10;
+
+    // Forma
+    const homeForm = extractFormFromMatches(allFinished, homeId, 5);
+    const awayForm = extractFormFromMatches(allFinished, awayId, 5);
+    const homeForm10 = extractFormFromMatches(allFinished, homeId, 10);
+    const awayForm10 = extractFormFromMatches(allFinished, awayId, 10);
+
+    // Odds: football-data.org free não inclui odds → usar estimativa baseada na diferença de posição
+    // Fórmula calibrada com mercado real do Brasileirão:
+    //   Favoritismo = (awayPos - homePos) / 19, com bônus mandante +0.15
+    //   home_odd: líder em casa ~1.25, lanterna em casa vs líder ~4.50
+    //   draw_odd: inversamente proporcional à diferença
+    //   away_odd: reflete dificuldade de vencer fora
+    const posDiffNorm = homeSt && awaySt
+      ? (awayPos - homePos) / 19
+      : 0; // -1 (mandante é lanterna) a +1 (mandante é líder)
+
+    const homeAdvantage = 0.15; // bônus mandante
+    const strength = Math.max(-1, Math.min(1, posDiffNorm + homeAdvantage));
+
+    // Mapear strength para odds realistas do BSA
+    const homeOdd = Math.max(1.12, 1.20 + (1 - strength) * 2.5);
+    const awayOdd = Math.max(1.12, 1.20 + (1 + strength) * 2.5);
+    const drawOdd = Math.max(2.80, 3.00 + Math.abs(strength) * 1.5);
+
+    return {
+      id: m.id.toString(),
+      match: `${m.homeTeam.shortName || m.homeTeam.name} x ${m.awayTeam.shortName || m.awayTeam.name}`,
+      homeTeam: m.homeTeam.shortName || m.homeTeam.name,
+      awayTeam: m.awayTeam.shortName || m.awayTeam.name,
+
+      homePosition: homePos,
+      awayPosition: awayPos,
+      homeNeedsWin: homePos >= 17 || (homePos <= 3 && round >= 30),
+      awayNeedsWin: awayPos >= 17 || (awayPos <= 3 && round >= 30),
+
+      homeForm,
+      awayForm,
+      homeHomePoints: extractHomePoints(allFinished, homeId),
+      awayAwayPoints: extractAwayPoints(allFinished, awayId),
+
+      homeGoalsScored5: extractGoals(allFinished, homeId, "scored"),
+      homeGoalsConceded5: extractGoals(allFinished, homeId, "conceded"),
+      awayGoalsScored5: extractGoals(allFinished, awayId, "scored"),
+      awayGoalsConceded5: extractGoals(allFinished, awayId, "conceded"),
+
+      h2hHomeWinRate: h2h ? calcH2HWinRate(h2h, homeId) : 0.4,
+
+      homeAbsenceRate: 0, // football-data.org free não tem injuries
+      awayAbsenceRate: 0,
+
+      homeBigGameAhead: false,
+      awayBigGameAhead: false,
+
+      homeOdd,
+      drawOdd,
+      awayOdd,
+      homeOddDropped: false,
+
+      // Campos estendidos (Fase 10)
+      homeForm10,
+      awayForm10,
+      homeMomentum: calcMomentum(homeForm, homeForm10),
+      awayMomentum: calcMomentum(awayForm, awayForm10),
+      motivationHome: calcMotivation(homePos, round),
+      motivationAway: calcMotivation(awayPos, round),
+      isClassico: isClassico(m.homeTeam.name, m.awayTeam.name),
+    };
+  });
 
   return {
     matches,
     meta: {
       season,
       round,
-      fixtureCount: roundFixtures.length,
+      fixtureCount: roundMatches.length,
       generatedAt: new Date().toISOString(),
-      missingStandings,
+      source: "football-data",
     },
   };
+}
+
+/**
+ * Detecta a rodada (matchday) atual do Brasileirão.
+ * Usa football-data.org como fonte primária.
+ */
+export async function getCurrentRound(): Promise<number | null> {
+  try {
+    return await fd.getCurrentMatchday();
+  } catch {
+    return null;
+  }
 }

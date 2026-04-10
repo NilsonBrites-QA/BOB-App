@@ -106,7 +106,7 @@ export default function Home() {
       {/* ── Variações ─────────────────────────────────────────────────── */}
       <section className="panel rounded-3xl p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-4">
-          <p className="kicker text-xs text-muted">Método Camillo · Cinco variações por rodada</p>
+          <p className="kicker text-xs text-muted">Método BOB · Cinco variações por rodada</p>
           <p className="max-w-lg text-xs text-muted">{BOB_QUANTUM.superposicao}</p>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-5">

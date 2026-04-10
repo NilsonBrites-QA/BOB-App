@@ -1,24 +1,19 @@
 /**
  * BOB — Chat API: POST /api/bob/chat
  *
- * Endpoint de chat conversacional isolado do motor analítico.
+ * Chat conversacional CONECTADO ao motor analítico.
+ * O BOB responde com dados reais da rodada atual (standings, âncoras, variações).
  *
- * O BOB responde como assistente analítico de apostas esportivas:
- *   - Responde dúvidas sobre o Brasileirão, método Camillo, apostas
- *   - NÃO modifica âncoras ou variações do motor
- *   - NÃO acessa dados em tempo real da API-Football via esta rota
- *   - Tem acesso ao contexto de personalidade (personality.ts)
- *
- * Para manter o foco e os custos controlados:
- *   - Máximo de 12 mensagens no histórico enviado ao modelo
- *   - Claude Sonnet se disponível, fallback para GPT-4o-mini
+ * O BOB:
+ *   - Responde dúvidas sobre o Brasileirão, método BOB, apostas
+ *   - TEM ACESSO aos dados reais da rodada atual e classificação
+ *   - Explica as variações, âncoras e a lógica por trás das escolhas
+ *   - NÃO modifica âncoras ou variações
  *
  * Body (JSON):
  *   messages — array de { role: "user"|"assistant", content: string }
- *   (incluir histórico completo da conversa no client)
  *
  * Segurança:
- *   - Rate limit: de 1 req/s por user (via Vercel Edge — futuro)
  *   - Somente usuários autenticados
  *   - Sanitização de input: max 2000 chars por mensagem
  */
@@ -27,23 +22,109 @@ import { NextResponse }  from "next/server";
 import { cookies }       from "next/headers";
 import { createClient }  from "@/utils/supabase/server";
 import { BOB_TRAITS, BOB_QUANTUM } from "@/lib/bob/personality";
+import { fetchRoundMatchInputs, getCurrentRound } from "@/lib/bob/connectors";
+import { getStandings } from "@/lib/bob/connectors/football-data";
+import { scoreMatch, selectAnchors, generateVariations } from "@/lib/bob/engine";
 
-const MAX_HISTORY  = 12;   // últimas N mensagens para context window
-const MAX_MSG_LEN  = 2000; // chars máximos por mensagem
+const MAX_HISTORY  = 12;
+const MAX_MSG_LEN  = 2000;
+
+// ─── Context Builder: injetar dados reais no prompt ──────────────────────────
+
+async function buildBrainContext(): Promise<string> {
+  try {
+    const season = new Date().getFullYear();
+    const round = await getCurrentRound();
+    if (!round) return "\n[Dados da rodada: indisponíveis — entressafra ou sem token.]";
+
+    const [result, standingsRes] = await Promise.all([
+      fetchRoundMatchInputs(season, round),
+      getStandings(),
+    ]);
+
+    const table = standingsRes.standings.find((s) => s.type === "TOTAL")?.table ?? [];
+    const top5 = table.slice(0, 5).map((t, i) =>
+      `${i + 1}. ${t.team.name} (${t.points}pts, ${t.won}V ${t.draw}E ${t.lost}D)`
+    ).join("\n");
+
+    const bottom5 = table.slice(15).map((t) =>
+      `${t.position}. ${t.team.name} (${t.points}pts)`
+    ).join("\n");
+
+    if (result.matches.length === 0) {
+      return `\n--- DADOS REAIS DO BRASILEIRÃO ---
+Temporada: ${season} | Rodada atual: ${round}
+Classificação (top 5):\n${top5}
+Zona de rebaixamento:\n${bottom5}
+[Nenhum jogo encontrado para a rodada ${round}.]`;
+    }
+
+    const scored = result.matches.map(scoreMatch);
+    const anchors = selectAnchors(result.matches);
+    const anchorIds = new Set(anchors.map((a) => a.id));
+    const pool = scored.filter((m) => !anchorIds.has(m.id));
+    const variations = generateVariations({ anchors, pool });
+
+    const matchList = result.matches.map((m) =>
+      `  ${m.homeTeam} (${m.homePosition}º) x ${m.awayTeam} (${m.awayPosition}º) | Forma: ${m.homeForm.join("")} vs ${m.awayForm.join("")}`
+    ).join("\n");
+
+    const anchorList = anchors.map((a) =>
+      `  ⚓ ${a.match} — Score ${a.score}/100 | Odd ${a.homeOdd.toFixed(2)}`
+    ).join("\n");
+
+    const varList = variations.map((v) =>
+      `  ${v.id} ${v.title}: ${v.projectedOdd}x (${v.gameCount} jogos)`
+    ).join("\n");
+
+    return `\n--- DADOS REAIS DO BRASILEIRÃO (${new Date().toISOString().split("T")[0]}) ---
+Temporada: ${season} | Rodada: ${round} | Fonte: football-data.org (ao vivo)
+
+CLASSIFICAÇÃO (top 5):
+${top5}
+
+ZONA DE REBAIXAMENTO:
+${bottom5}
+
+JOGOS DA RODADA ${round}:
+${matchList}
+
+ÂNCORAS SELECIONADAS (score ≥ 65):
+${anchorList}
+
+VARIAÇÕES GERADAS:
+${varList}
+
+EXPLICAÇÃO:
+- Âncoras são jogos com altíssima previsibilidade pelo motor de 10 fatores.
+- V1-V5 são combinações diferentes de âncoras + jogos complementares.
+- Cada variação busca odds acima de 500x (V1) a 1000x (V4/V5).
+- Estes dados são calculados em tempo real pelo seu cérebro analítico.`;
+  } catch (err) {
+    console.error("[BOB/chat] Falha ao construir contexto:", err);
+    return "\n[Dados da rodada: temporariamente indisponíveis.]";
+  }
+}
 
 // ─── Sistema: quem o BOB é no chat ───────────────────────────────────────────
 
-const SYSTEM_PROMPT = `Você é o BOB — Big Odds Brasileirão. ${BOB_QUANTUM.manifesto}
+async function buildSystemPrompt(): Promise<string> {
+  const brainContext = await buildBrainContext();
+
+  return `Você é o BOB — Big Odds Brasileirão. ${BOB_QUANTUM.manifesto}
 
 Tom: ${BOB_TRAITS.tom.publico}.
 
 Regras:
-- Foque exclusivamente em futebol brasileiro (Brasileirão Série A), apostas esportivas, estratégias analíticas e o método Camillo de variações.
+- Foque exclusivamente em futebol brasileiro (Brasileirão Série A), apostas esportivas, estratégias analíticas e o método BOB de variações.
 - Nunca prometa ganhos, nunca incentive apostas irresponsáveis.
 - Seja honesto sobre incerteza: "não sei" é uma resposta válida.
 - Responda em português brasileiro.
 - Máximo 200 palavras por resposta a menos que o usuário peça mais detalhes.
-- Não acesse dados em tempo real — suas respostas são baseadas em conhecimento geral do Brasileirão.`;
+- Você TEM acesso a dados reais e atualizados do Brasileirão abaixo. USE-OS para responder perguntas sobre a rodada, classificação, âncoras e variações.
+- Quando o usuário perguntar sobre dados do campeonato, responda com as informações reais abaixo.
+${brainContext}`;
+}
 
 // ─── Tipo de mensagem ─────────────────────────────────────────────────────────
 
@@ -99,16 +180,17 @@ export async function POST(request: Request) {
   // Tentar Claude primeiro, depois GPT-4o-mini
   const claudeKey = process.env.ANTHROPIC_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
+  const systemPrompt = await buildSystemPrompt();
 
   if (claudeKey) {
-    const reply = await callClaude(messages, claudeKey);
+    const reply = await callClaude(messages, claudeKey, systemPrompt);
     if (reply) {
       return NextResponse.json({ reply, model: "claude-sonnet" });
     }
   }
 
   if (openaiKey) {
-    const reply = await callOpenAI(messages, openaiKey);
+    const reply = await callOpenAI(messages, openaiKey, systemPrompt);
     if (reply) {
       return NextResponse.json({ reply, model: "gpt-4o-mini" });
     }
@@ -123,7 +205,7 @@ export async function POST(request: Request) {
 
 // ─── Provedores ───────────────────────────────────────────────────────────────
 
-async function callClaude(messages: ChatMessage[], apiKey: string): Promise<string | null> {
+async function callClaude(messages: ChatMessage[], apiKey: string, systemPrompt: string): Promise<string | null> {
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method:  "POST",
@@ -135,7 +217,7 @@ async function callClaude(messages: ChatMessage[], apiKey: string): Promise<stri
       body: JSON.stringify({
         model:       "claude-sonnet-4-5",
         max_tokens:  400,
-        system:      SYSTEM_PROMPT,
+        system:      systemPrompt,
         messages:    messages.map((m) => ({ role: m.role, content: m.content })),
       }),
     });
@@ -150,7 +232,7 @@ async function callClaude(messages: ChatMessage[], apiKey: string): Promise<stri
   }
 }
 
-async function callOpenAI(messages: ChatMessage[], apiKey: string): Promise<string | null> {
+async function callOpenAI(messages: ChatMessage[], apiKey: string, systemPrompt: string): Promise<string | null> {
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method:  "POST",
@@ -162,7 +244,7 @@ async function callOpenAI(messages: ChatMessage[], apiKey: string): Promise<stri
         model:       "gpt-4o-mini",
         max_tokens:  400,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           ...messages.map((m) => ({ role: m.role, content: m.content })),
         ],
       }),

@@ -1,14 +1,18 @@
 /**
- * BOB — Gerador de Variações (Método Camillo)
+ * BOB — Gerador de Variações (Método BOB)
  *
  * Recebe os 4 âncoras selecionados pelo motor de scoring e um pool de outros
  * jogos da rodada, e gera as 5 variações canônicas do método.
  *
- * V1 Segurança    — 4 âncoras + 4 fills conservadores  (8–9 jogos)
- * V2 Equilíbrio   — 3 âncoras + empates em score médio  (9 jogos)
- * V3 Lógica Pura  — 4 âncoras + 5 fills todos favoritos (9 jogos)
- * V4 Curta        — 3 âncoras + fills seletivos limpos   (7 jogos)
- * V5 Extrema      — 2–3 âncoras + empates e azarões      (10 jogos)
+ * V1 Segurança    — 4 âncoras + 4 fills conservadores  (8–9 jogos) | piso 500x
+ * V2 Equilíbrio   — 3 âncoras + empates em score médio  (9 jogos)  | piso 800x
+ * V3 Lógica Pura  — 4 âncoras + 5 fills todos favoritos (9 jogos)  | piso 800x
+ * V4 Curta        — 3 âncoras + fills seletivos limpos   (7 jogos) | piso 1000x
+ * V5 Extrema      — 2–3 âncoras + empates e azarões      (10 jogos)| piso 1000x
+ *
+ * Quando a odd projetada fica abaixo do piso, o sistema substitui picks
+ * de menor odd por alternativas de maior valor (empate/azarão) até atingir
+ * o alvo. Isso mantém os âncoras intactos e eleva o multiplicador.
  *
  * Determinístico: mesmo input, mesma saída. Sem LLM, sem randomização.
  */
@@ -61,6 +65,88 @@ function projectedOdd(picks: VariationPick[]): number {
   return Math.round(picks.reduce((acc, p) => acc * p.odd, 1));
 }
 
+// ─── Pisos mínimos de odds por variação ───────────────────────────────────────
+
+const ODD_FLOORS: Record<string, number> = {
+  V1: 500,
+  V2: 800,
+  V3: 800,
+  V4: 1000,
+  V5: 1000,
+};
+
+/**
+ * Eleva a odd projetada até o piso mínimo substituindo picks de menor odd
+ * por suas alternativas de empate/azarão (mantendo âncoras intactos).
+ *
+ * Estratégia:
+ *   1. Ordena picks não-âncora pela odd crescente (menores primeiro)
+ *   2. Substitui pelo empate (drawOdd) — geralmente 2x a 4x maior
+ *   3. Se ainda não atingiu o piso, substitui pelo azarão (awayOdd)
+ *   4. Como último recurso, adiciona mais picks do pool disponível
+ */
+function boostToFloor(
+  picks: VariationPick[],
+  floor: number,
+  allMatches: ScoredMatch[],
+): VariationPick[] {
+  let current = projectedOdd(picks);
+  if (current >= floor) return picks;
+
+  const result = [...picks];
+  const usedIds = new Set(result.map((p) => p.fixtureId));
+
+  // Fase 1: substituir fills por empates (não tocar âncoras)
+  const fillIndices = result
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => !p.isAnchor)
+    .sort((a, b) => a.p.odd - b.p.odd); // menores odds primeiro
+
+  for (const { i } of fillIndices) {
+    if (current >= floor) break;
+    const match = allMatches.find((m) => m.id === result[i]!.fixtureId);
+    if (!match) continue;
+    const drawOdd = match.drawOdd;
+    if (drawOdd > result[i]!.odd) {
+      const oldOdd = result[i]!.odd;
+      result[i] = { ...result[i]!, result: "X", odd: drawOdd };
+      current = Math.round((current / oldOdd) * drawOdd);
+    }
+  }
+
+  // Fase 2: trocar empates por azarões se ainda precisar
+  if (current < floor) {
+    const drawIndices = result
+      .map((p, i) => ({ p, i }))
+      .filter(({ p }) => !p.isAnchor && p.result === "X")
+      .sort((a, b) => a.p.odd - b.p.odd);
+
+    for (const { i } of drawIndices) {
+      if (current >= floor) break;
+      const match = allMatches.find((m) => m.id === result[i]!.fixtureId);
+      if (!match || match.awayOdd <= result[i]!.odd) continue;
+      const oldOdd = result[i]!.odd;
+      result[i] = { ...result[i]!, result: "2", odd: match.awayOdd };
+      current = Math.round((current / oldOdd) * match.awayOdd);
+    }
+  }
+
+  // Fase 3: adicionar mais jogos do pool se ainda não bateu o piso
+  if (current < floor) {
+    const available = allMatches
+      .filter((m) => !usedIds.has(m.id))
+      .sort((a, b) => b.drawOdd - a.drawOdd); // maior draw odd primeiro
+
+    for (const m of available) {
+      if (current >= floor) break;
+      result.push({ fixtureId: m.id, match: m.match, result: "X", odd: m.drawOdd });
+      current = Math.round(current * m.drawOdd);
+    }
+  }
+
+  return result;
+}
+
 // ─── Classificadores de pool ──────────────────────────────────────────────────
 
 /** Jogo "sujo": alta incerteza, score baixo — evitar em variações conservadoras */
@@ -105,6 +191,7 @@ function isUpsetCandidate(m: ScoredMatch): boolean {
 export function generateVariations({ anchors, pool }: VariationInput): Variation[] {
   // Pool ordenado por score decrescente
   const sorted = [...pool].sort((a, b) => b.score - a.score);
+  const allMatches = [...anchors, ...pool]; // para boostToFloor
 
   const draws = sorted
     .filter(isDrawCandidate)
@@ -115,10 +202,11 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
   const upsets = sorted.filter(isUpsetCandidate).sort((a, b) => a.awayOdd - b.awayOdd);
 
   // ── V1: Segurança (4 âncoras + 4 fills, ~8 jogos) ────────────────────────
-  const v1Picks: VariationPick[] = [
+  const v1PicksRaw: VariationPick[] = [
     ...anchors.map(toAnchorPick),
     ...fills.slice(0, 4).map(toWinPick),
   ];
+  const v1Picks = boostToFloor(v1PicksRaw, ODD_FLOORS.V1!, allMatches);
 
   const v1: Variation = {
     id: "V1",
@@ -133,11 +221,12 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
   };
 
   // ── V2: Equilíbrio (3 âncoras + empates + fills, ~9 jogos) ───────────────
-  const v2Picks: VariationPick[] = [
+  const v2PicksRaw: VariationPick[] = [
     ...anchors.slice(0, 3).map(toAnchorPick),
     ...draws.slice(0, 3).map(toDrawPick),
     ...fills.slice(0, 3).map(toWinPick),
   ].slice(0, 9);
+  const v2Picks = boostToFloor(v2PicksRaw, ODD_FLOORS.V2!, allMatches);
 
   const v2: Variation = {
     id: "V2",
@@ -156,10 +245,11 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     // Último fill inclui um empate para variedade de odd
     i === 4 ? toDrawPick(m) : toWinPick(m),
   );
-  const v3Picks: VariationPick[] = [
+  const v3PicksRaw: VariationPick[] = [
     ...anchors.map(toAnchorPick),
     ...v3FillPicks,
   ].slice(0, 9);
+  const v3Picks = boostToFloor(v3PicksRaw, ODD_FLOORS.V3!, allMatches);
 
   const v3: Variation = {
     id: "V3",
@@ -180,10 +270,11 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     if (i === v4CleanFills.length - 1 && m.awayOdd <= 3.60) return toUpsetPick(m);
     return toWinPick(m);
   });
-  const v4Picks: VariationPick[] = [
+  const v4PicksRaw: VariationPick[] = [
     ...anchors.slice(0, 3).map(toAnchorPick),
     ...v4FillPicks,
   ].slice(0, 7);
+  const v4Picks = boostToFloor(v4PicksRaw, ODD_FLOORS.V4!, allMatches);
 
   const v4: Variation = {
     id: "V4",
@@ -201,11 +292,12 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
   const v5AnchorPicks = anchors.slice(0, 2).map(toAnchorPick);
   const v5DrawPicks = draws.slice(0, 5).map(toDrawPick);
   const v5UpsetPicks = upsets.slice(0, 3).map(toUpsetPick);
-  const v5Picks: VariationPick[] = [
+  const v5PicksRaw: VariationPick[] = [
     ...v5AnchorPicks,
     ...v5DrawPicks,
     ...v5UpsetPicks,
   ].slice(0, 10);
+  const v5Picks = boostToFloor(v5PicksRaw, ODD_FLOORS.V5!, allMatches);
 
   const v5: Variation = {
     id: "V5",

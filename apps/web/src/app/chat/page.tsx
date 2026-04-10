@@ -6,7 +6,7 @@
  * Interface conversacional com o BOB.
  *
  * Tela de formulário/conversa. Objetivo: usuário faz perguntas analíticas
- * sobre o Brasileirão, método Camillo e apostas. NOT: um chatbot genérico.
+ * sobre o Brasileirão, método BOB e apostas. NOT: um chatbot genérico.
  *
  * Design: terminal analítico denso — não chat bonitinho.
  * Hierarquia: área de conversa domina; input no rodapé fixo.
@@ -108,7 +108,7 @@ export default function ChatPage() {
                 Faz a pergunta.<br />O BOB responde com dados.
               </h1>
               <p className="mt-3 max-w-lg text-sm leading-7 text-muted">
-                Conversa analítica sobre o Brasileirão, o método Camillo e o
+                Conversa analítica sobre o Brasileirão, o método BOB e o
                 funcionamento do algoritmo. Sem tempo real — com raciocínio.
               </p>
             </div>

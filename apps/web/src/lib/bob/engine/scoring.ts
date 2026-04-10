@@ -2,7 +2,7 @@
  * BOB — Motor de Scoring de Âncoras
  *
  * Calcula o score (0–100) de um candidato a âncora aplicando os 8 fatores do
- * método Camillo com seus pesos documentados no mock-data.ts.
+ * método BOB com seus pesos documentados no mock-data.ts.
  *
  * Contrato de entrada: MatchInput — snapshot normalizado de um jogo.
  * Contrato de saída:   ScoredMatch — mesmo objeto + score + reasons.

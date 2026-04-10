@@ -23,7 +23,7 @@ export type SaveRoundInput = {
   round: number;
   anchors: ScoredMatch[];
   variations: Variation[];
-  source: "api" | "demo";
+  source: "api" | "football-data" | "api-football" | "demo";
 };
 
 export type SaveRoundResult = {

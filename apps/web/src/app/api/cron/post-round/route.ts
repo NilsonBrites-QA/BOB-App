@@ -2,44 +2,30 @@
  * BOB — Cron pós-rodada: GET /api/cron/post-round
  *
  * Executado 24h após o último jogo da rodada.
- * Objetivo: registrar automaticamente os resultados reais de todos os picks
- * e fechar a rodada — zero ação humana necessária.
+ * Registra resultados reais de todos os picks e fecha a rodada.
  *
  * Pipeline:
- *   1. Recebe season + round obrigatórios (não auto-detecta — evitar rodada errada)
- *   2. Busca fixtures da rodada na API-Football (com results finais)
- *   3. Encontra a rodada no DB pelo número + temporada
- *   4. Para cada pick com fixtureId definido, compara com resultado real
- *   5. Marca correct=true/false + actualResult via markPickResult()
- *   6. Atualiza status da rodada para CLOSED
- *   7. Dispara calibração ABQC se não foi executada ainda
- *   8. Revalida cache do dashboard + admin
- *
- * Query params obrigatórios:
- *   season  — ex: 2026
- *   round   — ex: 5
+ *   1. Recebe season + round (ou auto-detecta última rodada aberta no DB)
+ *   2. Busca resultados finais via football-data.org
+ *   3. Compara com picks no DB e marca correct=true/false
+ *   4. Fecha a rodada se todos os jogos estiverem encerrados
  *
  * Requer: Authorization: Bearer <CRON_SECRET>
  */
 
 import { NextResponse }   from "next/server";
 import { revalidatePath } from "next/cache";
-import {
-  getFixturesByRound,
-} from "@/lib/bob/connectors/api-football";
+import { getMatchesByMatchday } from "@/lib/bob/connectors/football-data";
+import type { FDMatch } from "@/lib/bob/connectors/football-data";
 import { markPickResult } from "@/lib/bob/persist";
 import { prisma }         from "@/lib/db";
-import type { AFFixtureItem } from "@/lib/bob/connectors/api-football-types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Status da API-Football que indicam jogo encerrado */
-const FINISHED_STATUSES = new Set(["FT", "AET", "PEN"]);
-
-/** Resultado real do fixture → PickResult */
-function realResult(f: AFFixtureItem): "HOME" | "DRAW" | "AWAY" | null {
-  const h = f.goals.home;
-  const a = f.goals.away;
+/** Resultado real do jogo */
+function realResult(m: FDMatch): "HOME" | "DRAW" | "AWAY" | null {
+  const h = m.score.fullTime.home;
+  const a = m.score.fullTime.away;
   if (h === null || a === null) return null;
   if (h > a) return "HOME";
   if (h < a) return "AWAY";
@@ -97,36 +83,37 @@ export async function GET(request: Request) {
 
   console.info(`[BOB/post-round] Registrando resultados · rodada ${round}/${season}`);
 
-  // 1. Fixtures da API (status + placar final)
-  const fixturesRes = await getFixturesByRound(season, round).catch(() => null);
-  if (!fixturesRes || fixturesRes.response.length === 0) {
+  // 1. Buscar jogos da rodada via football-data.org
+  let matchesRes;
+  try {
+    matchesRes = await getMatchesByMatchday(round);
+  } catch {
     return NextResponse.json({
       ok:      false,
-      message: "Fixtures não disponíveis — tente novamente em algumas horas.",
+      message: "Jogos não disponíveis — tente novamente em algumas horas.",
       season,
       round,
     });
   }
 
-  const finishedFixtures = fixturesRes.response.filter((f) =>
-    FINISHED_STATUSES.has(f.fixture.status.short)
-  );
+  const allMatches = matchesRes.matches;
+  const finishedMatches = allMatches.filter((m) => m.status === "FINISHED");
 
-  if (finishedFixtures.length === 0) {
+  if (finishedMatches.length === 0) {
     return NextResponse.json({
       ok:      false,
       message: "Nenhum jogo encerrado ainda — tente novamente mais tarde.",
-      totalFixtures: fixturesRes.response.length,
+      totalFixtures: allMatches.length,
       season,
       round,
     });
   }
 
-  // Mapa: fixtureId (string) → resultado real
+  // Mapa: matchId (string) → resultado real
   const resultByFixture = new Map<string, "HOME" | "DRAW" | "AWAY">();
-  for (const f of finishedFixtures) {
-    const r = realResult(f);
-    if (r) resultByFixture.set(String(f.fixture.id), r);
+  for (const m of finishedMatches) {
+    const r = realResult(m);
+    if (r) resultByFixture.set(String(m.id), r);
   }
 
   // 2. Buscar rodada no DB
@@ -179,9 +166,7 @@ export async function GET(request: Request) {
   }
 
   // 5. Fechar a rodada se todos os jogos estiverem encerrados
-  const allFinished = fixturesRes.response.every((f) =>
-    FINISHED_STATUSES.has(f.fixture.status.short)
-  );
+  const allFinished = allMatches.every((m) => m.status === "FINISHED");
 
   if (allFinished && dbRound.status !== "CLOSED") {
     await prisma.round.update({
@@ -201,8 +186,8 @@ export async function GET(request: Request) {
     phase:         "pós-rodada",
     season,
     round,
-    totalFixtures: fixturesRes.response.length,
-    finished:      finishedFixtures.length,
+    totalFixtures: allMatches.length,
+    finished:      finishedMatches.length,
     picksUpdated:  updated,
     picksSkipped:  skipped,
     roundClosed:   allFinished,

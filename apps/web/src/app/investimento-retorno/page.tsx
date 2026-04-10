@@ -37,7 +37,7 @@ export default async function InvestmentReturnPage() {
           </div>
 
           <div className="rounded-3xl bg-accent px-6 py-6 text-white">
-            <p className="kicker text-xs text-white/70">Exemplo do Camillo</p>
+            <p className="kicker text-xs text-white/70">Exemplo BOB</p>
             <div className="mt-4 space-y-3 text-sm leading-7 text-white/90">
               <p>R$ 3,00 por múltipla × 5 variações = R$ 15,00 por rodada.</p>
               <p>R$ 15,00 × 38 rodadas = R$ 570,00 investidos na temporada.</p>

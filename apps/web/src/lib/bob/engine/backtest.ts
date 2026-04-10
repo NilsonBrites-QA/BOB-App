@@ -250,7 +250,7 @@ export async function backtestSeason(
 /**
  * Compara o comportamento do motor com diferentes tamanhos de janela de forma.
  *
- * Valida cientificamente o insight Camillo: janela de 10 jogos performa
+ * Valida cientificamente o insight BOB: janela de 10 jogos performa
  * melhor do que 5, 7 ou 15 para identificar âncoras.
  *
  * NÃO usa o banco de dados — recebe MatchInput[] com homeForm10/awayForm10

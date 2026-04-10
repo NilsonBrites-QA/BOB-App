@@ -4,22 +4,22 @@ import { VariationCard } from "@/components/variation-card";
 import { NarrativeSection, NarrativeSkeleton } from "@/components/narrative-section";
 import { ReflectionCard, ReflectionCardSkeleton } from "@/components/reflection-card";
 import { ExcludeMatchButton } from "@/components/exclude-match-button";
+import { GlossarySection } from "@/components/glossary";
 import { anchorFactors, currentRoundSnapshot } from "@/lib/bob/mock-data";
 import { scoreMatch, selectAnchors, generateVariations } from "@/lib/bob/engine";
 import { demoMatches, DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
-import { fetchRoundMatchInputs } from "@/lib/bob/connectors";
-import { getCurrentRound } from "@/lib/bob/connectors/api-football";
+import { fetchRoundMatchInputs, getCurrentRound } from "@/lib/bob/connectors";
 
 // ─── Dados da rodada ──────────────────────────────────────────────────────────
 
 async function getRoundData(season: number, round: number | null) {
   // Se não tiver chave configurada, usar demo
-  if (!process.env.API_FOOTBALL_KEY) {
+  if (!process.env.FOOTBALL_DATA_TOKEN) {
     return { source: "demo" as const, round: null, season: null };
   }
 
   // Auto-detectar rodada atual se não informada
-  const resolvedRound = round ?? (await getCurrentRound(season).catch(() => null));
+  const resolvedRound = round ?? (await getCurrentRound().catch(() => null));
   if (!resolvedRound) {
     return { source: "demo" as const, round: null, season: null };
   }
@@ -27,7 +27,8 @@ async function getRoundData(season: number, round: number | null) {
   try {
     const result = await fetchRoundMatchInputs(season, resolvedRound);
     return { source: "api" as const, ...result };
-  } catch {
+  } catch (err) {
+    console.error("[Dashboard] Falha ao buscar dados reais:", err);
     // Qualquer falha de API → fallback gracioso para demo
     return { source: "demo" as const, round: null, season: null };
   }
@@ -164,7 +165,7 @@ export default async function DashboardPage({
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="kicker text-xs text-muted">Variações geradas pelo motor</p>
-            <h2 className="mt-2 text-3xl font-semibold">As 5 múltiplas respeitam a estrutura-base do método Camillo.</h2>
+            <h2 className="mt-2 text-3xl font-semibold">As 5 múltiplas respeitam a estrutura-base do método BOB.</h2>
           </div>
           <p className="max-w-xl text-right text-sm leading-7 text-muted">
             Variações geradas em tempo real pelo motor determinístico a partir
@@ -195,6 +196,10 @@ export default async function DashboardPage({
           <ReflectionCard season={resolvedSeason} round={resolvedRound} />
         </Suspense>
       )}
+
+      <section className="panel rounded-3xl p-6">
+        <GlossarySection />
+      </section>
     </div>
   );
 }
