@@ -16,13 +16,14 @@ datasource db {
 // ─── Usuários (whitelist) ────────────────────────────────────────────────────
 
 model User {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email     String   @unique
-  name      String?
-  role      UserRole @default(VIEWER)
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email            String   @unique
+  name             String?
+  role             UserRole @default(VIEWER)
+  active           Boolean  @default(true)
+  pushSubscription String?  @map("push_subscription") // JSON serializado
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   @@map("users")
 }
@@ -189,5 +190,64 @@ model RoundResult {
   round             Round    @relation(fields: [roundId], references: [id], onDelete: Cascade)
 
   @@map("round_results")
+}
+
+// ─── Fase 12: Memória Profunda + ABQC ────────────────────────────────────────
+
+/**
+ * Snapshot dos pesos do motor de scoring após calibração de cada rodada.
+ * Permite rastrear a evolução histórica dos pesos e alimentar o ABQC.
+ */
+model FactorWeight {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  season         Int
+  round          Int
+
+  // Pesos dos 10 fatores (somam ~100)
+  tableContext   Decimal  @map("table_context")   @db.Decimal(5, 2)
+  recentForm     Decimal  @map("recent_form")     @db.Decimal(5, 2)
+  momentum       Decimal                           @db.Decimal(5, 2)
+  homeAway       Decimal  @map("home_away")       @db.Decimal(5, 2)
+  goalsXg        Decimal  @map("goals_xg")        @db.Decimal(5, 2)
+  h2h            Decimal                           @db.Decimal(5, 2)
+  absences       Decimal                           @db.Decimal(5, 2)
+  calendar       Decimal                           @db.Decimal(5, 2)
+  market         Decimal                           @db.Decimal(5, 2)
+  motivation     Decimal                           @db.Decimal(5, 2)
+
+  // Métricas da rodada que gerou este snapshot
+  overallAccuracy  Decimal? @map("overall_accuracy")  @db.Decimal(5, 4)
+  anchorAccuracy   Decimal? @map("anchor_accuracy")   @db.Decimal(5, 4)
+  samples          Int?
+  calibrationNotes String?  @map("calibration_notes") @db.Text
+
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([season, round])
+  @@map("factor_weights")
+}
+
+/**
+ * Padrões condicionais emergentes — combinações de fatores que sistematicamente
+ * acertam ou erram. Usado pelo Anti-Correlation Discovery (ABQC 12.6).
+ */
+model ConditionalPattern {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  patternKey     String   @unique @map("pattern_key") // hash determinístico
+  factors        String[]                              // fatores envolvidos
+  condition      String   @db.Text                    // descrição legível
+
+  occurrences    Int      @default(0)
+  correct        Int      @default(0)
+
+  isAntiCorr     Boolean  @default(false) @map("is_anti_corr")
+  isSuppressed   Boolean  @default(false) @map("is_suppressed")
+  lastSeenRound  Int?     @map("last_seen_round")
+  lastSeenSeason Int?     @map("last_seen_season")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt      @map("updated_at")
+
+  @@map("conditional_patterns")
 }
 

@@ -28,11 +28,12 @@ export type VariationInput = {
 // ─── Helpers de conversão ─────────────────────────────────────────────────────
 
 function toAnchorPick(m: ScoredMatch): VariationPick {
-  return { match: m.match, result: "1", odd: m.homeOdd, isAnchor: true };
+  return { fixtureId: m.id, match: m.match, result: "1", odd: m.homeOdd, isAnchor: true };
 }
 
 function toWinPick(m: ScoredMatch): VariationPick {
   return {
+    fixtureId: m.id,
     match: m.match,
     result: m.suggestedResult,
     odd: pickOdd(m, m.suggestedResult),
@@ -40,13 +41,13 @@ function toWinPick(m: ScoredMatch): VariationPick {
 }
 
 function toDrawPick(m: ScoredMatch): VariationPick {
-  return { match: m.match, result: "X", odd: m.drawOdd };
+  return { fixtureId: m.id, match: m.match, result: "X", odd: m.drawOdd };
 }
 
 function toUpsetPick(m: ScoredMatch): VariationPick {
   // Prefere azarão fora de casa; cai para empate se odd do visitante for muito alta
-  if (m.awayOdd <= 3.60) return { match: m.match, result: "2", odd: m.awayOdd };
-  return { match: m.match, result: "X", odd: m.drawOdd };
+  if (m.awayOdd <= 3.60) return { fixtureId: m.id, match: m.match, result: "2", odd: m.awayOdd };
+  return { fixtureId: m.id, match: m.match, result: "X", odd: m.drawOdd };
 }
 
 function pickOdd(m: ScoredMatch, result: "1" | "X" | "2"): number {

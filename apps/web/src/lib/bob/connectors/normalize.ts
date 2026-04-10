@@ -22,7 +22,7 @@ export type NormalizeInput = {
   roundFixtures: AFFixtureItem[];
   /** Classificação geral (type[0] = overall) */
   standings: AFStandingEntry[];
-  /** Últimos 5 jogos por teamId (BSA apenas) */
+  /** Últimos 10 jogos por teamId (BSA apenas) — fase 10: janela estendida */
   teamLastFixtures: Record<number, AFFixtureItem[]>;
   /** Últimos 10 H2H por chave "homeId-awayId" */
   h2hByKey: Record<string, AFFixtureItem[]>;
@@ -40,7 +40,7 @@ export type NormalizeInput = {
  * Extrai form (W/D/L) dos últimos N jogos de um time.
  * Filtra apenas partidas encerradas.
  */
-function extractForm(fixtures: AFFixtureItem[], teamId: number): string[] {
+function extractForm(fixtures: AFFixtureItem[], teamId: number, n = 5): string[] {
   return fixtures
     .filter(
       (f) =>
@@ -48,7 +48,7 @@ function extractForm(fixtures: AFFixtureItem[], teamId: number): string[] {
         f.goals.home !== null &&
         f.goals.away !== null
     )
-    .slice(0, 5)
+    .slice(0, n)
     .map((f) => {
       const isHome = f.teams.home.id === teamId;
       const teamGoals = isHome ? (f.goals.home ?? 0) : (f.goals.away ?? 0);
@@ -97,7 +97,71 @@ function extractAwayPoints(awayClubFixtures: AFFixtureItem[], teamId: number): n
   }, 0);
 }
 
-/** Gols marcados/sofridos nos últimos 5 jogos */
+// ─── Fase 10: funções de enriquecimento ────────────────────────────────────
+
+/** Soma de pontos de uma sequência de resultados (W=3, D=1, L=0) */
+function formPoints(form: string[]): number {
+  return form.reduce((acc, r) => acc + (r === "W" ? 3 : r === "D" ? 1 : 0), 0);
+}
+
+/**
+ * Calcula momentum comparando últimos 5 jogos vs jogos 6-10.
+ * Retorna -1 (em queda acentuada) → 0 (estável) → +1 (acelerando).
+ */
+function extractMomentum(form5: string[], form10: string[]): number {
+  const older = form10.slice(5);
+  if (older.length === 0) return 0;
+  const recentPpg = formPoints(form5) / Math.max(form5.length, 1);
+  const olderPpg  = formPoints(older) / older.length;
+  // normaliza a diferença (-3 a +3 pontos/jogo) para [-1, +1]
+  return Math.max(-1, Math.min(1, (recentPpg - olderPpg) / 3));
+}
+
+/**
+ * Motivação contextual derivada de posição na tabela e rodada.
+ * 0 = situação normal | 1 = relevante (G4/Liberta) | 2 = crítico (rebaixamento/título)
+ */
+function extractMotivation(position: number, round: number): number {
+  const inRelegation   = position >= 17;                       // zona de rebaixamento
+  const relegBattle    = position >= 15 && round >= 25;        // beirando o perigo
+  const titleDispute   = position <= 3  && round >= 30;        // disputa pelo título
+  const liberBattle    = position >= 5  && position <= 8 && round >= 25; // G5-G8 lutando
+  const g4Hot          = position >= 4  && position <= 6 && round >= 30; // G4 decisivo
+
+  if (inRelegation || titleDispute)             return 2;
+  if (relegBattle || liberBattle || g4Hot)      return 1;
+  return 0;
+}
+
+/** Pares de clássicos regionais do Brasileirão (bidirecional) */
+const CLASSICOS = new Set([
+  // Rio
+  "Flamengo-Fluminense",  "Fluminense-Flamengo",
+  "Flamengo-Vasco da Gama", "Vasco da Gama-Flamengo",
+  "Fluminense-Vasco da Gama", "Vasco da Gama-Fluminense",
+  "Botafogo-Flamengo", "Flamengo-Botafogo",
+  "Botafogo-Fluminense", "Fluminense-Botafogo",
+  "Botafogo-Vasco da Gama", "Vasco da Gama-Botafogo",
+  // São Paulo
+  "Palmeiras-Corinthians", "Corinthians-Palmeiras",
+  "Palmeiras-São Paulo",   "São Paulo-Palmeiras",
+  "Corinthians-São Paulo", "São Paulo-Corinthians",
+  "Santos-São Paulo",      "São Paulo-Santos",
+  "Santos-Palmeiras",      "Palmeiras-Santos",
+  // Minas Gerais
+  "Atlético-MG-Cruzeiro", "Cruzeiro-Atlético-MG",
+  // Rio Grande do Sul
+  "Grêmio-Internacional", "Internacional-Grêmio",
+  // Paraná
+  "Athletico Paranaense-Coritiba", "Coritiba-Athletico Paranaense",
+]);
+
+/** Retorna true se o confronto entre homeTeam e awayTeam é um clássico regional */
+function isClassicoRegional(homeTeam: string, awayTeam: string): boolean {
+  return CLASSICOS.has(`${homeTeam}-${awayTeam}`);
+}
+
+/** Gols marcados/sofridos nos últimos N jogos */
 function extractGoals(
   fixtures: AFFixtureItem[],
   teamId: number,
@@ -214,11 +278,20 @@ function teamNeedsWin(
 
 /**
  * Converte dados brutos da API-Football em MatchInput[] para o motor de scoring.
+ *
+ * @param includeCompleted - Quando true, inclui fixtures FT/AET/PEN (backfill mode).
+ *                           Default false (modo live — apenas jogos não finalizados).
  */
 export function normalizeMatchInputs(
   data: NormalizeInput,
-  round: number
+  round: number,
+  includeCompleted = false,
 ): MatchInput[] {
+  // Statuses aceitos em modo live
+  const liveStatuses = new Set(["NS", "TBD", "1H", "2H", "HT"]);
+  // Statuses adicionais aceitos em modo backfill
+  const completedStatuses = new Set(["FT", "AET", "PEN", "AWD"]);
+
   // Indexar standings por teamId para acesso O(1)
   const standingByTeamId = new Map<number, AFStandingEntry>(
     data.standings.map((s) => [s.team.id, s])
@@ -226,13 +299,9 @@ export function normalizeMatchInputs(
 
   return data.roundFixtures
     .filter(
-      // Incluir apenas jogos agendados ou em andamento (não finalizados)
       (f) =>
-        f.fixture.status.short === "NS" || // Not Started
-        f.fixture.status.short === "TBD" ||
-        f.fixture.status.short === "1H" ||
-        f.fixture.status.short === "2H" ||
-        f.fixture.status.short === "HT"
+        liveStatuses.has(f.fixture.status.short) ||
+        (includeCompleted && completedStatuses.has(f.fixture.status.short))
     )
     .map((fixture): MatchInput => {
       const homeId = fixture.teams.home.id;
@@ -251,9 +320,15 @@ export function normalizeMatchInputs(
       const homePosition = homeStanding?.rank ?? 10;
       const awayPosition = awayStanding?.rank ?? 10;
 
-      // Fator 2 — Forma recente (últimos 5 BSA)
-      const homeForm = extractForm(homeLastFix, homeId);
-      const awayForm = extractForm(awayLastFix, awayId);
+      // Fator 2 — Forma recente (últimos 5 jogos)
+      const homeForm = extractForm(homeLastFix, homeId, 5);
+      const awayForm = extractForm(awayLastFix, awayId, 5);
+
+      // Fator 9 — Forma estendida (últimos 10) + momentum
+      const homeForm10   = extractForm(homeLastFix, homeId, 10);
+      const awayForm10   = extractForm(awayLastFix, awayId, 10);
+      const homeMomentum = extractMomentum(homeForm, homeForm10);
+      const awayMomentum = extractMomentum(awayForm, awayForm10);
 
       // Fator 3 — Casa × fora (pontos nos últimos 5 jogos em casa/fora)
       const homeHomePoints = extractHomePoints(homeLastFix, homeId);
@@ -279,6 +354,13 @@ export function normalizeMatchInputs(
 
       // Fator 8 — Mercado (odds)
       const { homeOdd, drawOdd, awayOdd } = extractOdds(odds);
+
+      // Fator 10 — Motivação contextual
+      const motivationHome = extractMotivation(homePosition, round);
+      const motivationAway = extractMotivation(awayPosition, round);
+
+      // RN05 — Clássico regional
+      const isClassico = isClassicoRegional(fixture.teams.home.name, fixture.teams.away.name);
 
       return {
         id: fixture.fixture.id.toString(),
@@ -314,6 +396,15 @@ export function normalizeMatchInputs(
         drawOdd,
         awayOdd,
         homeOddDropped: false, // v1: requer histórico de odds → defaulta false
+
+        // Fase 10 — campos estendidos
+        homeForm10,
+        awayForm10,
+        homeMomentum,
+        awayMomentum,
+        motivationHome,
+        motivationAway,
+        isClassico,
       };
     });
 }

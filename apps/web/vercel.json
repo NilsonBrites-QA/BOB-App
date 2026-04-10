@@ -4,6 +4,30 @@
     {
       "path": "/api/cron/revalidate",
       "schedule": "0 10 * * 5"
+    },
+    {
+      "path": "/api/cron/pre-round",
+      "schedule": "0 12 * * 4"
+    },
+    {
+      "path": "/api/cron/pre-round",
+      "schedule": "0 12 * * 5"
+    },
+    {
+      "path": "/api/cron/lineup-check",
+      "schedule": "0 12 * * 5"
+    },
+    {
+      "path": "/api/cron/lineup-check",
+      "schedule": "0 13 * * 6"
+    },
+    {
+      "path": "/api/cron/lineup-check",
+      "schedule": "0 13 * * 0"
+    },
+    {
+      "path": "/api/cron/post-round",
+      "schedule": "0 10 * * 1"
     }
   ]
 }

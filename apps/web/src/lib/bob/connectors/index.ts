@@ -9,7 +9,7 @@
  * Budget API-Football (100 req/dia):
  *   - standings:          1 req / 24h
  *   - fixtures da rodada: 1 req / 24h
- *   - últimos 5 jogos:   ~2× times únicos / 24h (home + away, sem sobreposição)
+ *   - últimos 10 jogos:  ~2× times únicos / 24h (home + away, sem sobreposição)
  *   - H2H:                1 req por par / 7 dias
  *   - injuries:           1 req por data / 4h
  *   - odds:               1 req por fixture / 3h
@@ -111,10 +111,11 @@ export async function fetchRoundMatchInputs(
 
   // ── Etapa 2: dados dependentes dos fixtures (em paralelo entre si) ─────────
   const [teamLastFixturesArr, h2hArr, injuriesArr, oddsArr] = await Promise.all([
-    // Últimos 5 jogos de cada time (no máximo 20 chamadas, todas cacheadas 24h)
+    // Últimos 10 jogos de cada time (fase 10: janela estendida para momentum)
+    // cacheados 24h — dentro do budget de 100 req/dia
     Promise.all(
       teamIds.map((id) =>
-        getTeamLastFixtures(id, season, 5).then((r) => ({ id, fixtures: r.response }))
+        getTeamLastFixtures(id, season, 10).then((r) => ({ id, fixtures: r.response }))
       )
     ),
 

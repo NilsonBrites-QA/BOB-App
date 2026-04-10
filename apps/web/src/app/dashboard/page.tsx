@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { SectionCard } from "@/components/section-card";
 import { VariationCard } from "@/components/variation-card";
 import { NarrativeSection, NarrativeSkeleton } from "@/components/narrative-section";
+import { ReflectionCard, ReflectionCardSkeleton } from "@/components/reflection-card";
 import { ExcludeMatchButton } from "@/components/exclude-match-button";
 import { anchorFactors, currentRoundSnapshot } from "@/lib/bob/mock-data";
 import { scoreMatch, selectAnchors, generateVariations } from "@/lib/bob/engine";
@@ -186,6 +187,12 @@ export default async function DashboardPage({
             anchors={anchors}
             variations={variations}
           />
+        </Suspense>
+      )}
+
+      {resolvedRound && resolvedSeason && (
+        <Suspense fallback={<ReflectionCardSkeleton />}>
+          <ReflectionCard season={resolvedSeason} round={resolvedRound} />
         </Suspense>
       )}
     </div>

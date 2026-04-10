@@ -20,6 +20,7 @@ export type AnchorCandidate = {
 };
 
 export type VariationPick = {
+  fixtureId?: string; // ID da fixture na API-Football (ex: "1234567")
   match: string;
   result: "1" | "X" | "2";
   odd: number;

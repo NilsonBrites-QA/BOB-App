@@ -53,18 +53,44 @@ export type MatchInput = {
   homeAbsenceRate: number; // ex: 0.1 = 10% do elenco indisponível
   awayAbsenceRate: number;
 
-  // Fator 7 — Calendário competitivo (peso 10)
+  // Fator 7 — Calendário competitivo (peso 8)
   /** O mandante joga competição paralela importante nos próximos 3 dias? */
   homeBigGameAhead: boolean;
   awayBigGameAhead: boolean;
 
-  // Fator 8 — Mercado e movimento de odd (peso 10)
+  // Fator 8 — Mercado e movimento de odd (peso 9)
   /** Odd atual da vitória do mandante na casa de aposta */
   homeOdd: number;
   drawOdd: number;
   awayOdd: number;
   /** A odd do mandante caiu (mercado comprou a vitória)? */
   homeOddDropped: boolean;
+
+  // ── Fase 10: campos estendidos (todos opcionais para retrocompatibilidade) ──
+
+  // Fator 9 — Momentum / tendência de forma (peso 7)
+  /** Últimos 10 resultados: 'W' | 'D' | 'L' */
+  homeForm10?: string[];
+  awayForm10?: string[];
+  /**
+   * Tendência de performance: compara últimos 5 vs jogos 6-10.
+   * -1 = em queda acentuada · 0 = estável · +1 = acelerando
+   */
+  homeMomentum?: number;
+  awayMomentum?: number;
+
+  // Fator 10 — Motivação contextual (peso 3)
+  /**
+   * 0 = situação normal
+   * 1 = relevante (briga por G4 / Libertadores)
+   * 2 = crítico (rebaixamento iminente / disputa pelo título)
+   */
+  motivationHome?: number;
+  motivationAway?: number;
+
+  // RN05 — Classificador de volatilidade
+  /** Clássico regional (Fla×Flu, Pal×Cor, Gre×Inter…) → volatilidade imprevisível */
+  isClassico?: boolean;
 };
 
 export type ScoredMatch = MatchInput & {
@@ -82,16 +108,18 @@ const ANCHOR_THRESHOLD = 60;
 /** Odd máxima aceitável para o mandante ser âncora (value bet implícito) */
 const MAX_ANCHOR_ODD = 2.20;
 
-/** Pesos dos 8 fatores (somam 100) */
+/** Pesos dos 10 fatores (somam 100) */
 const WEIGHTS = {
-  tableContext: 15,
-  recentForm: 12,
-  homeAway: 12,
-  goalsXg: 18,
-  h2h: 8,
-  absences: 15,
-  calendar: 10,
-  market: 10,
+  tableContext: 14, // era 15 (-1)
+  recentForm:   10, // era 12 (-2) — forma curta (5j)
+  momentum:      7, // NOVO — tendência forma curta vs estendida
+  homeAway:     11, // era 12 (-1)
+  goalsXg:      16, // era 18 (-2)
+  h2h:           8, // mantido
+  absences:     14, // era 15 (-1)
+  calendar:      8, // era 10 (-2)
+  market:        9, // era 10 (-1)
+  motivation:    3, // NOVO — contexto de tabela (rebaixamento / título / G4)
 } as const;
 
 // ─── Funções auxiliares ───────────────────────────────────────────────────────
@@ -211,7 +239,7 @@ export function scoreMatch(input: MatchInput): ScoredMatch {
   if (input.awayBigGameAhead)
     reasons.push("Visitante com desgaste de calendário — menos motivação fora");
 
-  // ── Fator 8: Mercado e movimento de odd (peso 10) ─────────────────────────
+  // ── Fator 8: Mercado e movimento de odd (peso 9) ─────────────────────────
   const impliedHome = oddToImpliedProb(input.homeOdd);
   const marketFactor = Math.min(1, impliedHome * 1.5); // normaliza ~0.4–0.9 para 0–1
   const dropBonus = input.homeOddDropped ? 0.1 : 0;
@@ -221,8 +249,34 @@ export function scoreMatch(input: MatchInput): ScoredMatch {
   if (impliedHome > 0.55) reasons.push(`Mercado precifica vitória do mandante (odd ${input.homeOdd})`);
   if (input.homeOddDropped) reasons.push("Odd do mandante em queda — mercado comprou a vitória");
 
+  // ── Fator 9: Momentum / tendência de forma (peso 7) ─────────────────────
+  const hMomentum = input.homeMomentum ?? 0;
+  const aMomentum = input.awayMomentum ?? 0;
+  const f9 = Math.min(1, Math.max(0, 0.5 + (hMomentum - aMomentum) * 0.5));
+  total += f9 * WEIGHTS.momentum;
+
+  if (hMomentum > 0.3) reasons.push("Mandante em trajetória ascendente nas últimas rodadas");
+  if (aMomentum < -0.3) reasons.push("Visitante em queda de rendimento recente");
+  if (hMomentum < -0.3) reasons.push("Atenção: mandante em sequência de queda recente");
+
+  // ── Fator 10: Motivação contextual (peso 3) ──────────────────────────────
+  const mHome = input.motivationHome ?? 0;
+  const mAway = input.motivationAway ?? 0;
+  const f10 = Math.min(1, Math.max(0, 0.5 + (mHome - mAway) * 0.25));
+  total += f10 * WEIGHTS.motivation;
+
+  if (mHome >= 2) reasons.push("Mandante em situação crítica — motivação máxima garantida");
+  if (mAway >= 2) reasons.push("Visitante com pressão extrema — jogo de alto risco");
+  if (mHome === 1) reasons.push("Mandante brigando por G4/Libertadores — motivação elevada");
+
   // ── Score final ───────────────────────────────────────────────────────────
-  const score = Math.round(Math.min(100, Math.max(0, total)));
+  const rawScore = Math.round(Math.min(100, Math.max(0, total)));
+
+  // RN05: Clássico regional → cap no score (imprevisibilidade estrutural)
+  const isClassico = input.isClassico === true;
+  const score = isClassico ? Math.min(rawScore, 55) : rawScore;
+
+  if (isClassico) reasons.push("Clássico regional — volatilidade elevada, score limitado");
 
   // Resultado sugerido
   const homeProb = oddToImpliedProb(input.homeOdd);
@@ -235,10 +289,17 @@ export function scoreMatch(input: MatchInput): ScoredMatch {
         ? "X"
         : "2";
 
+  // RN10: Value Edge — score do algoritmo deve superar a probabilidade implícita do mercado
+  const algoProb = score / 100;
+  const marketImplied = input.homeOdd > 0 ? 1 / input.homeOdd : 0;
+  const hasValueEdge = algoProb > marketImplied;
+
   const isAnchorCandidate =
+    !isClassico &&                        // RN05: clássico nunca é âncora
     score >= ANCHOR_THRESHOLD &&
     suggestedResult === "1" &&
-    input.homeOdd <= MAX_ANCHOR_ODD;
+    input.homeOdd <= MAX_ANCHOR_ODD &&
+    hasValueEdge;                         // RN10: Value Edge obrigatório
 
   return {
     ...input,

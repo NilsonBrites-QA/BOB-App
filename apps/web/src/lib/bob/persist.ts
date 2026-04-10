@@ -129,6 +129,7 @@ export async function saveRound(input: SaveRoundInput): Promise<SaveRoundResult>
         await tx.pick.create({
           data: {
             variationId: dbVariation.id,
+            fixtureId:   p.fixtureId ?? null,
             match:       p.match,
             result:      toPickResult(p.result),
             odd:         p.odd,

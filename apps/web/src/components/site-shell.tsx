@@ -41,6 +41,7 @@ export async function SiteShell({ children }: SiteShellProps) {
             <nav className="flex flex-wrap items-center justify-end gap-2">
               <NavLink href="/">Início</NavLink>
               <NavLink href="/dashboard">Dashboard</NavLink>
+              <NavLink href="/chat">Chat</NavLink>
               <NavLink href="/admin">Admin</NavLink>
               <NavLink href="/investimento-retorno">Investimento x Retorno</NavLink>
               <form action={signOut}>
