@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { ensurePrimaryAdminAccess, isWhitelisted } from "@/lib/auth/whitelist";
 import { createAuthRouteClient } from "@/utils/supabase/auth-route";
 
 const PRIMARY_ADMIN_EMAIL = "nilson.brites@gmail.com";
@@ -17,10 +17,17 @@ export async function GET(request: Request) {
   const authClient = await createAuthRouteClient(successResponse);
   const { supabase } = authClient;
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
     return NextResponse.redirect(`${origin}/auth/error?reason=exchange_failed`);
+  }
+
+  if (data.session?.access_token && data.session.refresh_token) {
+    await supabase.auth.setSession({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+    });
   }
 
   // Verificar whitelist
@@ -36,28 +43,9 @@ export async function GET(request: Request) {
 
   const normalizedEmail = user.email.toLowerCase();
 
-  // Bootstrap do admin principal: sempre garante acesso e papel ADMIN.
-  if (normalizedEmail === PRIMARY_ADMIN_EMAIL) {
-    await prisma.user.upsert({
-      where: { email: PRIMARY_ADMIN_EMAIL },
-      create: {
-        email: PRIMARY_ADMIN_EMAIL,
-        role: "ADMIN",
-        active: true,
-      },
-      update: {
-        role: "ADMIN",
-        active: true,
-      },
-    });
-  }
+  await ensurePrimaryAdminAccess(normalizedEmail);
 
-  const whitelisted = await prisma.user.findUnique({
-    where: { email: normalizedEmail },
-    select: { active: true },
-  });
-
-  if (!whitelisted?.active) {
+  if (!(await isWhitelisted(normalizedEmail))) {
     authClient.setResponse(NextResponse.redirect(`${origin}/auth/error?reason=not_authorized`));
     await supabase.auth.signOut();
     return authClient.getResponse();

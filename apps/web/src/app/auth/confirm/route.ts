@@ -1,78 +1,165 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { ensurePrimaryAdminAccess, isWhitelisted } from "@/lib/auth/whitelist";
 import { createAuthRouteClient } from "@/utils/supabase/auth-route";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 const PRIMARY_ADMIN_EMAIL = "nilson.brites@gmail.com";
 
-/**
- * /auth/confirm — verificação de magic link sem PKCE.
- *
- * O fluxo padrão (/auth/callback?code=...) requer que o código PKCE
- * esteja em cookie do mesmo browser que iniciou o login.
- * Isso quebra quando o link é aberto em outro browser, dispositivo
- * ou dentro do app de email (Gmail webview, etc.).
- *
- * Esta rota usa verifyOtp({ token_hash }) — verificação server-side
- * direta, sem dependência de cookies. Funciona de qualquer browser.
- *
- * O template do email usa:
- *   {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink
- */
-export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
-  const token_hash = searchParams.get("token_hash");
-  const type = (searchParams.get("type") || "magiclink") as EmailOtpType;
-  const next = searchParams.get("next") ?? "/dashboard";
+type ResponseMode = "redirect" | "json";
 
-  if (!code && !token_hash) {
-    return NextResponse.redirect(`${origin}/auth/error?reason=missing_code`);
-  }
+function resolveNextPath(next: string | null | undefined) {
+  return next?.startsWith("/") ? next : "/dashboard";
+}
 
-  const successResponse = NextResponse.redirect(`${origin}${next}`);
-  const authClient = await createAuthRouteClient(successResponse);
+function buildSuccessResponse(origin: string, next: string, mode: ResponseMode) {
+  return mode === "json"
+    ? NextResponse.json({ ok: true, next })
+    : NextResponse.redirect(`${origin}${next}`);
+}
+
+function buildErrorResponse(
+  origin: string,
+  reason: string,
+  mode: ResponseMode,
+  status: number,
+  errorMessage?: string,
+) {
+  return mode === "json"
+    ? NextResponse.json({ ok: false, reason, errorMessage }, { status })
+    : NextResponse.redirect(`${origin}/auth/error?reason=${reason}`);
+}
+
+async function finalizeAuthenticatedUser(
+  authClient: Awaited<ReturnType<typeof createAuthRouteClient>>,
+  origin: string,
+  next: string,
+  mode: ResponseMode,
+) {
   const { supabase } = authClient;
-
-  const { error } = token_hash
-    ? await supabase.auth.verifyOtp({ token_hash, type })
-    : await supabase.auth.exchangeCodeForSession(code!);
-
-  if (error) {
-    return NextResponse.redirect(`${origin}/auth/error?reason=exchange_failed`);
-  }
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user?.email) {
-    authClient.setResponse(NextResponse.redirect(`${origin}/auth/error?reason=no_email`));
+    authClient.setResponse(
+      buildErrorResponse(origin, "no_email", mode, 401, "Sessao invalida apos validar o codigo."),
+    );
     await supabase.auth.signOut();
     return authClient.getResponse();
   }
 
   const normalizedEmail = user.email.toLowerCase();
 
-  // Bootstrap do admin principal
-  if (normalizedEmail === PRIMARY_ADMIN_EMAIL) {
-    await prisma.user.upsert({
-      where: { email: PRIMARY_ADMIN_EMAIL },
-      create: { email: PRIMARY_ADMIN_EMAIL, role: "ADMIN", active: true },
-      update: { role: "ADMIN", active: true },
-    });
-  }
+  await ensurePrimaryAdminAccess(normalizedEmail);
 
-  const whitelisted = await prisma.user.findUnique({
-    where: { email: normalizedEmail },
-    select: { active: true },
-  });
-
-  if (!whitelisted?.active) {
-    authClient.setResponse(NextResponse.redirect(`${origin}/auth/error?reason=not_authorized`));
+  if (!(await isWhitelisted(normalizedEmail))) {
+    authClient.setResponse(
+      buildErrorResponse(origin, "not_authorized", mode, 403, "Este email nao esta liberado no painel Admin."),
+    );
     await supabase.auth.signOut();
     return authClient.getResponse();
   }
 
+  authClient.setResponse(buildSuccessResponse(origin, next, mode));
   return authClient.getResponse();
+}
+
+async function persistSessionIfPresent(
+  authClient: Awaited<ReturnType<typeof createAuthRouteClient>>,
+  session:
+    | {
+        access_token: string;
+        refresh_token: string;
+      }
+    | null
+    | undefined,
+) {
+  if (!session?.access_token || !session.refresh_token) {
+    return;
+  }
+
+  await authClient.supabase.auth.setSession({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  });
+}
+
+/**
+ * /auth/confirm
+ *
+ * GET: fallback para links de email existentes.
+ * POST: validacao direta do codigo OTP digitado no login.
+ */
+export async function GET(request: Request) {
+  const { searchParams, origin } = new URL(request.url);
+  const code = searchParams.get("code");
+  const token_hash = searchParams.get("token_hash");
+  const type = (searchParams.get("type") || "magiclink") as EmailOtpType;
+  const next = resolveNextPath(searchParams.get("next"));
+
+  const successResponse = buildSuccessResponse(origin, next, "redirect");
+  const authClient = await createAuthRouteClient(successResponse);
+  const { supabase } = authClient;
+
+  if (!code && !token_hash) {
+    return finalizeAuthenticatedUser(authClient, origin, next, "redirect");
+  }
+
+  const { data, error } = token_hash
+    ? await supabase.auth.verifyOtp({ token_hash, type })
+    : await supabase.auth.exchangeCodeForSession(code!);
+
+  if (error) {
+    return buildErrorResponse(origin, "exchange_failed", "redirect", 401);
+  }
+
+  await persistSessionIfPresent(authClient, data.session);
+
+  return finalizeAuthenticatedUser(authClient, origin, next, "redirect");
+}
+
+export async function POST(request: Request) {
+  const { origin } = new URL(request.url);
+  const payload = await request.json().catch(() => null) as
+    | { email?: string; token?: string; next?: string }
+    | null;
+
+  const email = payload?.email?.trim().toLowerCase();
+  const token = payload?.token?.replace(/\s+/g, "").trim();
+  const next = resolveNextPath(payload?.next);
+
+  if (!email || !token) {
+    return buildErrorResponse(
+      origin,
+      "missing_code",
+      "json",
+      400,
+      "Informe o email e o codigo recebido para continuar.",
+    );
+  }
+
+  const successResponse = buildSuccessResponse(origin, next, "json");
+  const authClient = await createAuthRouteClient(successResponse);
+  const { supabase } = authClient;
+
+  const { data, error } = await supabase.auth.verifyOtp({
+    email,
+    token,
+    type: "email",
+  });
+
+  if (error) {
+    return buildErrorResponse(
+      origin,
+      "exchange_failed",
+      "json",
+      401,
+      "Codigo invalido ou expirado. Solicite um novo codigo e tente novamente.",
+    );
+  }
+
+  await persistSessionIfPresent(authClient, data.session);
+
+  return finalizeAuthenticatedUser(authClient, origin, next, "json");
 }

@@ -15,32 +15,80 @@ function resolveAppOrigin() {
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const enableGoogleLogin = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_LOGIN === "true";
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function requestCode() {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      setError("Informe um email valido para receber o codigo.");
+      return false;
+    }
+
     setLoading(true);
     setError(null);
-    const appOrigin = resolveAppOrigin();
+    setNotice(null);
 
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
-      email,
+      email: normalizedEmail,
       options: {
-        emailRedirectTo: `${appOrigin}/auth/confirm?next=/dashboard`,
+        shouldCreateUser: false,
       },
     });
 
     if (error) {
-      setError("Não foi possível enviar o link. Verifique o e-mail e tente novamente.");
+      setError("Nao foi possivel enviar o codigo. Verifique o email, a whitelist e tente novamente em alguns segundos.");
+      setLoading(false);
+      return false;
     } else {
       setSent(true);
+      setCode("");
+      setNotice(`Codigo enviado para ${normalizedEmail}.`);
     }
 
     setLoading(false);
+    return true;
+  }
+
+  async function handleRequestSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await requestCode();
+  }
+
+  async function handleVerifySubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedCode = code.replace(/\s+/g, "").trim();
+
+    if (!normalizedCode) {
+      setError("Digite o codigo recebido por email.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.verifyOtp({
+      email: normalizedEmail,
+      token: normalizedCode,
+      type: "email",
+    });
+
+    if (error) {
+      setError("Codigo invalido ou expirado. Solicite um novo codigo e tente novamente.");
+      setLoading(false);
+      return;
+    }
+
+    window.location.assign("/auth/confirm?next=/dashboard");
   }
 
   async function handleGoogleLogin() {
@@ -93,11 +141,11 @@ export default function LoginPage() {
               </div>
               <div className="rounded-2xl border border-border bg-surface-strong px-4 py-3">
                 <p className="text-xs text-muted">Método</p>
-                <p className="mt-1 text-sm font-semibold">Magic link por e-mail</p>
+                <p className="mt-1 text-sm font-semibold">Codigo temporario por e-mail</p>
               </div>
               <div className="rounded-2xl border border-border bg-surface-strong px-4 py-3">
                 <p className="text-xs text-muted">Segurança</p>
-                <p className="mt-1 text-sm font-semibold">Sessão curta + revisão manual de acesso</p>
+                <p className="mt-1 text-sm font-semibold">Codigo unico + sessao curta + whitelist</p>
               </div>
             </div>
           </section>
@@ -109,22 +157,78 @@ export default function LoginPage() {
             </div>
 
             {sent ? (
-              <div className="panel rounded-3xl p-8 text-center">
-                <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-accent/15 text-accent-strong">OK</div>
-                <h3 className="mb-2 text-xl font-semibold">Verifique seu e-mail</h3>
-                <p className="text-sm leading-7 text-muted">
-                  Enviamos um link de acesso para <strong className="text-foreground">{email}</strong>.
-                  O link expira em 1 hora.
-                </p>
+              <form onSubmit={handleVerifySubmit} className="panel rounded-3xl p-8">
+                <div className="mb-6 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="kicker mb-2">Codigo enviado</p>
+                    <h3 className="text-xl font-semibold">Digite o codigo para entrar</h3>
+                    <p className="mt-2 text-sm leading-7 text-muted">
+                      Use o mesmo email <strong className="text-foreground">{email}</strong> e informe o codigo recebido.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-surface-strong px-3 py-2 text-xs text-muted">
+                    8 digitos
+                  </div>
+                </div>
+
+                <label className="block">
+                  <span className="mb-2 block text-xs font-medium uppercase tracking-widest text-muted">
+                    Codigo de acesso
+                  </span>
+                  <input
+                    type="text"
+                    required
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    placeholder="Digite o codigo recebido"
+                    className="w-full rounded-xl border border-border bg-surface-strong px-4 py-3 text-center text-lg font-semibold tracking-[0.35em] outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
+                  />
+                </label>
+
+                {notice && (
+                  <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{notice}</p>
+                )}
+
+                {error && (
+                  <p className="mt-3 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+                )}
+
                 <button
-                  onClick={() => { setSent(false); setEmail(""); }}
-                  className="mt-6 text-sm font-medium text-accent underline-offset-4 hover:underline"
+                  type="submit"
+                  disabled={loading}
+                  className="mt-6 w-full rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
                 >
-                  Usar outro e-mail
+                  {loading ? "Validando..." : "Entrar com codigo"}
                 </button>
-              </div>
+
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => { void requestCode(); }}
+                    disabled={loading}
+                    className="w-full rounded-xl border border-border px-4 py-3 text-sm font-semibold text-foreground transition hover:border-accent disabled:opacity-50"
+                  >
+                    Reenviar codigo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSent(false);
+                      setCode("");
+                      setNotice(null);
+                      setError(null);
+                    }}
+                    disabled={loading}
+                    className="w-full rounded-xl border border-border px-4 py-3 text-sm font-semibold text-foreground transition hover:border-accent disabled:opacity-50"
+                  >
+                    Trocar email
+                  </button>
+                </div>
+              </form>
             ) : (
-              <form onSubmit={handleSubmit} className="panel rounded-3xl p-8">
+              <form onSubmit={handleRequestSubmit} className="panel rounded-3xl p-8">
                 <label className="block">
                   <span className="mb-2 block text-xs font-medium uppercase tracking-widest text-muted">
                     E-mail corporativo
@@ -143,12 +247,16 @@ export default function LoginPage() {
                   <p className="mt-3 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
                 )}
 
+                {notice && (
+                  <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{notice}</p>
+                )}
+
                 <button
                   type="submit"
                   disabled={loading}
                   className="mt-6 w-full rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
                 >
-                  {loading ? "Enviando..." : "Enviar link de acesso"}
+                  {loading ? "Enviando..." : "Enviar codigo de acesso"}
                 </button>
 
                 {enableGoogleLogin && (
@@ -163,7 +271,7 @@ export default function LoginPage() {
                 )}
 
                 <p className="mt-4 text-center text-xs text-muted">
-                  Sem liberação prévia no Admin, o acesso será negado.
+                  Sem liberacao previa no Admin, o acesso sera negado.
                 </p>
               </form>
             )}
