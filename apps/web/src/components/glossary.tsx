@@ -37,7 +37,7 @@ const GLOSSARY: Record<string, string> = {
   clássico: "Derby regional (ex: Fla-Flu, Corinthians x Palmeiras). Jogos com alta imprevisibilidade.",
 
   // Método
-  BOB: "Big Odds Bot — sistema que analisa cada rodada do Brasileirão e gera 5 variações de apostas múltiplas com odds acima de 500x.",
+  BOB: "Big Odds Brasileirão — sistema que analisa cada rodada do Brasileirão e gera 5 variações de apostas múltiplas com odds acima de 500x.",
   múltipla: "Tipo de aposta que combina vários jogos. Todas as previsões precisam acertar para ganhar, mas o retorno é muito maior.",
   rodada: "Conjunto de 10 jogos disputados na mesma semana do Brasileirão. São 38 rodadas por temporada.",
   cutoff: "Momento limite para fechar as variações — até 1h antes do primeiro jogo da rodada.",

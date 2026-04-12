@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- BOB — Big Odds Bot • Schema inicial do banco de dados
+-- BOB — Big Odds Brasileirão • Schema inicial do banco de dados
 -- Versão: 001
 -- Execute este script no Supabase SQL Editor:
 -- https://supabase.com/dashboard/project/zravuslhqluaxjuakecp/sql/new

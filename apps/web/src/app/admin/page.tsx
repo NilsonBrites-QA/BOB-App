@@ -5,6 +5,7 @@ import { adminControls, featureFlags, integrations, memoryLayers } from "@/lib/b
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
 import { changeUserRole, grantUserAccess, toggleUserAccess } from "./access-actions";
+import { getSimulationProgress } from "@/lib/bob/engine/blind-simulation";
 
 export default async function AdminPage() {
   const cookieStore = await cookies();
@@ -38,6 +39,8 @@ export default async function AdminPage() {
   const users = await prisma.user.findMany({
     orderBy: [{ role: "asc" }, { createdAt: "asc" }],
   });
+
+  const simProgress = await getSimulationProgress().catch(() => null);
 
   return (
     <div className="flex flex-1 flex-col gap-8 px-4 py-10 sm:px-6 lg:px-10">
@@ -157,6 +160,73 @@ export default async function AdminPage() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      {/* ── Simulação Retroativa ─────────────────────────────────── */}
+      <section className="panel rounded-3xl p-6">
+        <p className="kicker text-xs text-muted">Simulação retroativa cega</p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_auto]">
+          <div>
+            <h2 className="text-2xl font-semibold">Progresso da simulação</h2>
+            <p className="mt-1 text-sm leading-7 text-muted">
+              BOB simula rodadas passadas como se fossem atuais e mede a acurácia por variação.
+              Cada execução do cron <code className="rounded bg-surface-strong px-1 text-xs">/api/cron/simulate</code> processa uma rodada.
+            </p>
+          </div>
+          {simProgress && (
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <span className="text-3xl font-semibold tabular-nums">
+                {simProgress.simulated}
+                <span className="text-base font-normal text-muted">/{simProgress.totalRounds}</span>
+              </span>
+              <span className="text-xs text-muted">rodadas simuladas</span>
+            </div>
+          )}
+        </div>
+
+        {simProgress && (
+          <div className="mt-5 space-y-3">
+            {/* Barra de progresso */}
+            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-strong">
+              <div
+                className="h-full rounded-full bg-accent transition-all"
+                style={{
+                  width: simProgress.totalRounds > 0
+                    ? `${Math.round((simProgress.simulated / simProgress.totalRounds) * 100)}%`
+                    : "0%",
+                }}
+              />
+            </div>
+
+            {/* Métricas resumidas */}
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-[20px] border border-border bg-surface-strong px-4 py-3">
+                <p className="text-xs text-muted">Simuladas</p>
+                <p className="mt-1 text-xl font-semibold tabular-nums">{simProgress.simulated}</p>
+              </div>
+              <div className="rounded-[20px] border border-border bg-surface-strong px-4 py-3">
+                <p className="text-xs text-muted">Pendentes</p>
+                <p className="mt-1 text-xl font-semibold tabular-nums">{simProgress.pending}</p>
+              </div>
+              <div className="rounded-[20px] border border-border bg-surface-strong px-4 py-3">
+                <p className="text-xs text-muted">Última rodada simulada</p>
+                <p className="mt-1 text-xl font-semibold tabular-nums">
+                  {simProgress.lastRound !== null ? `R${simProgress.lastRound}` : "—"}
+                </p>
+              </div>
+            </div>
+
+            {simProgress.pending === 0 && simProgress.totalRounds > 0 && (
+              <p className="text-xs text-accent font-medium">
+                ✓ Todas as rodadas disponíveis já foram simuladas.
+              </p>
+            )}
+          </div>
+        )}
+
+        {!simProgress && (
+          <p className="mt-4 text-sm text-muted">Sem dados de simulação ainda. Execute <code className="rounded bg-surface-strong px-1 text-xs">/api/cron/simulate</code> após o backfill.</p>
+        )}
       </section>
 
       {/* ── Relatórios ────────────────────────────────────────────── */}

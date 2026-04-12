@@ -15,6 +15,7 @@
 import * as fd from "./football-data";
 import type { FDMatch, FDStandingEntry, FDH2HResponse } from "./football-data";
 import type { MatchInput } from "@/lib/bob/engine/scoring";
+import { fetchWeatherForRound } from "./weather";
 
 // ─── Tipos exportados ─────────────────────────────────────────────────────────
 
@@ -26,6 +27,8 @@ export type FetchRoundResult = {
     fixtureCount: number;
     generatedAt: string;
     source: "football-data" | "api-football" | "demo";
+    /** ISO string da data/hora do primeiro jogo da rodada (UTC) */
+    firstMatchAt: string | null;
   };
 };
 
@@ -136,6 +139,36 @@ function calcMotivation(position: number, round: number): number {
   return 0;
 }
 
+/** Zona de pressão tática na tabela (Fator 14) */
+function calcPressureZone(
+  position: number,
+  round: number
+): "title" | "g4" | "g6" | "neutral" | "z5" | "z4" {
+  if (position <= 1 && round >= 25) return "title";
+  if (position <= 4) return "g4";
+  if (position <= 6) return "g6";
+  if (position >= 18) return "z4";
+  if (position >= 16) return "z5";
+  return "neutral";
+}
+
+/** Taxa de vitória do mandante em casa nos últimos 10 jogos (Fator 15) */
+function calcStadiumWinRate(allFinished: FDMatch[], teamId: number): number {
+  const homeGames = allFinished
+    .filter(
+      (m) =>
+        m.homeTeam.id === teamId &&
+        m.status === "FINISHED" &&
+        m.score.fullTime.home !== null
+    )
+    .sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())
+    .slice(0, 10);
+
+  if (homeGames.length === 0) return 0.5; // neutro se sem histórico
+  const wins = homeGames.filter((m) => m.score.fullTime.home! > m.score.fullTime.away!).length;
+  return wins / homeGames.length;
+}
+
 /** H2H win rate do mandante */
 function calcH2HWinRate(h2h: FDH2HResponse, homeTeamId: number): number {
   if (!h2h.aggregates || h2h.aggregates.numberOfMatches === 0) return 0.4;
@@ -212,6 +245,7 @@ export async function fetchRoundMatchInputs(
         fixtureCount: 0,
         generatedAt: new Date().toISOString(),
         source: "football-data",
+        firstMatchAt: null,
       },
     };
   }
@@ -230,6 +264,15 @@ export async function fetchRoundMatchInputs(
       // Se falhar (rate limit), continua sem H2H para esse jogo
     }
   }
+
+  // ── Etapa 2B: Clima para todos os jogos da rodada (paralelo, non-blocking) ─
+  const weatherMap = await fetchWeatherForRound(
+    roundMatches.map((m) => ({
+      id: m.id.toString(),
+      homeTeam: m.homeTeam.shortName || m.homeTeam.name,
+      utcDate: m.utcDate,
+    }))
+  ).catch(() => new Map());
 
   // ── Etapa 3: Normalizar para MatchInput[] ───────────────────────────────
   const allFinished = finishedRes.matches;
@@ -313,6 +356,26 @@ export async function fetchRoundMatchInputs(
       motivationHome: calcMotivation(homePos, round),
       motivationAway: calcMotivation(awayPos, round),
       isClassico: isClassico(m.homeTeam.name, m.awayTeam.name),
+
+      // Fase B: Fatores 11-15
+      refereeCardRate: 2.0, // placeholder — sem fonte de dados de árbitro na API free
+
+      // F12 — Clima (open-meteo.com)
+      weatherRain:       weatherMap.get(m.id.toString())?.rain ?? false,
+      weatherIntensity:  weatherMap.get(m.id.toString())?.intensity ?? "none",
+      weatherTempC:      weatherMap.get(m.id.toString())?.tempC ?? 22,
+
+      // F13 — Copa paralela: placeholder (API-Football não cobre 2025+ no free plan)
+      homeCupCompetition: "none",
+      awayCupCompetition: "none",
+
+      // F14 — Pressão de posição (calculada a partir da classificação)
+      homePressureZone: calcPressureZone(homePos, round),
+      awayPressureZone: calcPressureZone(awayPos, round),
+
+      // F15 — Histórico no estádio: derivado do aproveitamento em casa da temporada
+      // Média ponderada: form em casa nos últimos 10 jogos como mandante
+      homeStadiumWinRate: calcStadiumWinRate(allFinished, homeId),
     };
   });
 
@@ -324,6 +387,10 @@ export async function fetchRoundMatchInputs(
       fixtureCount: roundMatches.length,
       generatedAt: new Date().toISOString(),
       source: "football-data",
+      firstMatchAt: roundMatches
+        .map((m) => m.utcDate)
+        .filter(Boolean)
+        .sort()[0] ?? null,
     },
   };
 }

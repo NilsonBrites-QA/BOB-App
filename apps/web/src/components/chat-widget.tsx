@@ -6,9 +6,18 @@
  * Botão fixo no canto inferior direito que expande uma janela de chat.
  * Disponível em todas as páginas (inserido no layout root).
  * Reutiliza o endpoint /api/bob/chat que já tem acesso ao cérebro.
+ *
+ * Features:
+ *  - Markdown renderizado nas respostas do BOB (react-markdown + remark-gfm)
+ *  - Persistência no localStorage (últimas 50 mensagens)
+ *  - Botão "Limpar conversa" no header
  */
 
 import { useState, useRef, useEffect, FormEvent } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type Message = {
   id:      number;
@@ -17,6 +26,8 @@ type Message = {
   model?:  string;
 };
 
+// ─── Constantes ───────────────────────────────────────────────────────────────
+
 const STARTERS = [
   "Quem lidera o Brasileirão?",
   "Quais são os âncoras da rodada?",
@@ -24,15 +35,60 @@ const STARTERS = [
   "Como funciona o score do BOB?",
 ];
 
+const STORAGE_KEY = "bob-chat-messages";
+const MAX_STORED   = 50;
+
+// ─── Helpers de localStorage ──────────────────────────────────────────────────
+
+function loadMessages(): Message[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as Message[]).slice(-MAX_STORED);
+  } catch {
+    return [];
+  }
+}
+
+function saveMessages(msgs: Message[]) {
+  try {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(msgs.slice(-MAX_STORED)),
+    );
+  } catch {
+    // Storage indisponível — continua sem persistência
+  }
+}
+
+// ─── Componente ───────────────────────────────────────────────────────────────
+
 export function ChatWidget() {
-  const [open, setOpen]             = useState(false);
-  const [messages, setMessages]     = useState<Message[]>([]);
-  const [input, setInput]           = useState("");
-  const [loading, setLoading]       = useState(false);
-  const [error, setError]           = useState<string | null>(null);
+  const [open, setOpen]         = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput]       = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLTextAreaElement>(null);
   const idRef     = useRef(0);
+
+  // Restaurar histórico do localStorage na montagem
+  useEffect(() => {
+    const stored = loadMessages();
+    if (stored.length > 0) {
+      idRef.current = Math.max(...stored.map((m) => m.id), 0);
+      setMessages(stored);
+    }
+  }, []);
+
+  // Persistir sempre que as mensagens mudarem
+  useEffect(() => {
+    if (messages.length > 0) saveMessages(messages);
+  }, [messages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -41,6 +97,12 @@ export function ChatWidget() {
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
+
+  function clearConversation() {
+    setMessages([]);
+    idRef.current = 0;
+    try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* noop */ }
+  }
 
   async function send(text: string) {
     if (!text.trim() || loading) return;
@@ -112,6 +174,7 @@ export function ChatWidget() {
       {/* Janela do chat */}
       {open && (
         <div className="fixed bottom-24 right-6 z-50 flex h-[520px] w-[380px] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl sm:w-[420px]">
+
           {/* Header */}
           <div className="flex items-center gap-3 border-b border-border bg-surface-strong px-4 py-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent)] text-xs font-bold text-white">
@@ -121,6 +184,15 @@ export function ChatWidget() {
               <p className="text-sm font-semibold text-foreground">BOB</p>
               <p className="text-[11px] text-muted">Big Odds Brasileirão · ao vivo</p>
             </div>
+            {messages.length > 0 && (
+              <button
+                onClick={clearConversation}
+                className="rounded-md px-2 py-1 text-[11px] text-muted hover:bg-surface hover:text-foreground"
+                title="Limpar conversa"
+              >
+                Limpar
+              </button>
+            )}
             <button
               onClick={() => setOpen(false)}
               className="rounded-full p-1.5 text-muted hover:bg-surface hover:text-foreground"
@@ -171,7 +243,15 @@ export function ChatWidget() {
                         : "rounded-bl-sm border border-border bg-surface-strong text-foreground",
                     ].join(" ")}
                   >
-                    {m.content}
+                    {m.role === "assistant" ? (
+                      <div className="prose prose-xs max-w-none dark:prose-invert prose-p:my-0.5 prose-p:leading-relaxed prose-headings:font-semibold prose-headings:text-foreground prose-strong:text-foreground prose-code:rounded prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-[10px] prose-li:my-0 prose-ul:my-1 prose-ol:my-1">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {m.content}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      m.content
+                    )}
                   </div>
                 </div>
               ))}
@@ -227,8 +307,10 @@ export function ChatWidget() {
               </button>
             </form>
           </div>
+
         </div>
       )}
     </>
   );
 }
+

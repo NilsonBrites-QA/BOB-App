@@ -186,11 +186,64 @@ function isUpsetCandidate(m: ScoredMatch): boolean {
   return !m.isAnchorCandidate && m.awayOdd < 3.60;
 }
 
+// ─── Diversificação de pools ──────────────────────────────────────────────────
+
+/**
+ * Calcula % de sobreposição de picks entre duas variações (pelo fixtureId).
+ * Retorna valor entre 0 (nenhum pick comum) e 1 (100% iguais).
+ */
+function overlapRatio(a: VariationPick[], b: VariationPick[]): number {
+  if (a.length === 0 || b.length === 0) return 0;
+  const idsA = new Set(a.map((p) => p.fixtureId));
+  const shared = b.filter((p) => idsA.has(p.fixtureId)).length;
+  return shared / Math.max(a.length, b.length);
+}
+
+/**
+ * Se duas variações tiverem sobreposição > 70%, força divergência
+ * substituindo o último fill não-âncora da variação B por um pick de
+ * um pool reserva (alternativas ainda não usadas).
+ */
+function enforceDivergence(
+  primary: VariationPick[],
+  target: VariationPick[],
+  reserve: ScoredMatch[],
+): VariationPick[] {
+  if (overlapRatio(primary, target) <= 0.70) return target;
+
+  const usedIds = new Set([
+    ...primary.map((p) => p.fixtureId),
+    ...target.map((p) => p.fixtureId),
+  ]);
+
+  // Encontrar candidatos do reserve ainda não usados
+  const candidates = reserve.filter((m) => !usedIds.has(m.id));
+  if (candidates.length === 0) return target; // reserva esgotada, retorna como está
+
+  // Substituir o último fill não-âncora de target por um candidato do reserve
+  const result = [...target];
+  const lastFillIndex = result.map((p, i) => ({ p, i }))
+    .filter(({ p }) => !p.isAnchor)
+    .at(-1)?.i;
+
+  if (lastFillIndex === undefined) return result;
+
+  const sub = candidates[0]!;
+  result[lastFillIndex] = toWinPick(sub);
+  return result;
+}
+
 // ─── Gerador principal ────────────────────────────────────────────────────────
 
 export function generateVariations({ anchors, pool }: VariationInput): Variation[] {
-  // Pool ordenado por score decrescente
+  // Pool ordenado por score decrescente (padrão: maior score → mais confiável)
   const sorted = [...pool].sort((a, b) => b.score - a.score);
+  // Pool alternativo para V4: ordena por homeOdd crescente (favoritos mais arriscados)
+  // Isso garante que V4 selecione fills diferentes de V3 (V3 usa score, V4 usa homeOdd)
+  const sortedByOdd = [...pool]
+    .filter(isFillCandidate)
+    .sort((a, b) => b.homeOdd - a.homeOdd); // odds mais altas primeiro = favoritos menos óbvios
+
   const allMatches = [...anchors, ...pool]; // para boostToFloor
 
   const draws = sorted
@@ -200,6 +253,10 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
   const fills = sorted.filter(isFillCandidate);
   const clean = sorted.filter((m) => !isDirty(m));
   const upsets = sorted.filter(isUpsetCandidate).sort((a, b) => a.awayOdd - b.awayOdd);
+
+  // Pool de reserva para enforceDivergence: tudo que não está em fills nem em draws
+  const reserveIds = new Set([...fills, ...draws].map((m) => m.id));
+  const reserve = sorted.filter((m) => !reserveIds.has(m.id));
 
   // ── V1: Segurança (4 âncoras + 4 fills, ~8 jogos) ────────────────────────
   const v1PicksRaw: VariationPick[] = [
@@ -241,6 +298,7 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
   };
 
   // ── V3: Lógica Pura (4 âncoras + 5 fills, ~9 jogos) ──────────────────────
+  // Usa score-ordered fills: os favoritos mais óbvios pelo algoritmo
   const v3FillPicks = fills.slice(0, 5).map((m, i) =>
     // Último fill inclui um empate para variedade de odd
     i === 4 ? toDrawPick(m) : toWinPick(m),
@@ -263,18 +321,24 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     picks: v3Picks,
   };
 
-  // ── V4: Curta de pressão (3 âncoras + 4 fills limpos, ~7 jogos) ──────────
-  const v4CleanFills = clean.filter(isFillCandidate).slice(0, 4);
-  const v4FillPicks = v4CleanFills.map((m, i) => {
+  // ── V4: Curta de pressão (3 âncoras + 4 fills, ~7 jogos) ──────────────
+  // Usa odd-ordered fills: favoritos MENOS óbvios (homeOdd mais alta)
+  // Isso garante perfil de risco distinto de V3 e diversidade de picks
+  const v4OddFills = sortedByOdd
+    .filter((m) => !anchors.some((a) => a.id === m.id))
+    .slice(0, 4);
+  const v4FillPicks = v4OddFills.map((m, i) => {
     // Último fill pode ser contrarian se tiver azarão viável
-    if (i === v4CleanFills.length - 1 && m.awayOdd <= 3.60) return toUpsetPick(m);
+    if (i === v4OddFills.length - 1 && m.awayOdd <= 3.60) return toUpsetPick(m);
     return toWinPick(m);
   });
   const v4PicksRaw: VariationPick[] = [
     ...anchors.slice(0, 3).map(toAnchorPick),
     ...v4FillPicks,
   ].slice(0, 7);
-  const v4Picks = boostToFloor(v4PicksRaw, ODD_FLOORS.V4!, allMatches);
+  const v4PicksRawBoosted = boostToFloor(v4PicksRaw, ODD_FLOORS.V4!, allMatches);
+  // Garantir divergência: se V3 e V4 ainda têm sobreposição > 70%, forçar substituição
+  const v4Picks = enforceDivergence(v3Picks, v4PicksRawBoosted, [...clean, ...reserve]);
 
   const v4: Variation = {
     id: "V4",

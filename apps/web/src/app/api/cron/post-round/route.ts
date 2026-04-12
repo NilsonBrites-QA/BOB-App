@@ -19,6 +19,7 @@ import { getMatchesByMatchday } from "@/lib/bob/connectors/football-data";
 import type { FDMatch } from "@/lib/bob/connectors/football-data";
 import { markPickResult } from "@/lib/bob/persist";
 import { prisma }         from "@/lib/db";
+import { selfReflect }    from "@/lib/bob/ai/self-reflection";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -180,6 +181,16 @@ export async function GET(request: Request) {
   revalidatePath("/dashboard");
   revalidatePath("/investimento-retorno");
   revalidatePath("/admin");
+  revalidatePath("/historico");
+  revalidatePath("/classificacao");
+  revalidatePath("/calendario");
+
+  // 7. Reflexão autônoma do BOB (fire-and-forget — não bloqueia a resposta)
+  if (allFinished) {
+    selfReflect(season, round).catch((err) =>
+      console.warn("[BOB/post-round] selfReflect falhou (não crítico):", err)
+    );
+  }
 
   return NextResponse.json({
     ok:            true,

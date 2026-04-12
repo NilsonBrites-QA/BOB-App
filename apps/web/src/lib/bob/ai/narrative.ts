@@ -55,7 +55,7 @@ function buildPrompt(input: NarrativeInput): string {
     )
     .join("\n");
 
-  return `Você é o BOB — Big Odds Bot, analista especializado em apostas no Brasileirão Série A. Analise os dados abaixo da Rodada ${input.round}/${input.season} e escreva uma análise operacional em português brasileiro.
+  return `Você é o BOB — Big Odds Brasileirão, analista especializado em apostas no Brasileirão Série A. Analise os dados abaixo da Rodada ${input.round}/${input.season} e escreva uma análise operacional em português brasileiro.
 
 ÂNCORAS SELECIONADAS PELO MOTOR:
 ${anchorLines}

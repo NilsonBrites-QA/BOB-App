@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// BOB — Big Odds Bot • Prisma Schema
+// BOB — Big Odds Brasileirão • Prisma Schema
 // ─────────────────────────────────────────────────────────────────────────────
 
 generator client {
@@ -31,6 +31,8 @@ model User {
 enum UserRole {
   ADMIN
   VIEWER
+
+  @@map("user_role")
 }
 
 // ─── Temporada ───────────────────────────────────────────────────────────────
@@ -76,6 +78,8 @@ enum RoundStatus {
   READY     // pronto para entrega
   DELIVERED // entregue ao usuário
   CLOSED    // resultado registrado
+
+  @@map("round_status")
 }
 
 // ─── Âncora ──────────────────────────────────────────────────────────────────
@@ -121,6 +125,8 @@ enum VariationStatus {
   ACTIVE     // variação ativa
   REVISED    // reanalise após novo dado
   SUPERSEDED // substituída por nova versão
+
+  @@map("variation_status")
 }
 
 // ─── Pick (jogo dentro da variação) ──────────────────────────────────────────
@@ -147,6 +153,8 @@ enum PickResult {
   HOME // 1
   DRAW // X
   AWAY // 2
+
+  @@map("pick_result")
 }
 
 // ─── Evento de Memória ────────────────────────────────────────────────────────
@@ -171,6 +179,8 @@ enum MemoryLayer {
   NORMALIZED // dado processado
   PATTERNS   // padrões identificados
   DECISIONS  // decisões e justificativas
+
+  @@map("memory_layer")
 }
 
 // ─── Resultado da Rodada ─────────────────────────────────────────────────────
@@ -249,5 +259,42 @@ model ConditionalPattern {
   updatedAt      DateTime @updatedAt      @map("updated_at")
 
   @@map("conditional_patterns")
+}
+
+// ─── Sprint 4: Simulação Retroativa Cega ─────────────────────────────────────
+
+/**
+ * Resultado de uma rodada simulada pelo motor cego.
+ * "Cego" = motor gerou previsões sem ver o resultado; depois comparamos com o real.
+ * Armazenado APÓS o resultado da rodada ser conhecido (via backfill ou post-round).
+ */
+model SimulationResult {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  season             Int
+  round              Int
+
+  // Acurácia das âncoras
+  anchorCount        Int      @default(0) @map("anchor_count")
+  anchorsCorrect     Int      @default(0) @map("anchors_correct")
+
+  // Acurácia geral (todos os picks de todas as variações)
+  totalPicks         Int      @default(0) @map("total_picks")
+  correctPicks       Int      @default(0) @map("correct_picks")
+
+  // Detalhamento por variação [{code, picksTotal, picksCorrect, won, projectedOdd}]
+  variationsJson     Json     @default("[]") @map("variations_json")
+
+  // Maior odd projetada vs real (variação vencedora, se houver)
+  bestOddProjected   Decimal? @map("best_odd_projected") @db.Decimal(12, 2)
+  bestOddReal        Decimal? @map("best_odd_real")      @db.Decimal(12, 2)
+
+  // Se selfCalibrate() já foi rodado para este resultado
+  calibrated         Boolean  @default(false)
+
+  simulatedAt        DateTime @default(now()) @map("simulated_at")
+  notes              String?  @db.Text
+
+  @@unique([season, round])
+  @@map("simulation_results")
 }
 

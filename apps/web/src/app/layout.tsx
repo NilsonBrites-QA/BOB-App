@@ -17,7 +17,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BOB | Big Odds Bot",
+  title: "BOB | Big Odds Brasileirão",
   description:
     "Motor anal\u00edtico para apostas esportivas com big odds no Brasileir\u00e3o. Cinco varia\u00e7\u00f5es por rodada, mem\u00f3ria evolutiva e IA dual.",
   manifest: "/manifest.json",
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     shortcut: "/favicon.ico",
   },
   openGraph: {
-    title: "BOB — Big Odds Bot",
+    title: "BOB — Big Odds Brasileirão",
     description: "Motor anal\u00edtico para apostas esportivas. Cinco varia\u00e7\u00f5es por rodada.",
     images: [{ url: "/web-app-manifest-512x512.png", width: 512, height: 512 }],
     type: "website",
@@ -39,7 +39,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary",
-    title: "BOB — Big Odds Bot",
+    title: "BOB — Big Odds Brasileirão",
     images: ["/web-app-manifest-512x512.png"],
   },
   appleWebApp: {

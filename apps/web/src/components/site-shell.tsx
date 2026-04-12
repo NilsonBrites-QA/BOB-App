@@ -4,6 +4,7 @@ import { cookies, headers } from "next/headers";
 import { NavLink } from "@/components/nav-link";
 import { signOut } from "@/app/auth/actions";
 import { createClient } from "@/utils/supabase/server";
+import { prisma } from "@/lib/db";
 
 type SiteShellProps = {
   children: React.ReactNode;
@@ -24,6 +25,13 @@ export async function SiteShell({ children }: SiteShellProps) {
 
   const isLoggedIn = Boolean(user);
 
+  const isAdmin = isLoggedIn && user?.email
+    ? await prisma.user.findUnique({
+        where:  { email: user.email.toLowerCase() },
+        select: { role: true },
+      }).then((u) => u?.role === "ADMIN").catch(() => false)
+    : false;
+
   return (
     <div className="layout-container flex min-h-full flex-col">
       <header className="sticky top-0 z-20 border-b border-border bg-[rgba(252,250,244,0.86)] backdrop-blur-xl">
@@ -40,13 +48,33 @@ export async function SiteShell({ children }: SiteShellProps) {
           </Link>
 
           {isLoggedIn ? (
-            <nav className="flex flex-wrap items-center justify-end gap-2">
-              <NavLink href="/">Início</NavLink>
+            <nav className="flex flex-wrap items-center justify-end gap-1">
+              {/* Análise */}
               <NavLink href="/dashboard">Dashboard</NavLink>
+              <NavLink href="/estatisticas">Estatísticas</NavLink>
+              <NavLink href="/historico">Histórico</NavLink>
+
+              <span className="mx-1 h-3 w-px shrink-0 bg-border" aria-hidden />
+
+              {/* Liga */}
+              <NavLink href="/classificacao">Classificação</NavLink>
+              <NavLink href="/calendario">Calendário</NavLink>
+
+              <span className="mx-1 h-3 w-px shrink-0 bg-border" aria-hidden />
+
+              {/* Ferramentas */}
               <NavLink href="/chat">Chat</NavLink>
-              <NavLink href="/admin">Admin</NavLink>
-              <NavLink href="/investimento-retorno">Investimento x Retorno</NavLink>
-              <form action={signOut}>
+              <NavLink href="/investimento-retorno">I×R</NavLink>
+
+              {/* Admin — apenas para ADMIN */}
+              {isAdmin && (
+                <>
+                  <span className="mx-1 h-3 w-px shrink-0 bg-border" aria-hidden />
+                  <NavLink href="/admin">Admin</NavLink>
+                </>
+              )}
+
+              <form action={signOut} className="ml-1">
                 <button
                   type="submit"
                   className="rounded-xl border border-border px-3 py-1.5 text-xs text-muted transition hover:border-accent hover:text-foreground"
