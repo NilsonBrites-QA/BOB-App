@@ -160,7 +160,7 @@ export function MatchDetailModal({
     >
       <div
         ref={dialogRef}
-        className="relative w-full max-w-2xl rounded-[28px] border border-border bg-[var(--surface-strong)] shadow-2xl"
+        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-border bg-[var(--surface-strong)] shadow-2xl"
         role="dialog"
         aria-modal="true"
       >

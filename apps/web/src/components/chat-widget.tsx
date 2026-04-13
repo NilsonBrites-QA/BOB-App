@@ -236,7 +236,7 @@ export function ChatWidget() {
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold text-foreground">BOB</p>
-              <p className="text-[11px] text-muted">Big Odds BrasileirÃ£o Â· ao vivo</p>
+              <p className="text-[11px] text-muted">Big Odds Brasileirão · ao vivo</p>
             </div>
             {messages.length > 0 && (
               <button
@@ -260,13 +260,13 @@ export function ChatWidget() {
           {/* Messages area */}
           <div className="flex-1 overflow-y-auto px-4 py-3">
             {histLoading && (
-              <p className="text-center text-[11px] text-muted py-4">Carregando histÃ³ricoâ€¦</p>
+              <p className="text-center text-[11px] text-muted py-4">Carregando histórico…</p>
             )}
 
             {!histLoading && messages.length === 0 && (
               <div className="space-y-3">
                 <p className="text-center text-xs text-muted">
-                  Pergunte sobre a rodada, classificaÃ§Ã£o ou as variaÃ§Ãµes.
+                  Pergunte sobre a rodada, classificação ou as variações.
                 </p>
                 <div className="grid gap-1.5">
                   {STARTERS.map((s) => (
@@ -361,7 +361,7 @@ export function ChatWidget() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Pergunte ao BOBâ€¦"
+                placeholder="Pergunte ao BOB…"
                 rows={1}
                 disabled={loading}
                 className="flex-1 resize-none rounded-xl border border-border bg-surface px-3 py-2 text-xs leading-5 text-foreground placeholder:text-muted/50 focus:border-accent focus:outline-none disabled:opacity-50"
