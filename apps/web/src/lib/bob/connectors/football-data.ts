@@ -142,6 +142,19 @@ export async function getStandings(): Promise<FDStandingsResponse> {
 }
 
 /**
+ * Classificação atual do Brasileirão Série B.
+ * Retorna null se não disponível no plano free ou se BSB não estiver cadastrado.
+ * Cache: 4h
+ */
+export async function getSerieBStandings(): Promise<FDStandingsResponse | null> {
+  try {
+    return await fdFetch<FDStandingsResponse>("/competitions/BSB/standings", 14400);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Jogos de uma rodada específica.
  * Cache: 4h
  */

@@ -55,24 +55,32 @@ function calcTitleProb(points: number, maxPoints: number, position: number, ppg:
 }
 
 function calcRelegProb(points: number, maxPoints: number, position: number, roundsDone: number): RelegProb {
-  // Rebaixamento confirmado: matematicamente impossível escapar
-  if (position >= 17 && maxPoints < SAFE_THRESHOLD - 5) return "Rebaixado confirmado";
-  // CHECK DE POSIÇÃO: times no top 6 são automaticamente Seguros
-  // (sem este check, o líder com 25pts mostrava "Atenção" pois gap=45-25=20)
+  const remaining       = Math.max(1, TOTAL_ROUNDS - roundsDone);
+  const ppg             = roundsDone > 0 ? points / roundsDone : 1.0;
+  const projectedPoints = Math.round(points + ppg * remaining);
+
+  // Matematicamente impossível escapar
+  if (maxPoints < SAFE_THRESHOLD - 5) return "Rebaixado confirmado";
+
+  // Top 6 é seguro para rebaixamento
   if (position <= 6) return "Seguro";
-  // Seguro por pontos
+
+  // Pontos suficientes por folga confortável
   if (points >= SAFE_THRESHOLD + 10) return "Seguro";
-  // Para times realmente em risco: normalizar gap por rodadas restantes
-  const remaining = Math.max(1, TOTAL_ROUNDS - roundsDone);
-  const gap = SAFE_THRESHOLD - points;
-  // Se o time tem PPG para alcançar a safe zone sem precisar de corrida improváve
-  const ppg = roundsDone > 0 ? points / roundsDone : 0;
-  const projectedPoints = points + ppg * remaining;
-  if (projectedPoints >= SAFE_THRESHOLD + 5) return "Seguro";
-  // Classificação progressiva
-  if (gap <= 3)  return "Crítico";
-  if (gap <= 10) return "Risco real";
-  if (gap <= 20) return "Atenção";
+
+  // Projeção confortavelmente acima do threshold com margem
+  if (projectedPoints >= SAFE_THRESHOLD + 10) return "Seguro";
+
+  // Zona de rebaixamento (17–20): nunca pode ser "Seguro" — está na zona por definição
+  if (position >= 17) {
+    if (projectedPoints < SAFE_THRESHOLD - 5) return "Crítico";    // trajetória aponta rebaixamento
+    if (projectedPoints < SAFE_THRESHOLD + 3) return "Risco real"; // na corda-bamba
+    return "Atenção";                                               // na zona mas projeção aponta escapar
+  }
+
+  // Posições 7–16: risco progressivo baseado em projeção de pontos finais
+  if (projectedPoints < SAFE_THRESHOLD)     return "Risco real";
+  if (projectedPoints < SAFE_THRESHOLD + 5) return "Atenção";
   return "Seguro";
 }
 

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TeamBadge } from "./team-badge";
 import { ExcludeMatchButton } from "./exclude-match-button";
 import type { ScoredMatch } from "@/lib/bob/engine/scoring";
+
 type AnchorCardProps = {
   anchor: ScoredMatch;
   badgeUrl?: string | null;
@@ -22,12 +23,85 @@ function barColor(score: number): string {
   return "bg-muted";
 }
 
+// ─── Hook: preferências de âncora via localStorage ────────────────────────────
+
+const STORAGE_KEY = "bob-anchor-prefs";
+
+type AnchorPref = "accepted" | "rejected" | null;
+
+function loadAnchorPref(matchId: string): AnchorPref {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const prefs = JSON.parse(raw) as Record<string, AnchorPref>;
+    return prefs[matchId] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function saveAnchorPref(matchId: string, pref: AnchorPref) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const prefs: Record<string, AnchorPref> = raw ? JSON.parse(raw) : {};
+    if (pref === null) {
+      delete prefs[matchId];
+    } else {
+      prefs[matchId] = pref;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // localStorage indisponível
+  }
+}
+
+// ─── Componente ───────────────────────────────────────────────────────────────
+
 export function AnchorCard({ anchor, badgeUrl, awayBadgeUrl }: AnchorCardProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [pref, setPref] = useState<AnchorPref>(null);
   const isMarginal = anchor.isMarginalAnchor === true;
 
+  // Carregar preferência salva após mount (sem SSR mismatch)
+  useEffect(() => {
+    setPref(loadAnchorPref(anchor.id));
+  }, [anchor.id]);
+
+  function togglePref(next: "accepted" | "rejected") {
+    const newPref = pref === next ? null : next;
+    setPref(newPref);
+    saveAnchorPref(anchor.id, newPref);
+  }
+
+  const borderCls =
+    pref === "accepted" ? "border-accent bg-accent/5"
+    : pref === "rejected" ? "border-red-400/40 opacity-60"
+    : "border-border";
+
   return (
-    <div className="rounded-[20px] border border-border bg-surface-strong p-4">
+    <div className={`rounded-[20px] border bg-surface-strong p-4 transition ${borderCls}`}>
+      {/* Preferência do usuário */}
+      {pref && (
+        <div className="mb-3 flex items-center justify-between">
+          {pref === "accepted" && (
+            <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-[10px] font-bold text-accent">
+              ✓ SELECIONADA
+            </span>
+          )}
+          {pref === "rejected" && (
+            <span className="rounded-full bg-red-500/10 px-2.5 py-0.5 text-[10px] font-bold text-red-500">
+              ✗ REJEITADA
+            </span>
+          )}
+          <button
+            onClick={() => togglePref(pref)}
+            className="text-[10px] text-muted/60 hover:text-muted underline"
+          >
+            desfazer
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
@@ -80,6 +154,34 @@ export function AnchorCard({ anchor, badgeUrl, awayBadgeUrl }: AnchorCardProps) 
           ))}
         </ul>
       )}
+
+      {/* Buttons: aceitar / rejeitar */}
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => togglePref("accepted")}
+          className={[
+            "rounded-full px-3 py-1 text-[11px] font-semibold transition",
+            pref === "accepted"
+              ? "bg-accent text-white"
+              : "border border-accent/30 text-accent hover:bg-accent/10",
+          ].join(" ")}
+        >
+          {pref === "accepted" ? "✓ Selecionada" : "✓ Selecionar"}
+        </button>
+        <button
+          type="button"
+          onClick={() => togglePref("rejected")}
+          className={[
+            "rounded-full px-3 py-1 text-[11px] font-semibold transition",
+            pref === "rejected"
+              ? "bg-red-500/15 text-red-600"
+              : "border border-border text-muted hover:border-red-300 hover:text-red-500",
+          ].join(" ")}
+        >
+          {pref === "rejected" ? "✗ Rejeitada" : "✗ Rejeitar"}
+        </button>
+      </div>
 
       {/* Factor drawer toggle */}
       {anchor.factorBreakdown && anchor.factorBreakdown.length > 0 && (

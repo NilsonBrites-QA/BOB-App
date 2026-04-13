@@ -126,6 +126,30 @@ export default async function EstatisticasPage({
               {totalGames} jogos analisados · {anchors.length} âncoras identificadas.
               Clique em qualquer jogo para ver o detalhamento completo dos 15 fatores.
             </p>
+            {/* Navegação entre rodadas */}
+            {roundData.source === "api" && roundData.meta && (
+              <div className="mt-4 flex items-center gap-2">
+                {roundData.meta.round > 1 && (
+                  <a
+                    href={`?season=${paramSeason}&round=${roundData.meta.round - 1}&sort=${sortKey}`}
+                    className="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-muted transition hover:border-accent/50 hover:text-foreground"
+                  >
+                    ← Rodada {roundData.meta.round - 1}
+                  </a>
+                )}
+                <span className="rounded-full bg-accent/10 px-4 py-1.5 text-xs font-semibold text-accent">
+                  Rodada {roundData.meta.round}
+                </span>
+                {roundData.meta.round < 38 && (
+                  <a
+                    href={`?season=${paramSeason}&round=${roundData.meta.round + 1}&sort=${sortKey}`}
+                    className="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-muted transition hover:border-accent/50 hover:text-foreground"
+                  >
+                    Rodada {roundData.meta.round + 1} →
+                  </a>
+                )}
+              </div>
+            )}
           </div>
           <div className="grid shrink-0 grid-cols-3 gap-3 lg:grid-cols-3">
             <SectionCard

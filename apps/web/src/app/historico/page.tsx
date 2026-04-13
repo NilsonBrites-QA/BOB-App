@@ -187,7 +187,7 @@ export default async function HistoricoPage({
   const maxAccuracy = Math.max(...metrics.perRound.map((r) => r.accuracy ?? 0), 0.01);
 
   // ── Dados do Cérebro BOB ─────────────────────────────────────────────────
-  const [factorWeights, simResults, antiPatterns] = await Promise.all([
+  const [factorWeights, simResults, antiPatterns, reflections] = await Promise.all([
     prisma.factorWeight.findMany({
       where: { season: currentYear },
       orderBy: { round: "desc" },
@@ -203,6 +203,12 @@ export default async function HistoricoPage({
       orderBy: { occurrences: "desc" },
       take: 8,
     }).catch(() => []),
+    prisma.memoryEvent.findMany({
+      where: { type: "reflection", layer: "DECISIONS" },
+      orderBy: { createdAt: "desc" },
+      take: 15,
+      select: { id: true, content: true, createdAt: true, roundId: true },
+    }).catch(() => [] as { id: string; content: unknown; createdAt: Date; roundId: string | null }[]),
   ]);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -451,6 +457,81 @@ export default async function HistoricoPage({
             </section>
           )}
         </>
+      )}
+
+      {/* ── Reflexões do BOB ──────────────────────────────────────── */}
+      {reflections.length > 0 && (
+        <section className="space-y-4">
+          <div className="panel rounded-[28px] p-6">
+            <p className="kicker text-xs text-muted">Memória viva · IA pós-rodada</p>
+            <h2 className="mt-1 text-2xl font-semibold">Reflexões do BOB</h2>
+            <p className="mt-1.5 text-sm text-muted">
+              O que o motor de IA pensou e aprendeu após cada rodada. Análise gerada automaticamente.
+            </p>
+          </div>
+          <div className="space-y-4">
+            {reflections.map((r) => {
+              const c = r.content as Record<string, unknown>;
+              const text = typeof c?.publicText === "string" ? c.publicText : null;
+              const title = typeof c?.title === "string" ? c.title : "Reflexão pós-rodada";
+              const weaknesses = Array.isArray(c?.weaknesses) ? (c.weaknesses as string[]) : [];
+              const strengths = Array.isArray(c?.strengths) ? (c.strengths as string[]) : [];
+              const date = r.createdAt.toLocaleDateString("pt-BR", {
+                day: "2-digit", month: "long", year: "numeric",
+                timeZone: "America/Sao_Paulo",
+              });
+              if (!text) return null;
+              return (
+                <div key={r.id} className="panel rounded-[20px] p-5 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{title}</p>
+                      <p className="text-xs text-muted">{date}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-accent/10 px-2.5 py-0.5 text-[10px] font-semibold text-accent">
+                      BOB · IA
+                    </span>
+                  </div>
+                  <p className="text-sm leading-6 text-foreground/80 whitespace-pre-wrap">{text}</p>
+                  {(strengths.length > 0 || weaknesses.length > 0) && (
+                    <div className="grid gap-3 sm:grid-cols-2 mt-2">
+                      {strengths.length > 0 && (
+                        <div className="rounded-xl bg-accent/5 px-4 py-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-accent mb-1.5">O que funcionou</p>
+                          <ul className="space-y-1">
+                            {strengths.map((s, i) => (
+                              <li key={i} className="text-xs text-foreground/70">✓ {s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {weaknesses.length > 0 && (
+                        <div className="rounded-xl bg-signal/5 px-4 py-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-signal mb-1.5">Pontos de atenção</p>
+                          <ul className="space-y-1">
+                            {weaknesses.map((w, i) => (
+                              <li key={i} className="text-xs text-foreground/70">⚠ {w}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {reflections.length === 0 && (
+        <section className="panel rounded-[20px] px-6 py-10 text-center">
+          <p className="text-2xl">🧠</p>
+          <p className="mt-2 text-sm font-medium text-foreground">Nenhuma reflexão registrada ainda</p>
+          <p className="mt-1 text-xs text-muted">
+            As reflexões do BOB aparecem aqui após o cron pós-rodada ser executado.
+          </p>
+        </section>
       )}
 
       {/* ── Cérebro BOB: Autoevolução ─────────────────────────────── */}
