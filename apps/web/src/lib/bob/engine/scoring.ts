@@ -132,6 +132,17 @@ export type MatchInput = {
    * Default: 0.5 (50% se sem histórico)
    */
   homeStadiumWinRate?: number; // 0–1
+
+  /** Status do jogo na API — "SCHEDULED" | "TIMED" | "FINISHED" | "IN_PLAY" | etc. */
+  status?: string;
+};
+
+export type FactorBreakdown = {
+  id: string;          // ex: "F1"
+  label: string;       // ex: "Posição na tabela"
+  weight: number;      // 0–15 (peso no score)
+  value: number;       // 0–1 (fator normalizado)
+  contribution: number; // value × weight = pontos contribuídos
 };
 
 export type ScoredMatch = MatchInput & {
@@ -139,6 +150,10 @@ export type ScoredMatch = MatchInput & {
   reasons: string[];
   suggestedResult: "1" | "X" | "2";
   isAnchorCandidate: boolean; // true se score >= ANCHOR_THRESHOLD
+  /** true quando selecionada via fallback L1/L2 (value edge ausente ou score relaxado) */
+  isMarginalAnchor?: boolean;
+  /** Breakdown completo dos 15 fatores para o factor drawer */
+  factorBreakdown?: FactorBreakdown[];
 };
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -421,12 +436,35 @@ export function scoreMatch(input: MatchInput): ScoredMatch {
     input.homeOdd <= MAX_ANCHOR_ODD &&
     hasValueEdge;                         // RN10: Value Edge obrigatório
 
+  const factorBreakdown: FactorBreakdown[] = [
+    { id: "F1",  label: "Posição na tabela",      weight: WEIGHTS.tableContext,     value: f1,  contribution: f1  * WEIGHTS.tableContext     },
+    { id: "F2",  label: "Forma recente",           weight: WEIGHTS.recentForm,      value: f2,  contribution: f2  * WEIGHTS.recentForm       },
+    { id: "F3",  label: "Casa/Fora",               weight: WEIGHTS.homeAway,        value: f3,  contribution: f3  * WEIGHTS.homeAway         },
+    { id: "F4",  label: "Gols / xG",               weight: WEIGHTS.goalsXg,         value: f4,  contribution: f4  * WEIGHTS.goalsXg          },
+    { id: "F5",  label: "Histórico H2H",           weight: WEIGHTS.h2h,             value: f5,  contribution: f5  * WEIGHTS.h2h              },
+    { id: "F6",  label: "Desfalques",              weight: WEIGHTS.absences,        value: f6,  contribution: f6  * WEIGHTS.absences         },
+    { id: "F7",  label: "Calendário",              weight: WEIGHTS.calendar,        value: f7,  contribution: f7  * WEIGHTS.calendar         },
+    { id: "F8",  label: "Odds de mercado",         weight: WEIGHTS.market,          value: f8,  contribution: f8  * WEIGHTS.market           },
+    { id: "F9",  label: "Momentum",                weight: WEIGHTS.momentum,        value: f9,  contribution: f9  * WEIGHTS.momentum         },
+    { id: "F10", label: "Motivação",               weight: WEIGHTS.motivation,      value: f10, contribution: f10 * WEIGHTS.motivation       },
+    { id: "F11", label: "Árbitro",                 weight: WEIGHTS.referee,         value: f11, contribution: f11 * WEIGHTS.referee          },
+    { id: "F12", label: "Clima",                   weight: WEIGHTS.weather,         value: f12, contribution: f12 * WEIGHTS.weather          },
+    { id: "F13", label: "Copa paralela",           weight: WEIGHTS.parallelCup,     value: f13, contribution: f13 * WEIGHTS.parallelCup      },
+    { id: "F14", label: "Pressão de posição",      weight: WEIGHTS.positionPressure,value: f14, contribution: f14 * WEIGHTS.positionPressure },
+    { id: "F15", label: "Histórico no estádio",    weight: WEIGHTS.stadiumRecord,   value: f15, contribution: f15 * WEIGHTS.stadiumRecord    },
+  ].map((f) => ({
+    ...f,
+    value: Math.round(f.value * 100) / 100,
+    contribution: Math.round(f.contribution * 10) / 10,
+  }));
+
   return {
     ...input,
     score,
-    reasons: reasons.slice(0, 5), // máximo 5 razões por âncora
+    reasons: reasons.slice(0, 5), // máximo 5 razões no summary; drawer mostra todos
     suggestedResult,
     isAnchorCandidate,
+    factorBreakdown,
   };
 }
 
@@ -435,11 +473,50 @@ export function scoreMatch(input: MatchInput): ScoredMatch {
 export function selectAnchors(matches: MatchInput[]): ScoredMatch[] {
   const scored = matches.map(scoreMatch);
 
-  // Filtra candidatos válidos e ordena por score decrescente
-  const candidates = scored
+  // Candidatos primários: passam em TODOS os critérios (incluindo value edge)
+  const primaryCandidates = scored
     .filter((m) => m.isAnchorCandidate)
     .sort((a, b) => b.score - a.score);
 
-  // Retorna até 4 âncoras
-  return candidates.slice(0, 4);
+  if (primaryCandidates.length >= 2) {
+    return primaryCandidates.slice(0, 4);
+  }
+
+  // Fallback: se menos de 2 âncoras primárias, relaxar critérios progressivamente
+  // Nível 1: sem exigência de value edge (mas mantém score ≥ 60 e odd ≤ 2.20)
+  const fallbackL1 = scored
+    .filter(
+      (m) =>
+        !m.isClassico &&
+        m.score >= ANCHOR_THRESHOLD &&
+        m.suggestedResult === "1" &&
+        m.homeOdd <= MAX_ANCHOR_ODD
+    )
+    .sort((a, b) => b.score - a.score);
+
+  if (fallbackL1.length >= 2) {
+    return fallbackL1.slice(0, 4).map((m) => ({
+      ...m,
+      isMarginalAnchor: true,
+      reasons: [
+        ...m.reasons,
+        "⚠️ Value edge não confirmado — odds possivelmente sem arbitragem",
+      ],
+    }));
+  }
+
+  // Nível 2: top-3 por score (score ≥ 55, odd ≤ 2.50) — máxima permissividade
+  // Apenas quando rodada tem muito poucos favoritos claros
+  const fallbackL2 = scored
+    .filter((m) => !m.isClassico && m.score >= 55 && m.homeOdd <= 2.50)
+    .sort((a, b) => b.score - a.score);
+
+  return fallbackL2.slice(0, 3).map((m) => ({
+    ...m,
+    isMarginalAnchor: true,
+    reasons: [
+      ...m.reasons,
+      "⚠️ Âncora marginal — rodada com poucos favoritos claros",
+    ],
+  }));
 }

@@ -1,4 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import type { Variation } from "@/lib/bob/types";
+import { TeamBadge } from "./team-badge";
 
 // ─── Config de risco por variação ─────────────────────────────────────────────
 
@@ -48,26 +52,24 @@ function formatOdd(odd: number): string {
   return `${odd.toFixed(0)}×`;
 }
 
-function pickInitials(match: string): [string, string] {
+function splitTeams(match: string): [string, string] {
   const parts = match.split(/\s+x\s+/i);
-  const take = (s?: string) =>
-    (s ?? "?")
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((w) => w[0] ?? "")
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  return [take(parts[0]), take(parts[1])];
+  return [(parts[0] ?? "").trim(), (parts[1] ?? "").trim()];
 }
 
 type VariationCardProps = {
   variation: Variation;
+  teamBadges?: Record<string, string | null>;
 };
 
-export function VariationCard({ variation }: VariationCardProps) {
+export function VariationCard({ variation, teamBadges = {} }: VariationCardProps) {
   const risk = RISK_CONFIG[variation.id] ?? RISK_CONFIG.V1!;
+  const [picksOpen, setPicksOpen] = useState(true);
+
+  // Verifica se alguma âncora desta variação é "marginal" (fallback L1/L2)
+  const hasMarginalAnchor = variation.picks.some(
+    (p) => p.isAnchor && p.isMarginal
+  );
 
   return (
     <article className="panel rounded-3xl p-5">
@@ -82,6 +84,14 @@ export function VariationCard({ variation }: VariationCardProps) {
               <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${risk.dot}`} />
               {risk.label}
             </span>
+            {hasMarginalAnchor && (
+              <span
+                title="Esta variação contém âncora marginal — rodada com poucos favoritos claros"
+                className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+              >
+                ⚠ marginal
+              </span>
+            )}
           </div>
           <h3 className="mt-1.5 text-xl font-semibold leading-snug">{variation.title}</h3>
         </div>
@@ -117,56 +127,84 @@ export function VariationCard({ variation }: VariationCardProps) {
         </span>
       </div>
 
-      {/* ── Picks ── */}
-      <div className="mt-4 overflow-hidden rounded-[16px] border border-border divide-y divide-border">
-        {/* Cabeçalho */}
-        <div className="grid grid-cols-[1fr_62px_50px] bg-[rgba(21,86,61,0.04)] px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted">
-          <span>Jogo</span>
-          <span>Resultado</span>
-          <span className="text-right">Odd</span>
-        </div>
+      {/* ── Picks (accordion) ── */}
+      <div className="mt-4 overflow-hidden rounded-2xl border border-border">
+        {/* Linha de toggle */}
+        <button
+          type="button"
+          onClick={() => setPicksOpen((v) => !v)}
+          className="flex w-full items-center justify-between bg-[rgba(21,86,61,0.04)] px-4 py-2 text-left"
+          aria-expanded={picksOpen}
+        >
+          <div className="grid flex-1 grid-cols-[1fr_62px_50px] text-[10px] font-semibold uppercase tracking-wider text-muted">
+            <span>Jogo</span>
+            <span>Resultado</span>
+            <span className="text-right">Odd</span>
+          </div>
+          <span className={`ml-2 text-muted transition-transform duration-200 ${picksOpen ? "rotate-180" : "rotate-0"}`}>
+            ▾
+          </span>
+        </button>
 
-        {/* Linhas */}
-        {variation.picks.map((pick) => {
-          const [homeAbbr, awayAbbr] = pickInitials(pick.match);
-          return (
-            <div
-              key={`${variation.id}-${pick.match}`}
-              className="grid grid-cols-[1fr_62px_50px] items-center gap-2 px-4 py-2.5"
-            >
-              {/* Jogo */}
-              <div className="flex min-w-0 items-center gap-2">
-                {/* Par de iniciais sobrepostas */}
-                <div className="flex shrink-0 -space-x-1.5">
-                  <span className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full bg-accent/10 text-[9px] font-bold text-accent-strong ring-1 ring-background">
-                    {homeAbbr}
+        {/* Linhas colapsáveis */}
+        {picksOpen && (
+          <div className="divide-y divide-border">
+            {variation.picks.map((pick) => {
+              const [homeTeam, awayTeam] = splitTeams(pick.match);
+              return (
+                <div
+                  key={`${variation.id}-${pick.match}`}
+                  className="grid grid-cols-[1fr_62px_50px] items-center gap-2 px-4 py-2.5"
+                >
+                  {/* Jogo */}
+                  <div className="flex min-w-0 items-center gap-2">
+                    {/* Escudos sobrepostos */}
+                    <div className="flex shrink-0 -space-x-1.5">
+                      <TeamBadge
+                        teamName={homeTeam}
+                        badgeUrl={teamBadges[homeTeam] ?? null}
+                        size={22}
+                        className="ring-1 ring-background"
+                      />
+                      <TeamBadge
+                        teamName={awayTeam}
+                        badgeUrl={teamBadges[awayTeam] ?? null}
+                        size={22}
+                        className="ring-1 ring-background"
+                      />
+                    </div>
+                    <span className="truncate text-sm font-medium">{pick.match}</span>
+                    {pick.isAnchor && (
+                      <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                        âncora
+                      </span>
+                    )}
+                    {pick.isAnchor && pick.isMarginal && (
+                      <span
+                        title="Âncora marginal — value edge não totalmente confirmado"
+                        className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-700"
+                      >
+                        !
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Resultado */}
+                  <span
+                    className={`rounded-full px-2 py-1 text-center text-[11px] font-semibold leading-none ${RESULT_STYLE[pick.result] ?? ""}`}
+                  >
+                    {RESULT_LABEL[pick.result] ?? pick.result}
                   </span>
-                  <span className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full bg-signal/10 text-[9px] font-bold text-signal ring-1 ring-background">
-                    {awayAbbr}
+
+                  {/* Odd */}
+                  <span className="text-right font-mono text-sm font-semibold tabular-nums">
+                    {pick.odd.toFixed(2)}
                   </span>
                 </div>
-                <span className="truncate text-sm font-medium">{pick.match}</span>
-                {pick.isAnchor && (
-                  <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
-                    âncora
-                  </span>
-                )}
-              </div>
-
-              {/* Resultado */}
-              <span
-                className={`rounded-full px-2 py-1 text-center text-[11px] font-semibold leading-none ${RESULT_STYLE[pick.result] ?? ""}`}
-              >
-                {RESULT_LABEL[pick.result] ?? pick.result}
-              </span>
-
-              {/* Odd */}
-              <span className="text-right font-mono text-sm font-semibold tabular-nums">
-                {pick.odd.toFixed(2)}
-              </span>
-            </div>
-          );
-        })}
+              );
+            })}
+          </div>
+        )}
       </div>
     </article>
   );

@@ -32,7 +32,14 @@ export type VariationInput = {
 // ─── Helpers de conversão ─────────────────────────────────────────────────────
 
 function toAnchorPick(m: ScoredMatch): VariationPick {
-  return { fixtureId: m.id, match: m.match, result: "1", odd: m.homeOdd, isAnchor: true };
+  return {
+    fixtureId: m.id,
+    match: m.match,
+    result: "1",
+    odd: m.homeOdd,
+    isAnchor: true,
+    isMarginal: m.isMarginalAnchor ?? false,
+  };
 }
 
 function toWinPick(m: ScoredMatch): VariationPick {

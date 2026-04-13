@@ -5,15 +5,17 @@
  *
  * Hierarquia de fontes:
  *   1. football-data.org (PRIMÁRIA) — cobre BSA 2026, free, 10 req/min
- *   2. API-Football (COMPLEMENTO) — odds, injuries, lineups (free: 2022-2024 apenas)
- *   3. TheSportsDB — assets visuais (logos, banners) — 100% free
- *
- * Nota: API-Football free plan NÃO cobre 2025+.
- * Para temporada atual, football-data.org é a única fonte de dados de jogo.
+ *   2. API-Football (COMPLEMENTO) — injuries, team stats, copa BR (free: 100 req/dia)
+ *      CONFIRMADO: cobre temporada atual 2026 (league 71, Current: true)
+ *   3. OddsPapi (ODDS REAIS) — Pinnacle via proxy, tournamentId=325 (A), 390 (B)
+ *   4. TheSportsDB — assets visuais (logos, banners) — 100% free
+ *   5. open-meteo.com — clima por estádio — gratuito e ilimitado
  */
 
 import * as fd from "./football-data";
 import type { FDMatch, FDStandingEntry, FDH2HResponse } from "./football-data";
+import * as af from "./api-football";
+import { getOddsByTournament, lookupOdds, TOURNAMENT_SERIE_A } from "./oddspapi";
 import type { MatchInput } from "@/lib/bob/engine/scoring";
 import { fetchWeatherForRound } from "./weather";
 
@@ -229,10 +231,12 @@ export async function fetchRoundMatchInputs(
   round: number
 ): Promise<FetchRoundResult> {
   // ── Etapa 1: dados base em paralelo ─────────────────────────────────────
-  const [standingsRes, matchesRes, finishedRes] = await Promise.all([
+  const [standingsRes, matchesRes, finishedRes, oddsMap] = await Promise.all([
     fd.getStandings(),
     fd.getMatchesByMatchday(round),
     fd.getFinishedMatches(200),
+    // OddsPapi: odds reais Pinnacle para o Brasileirão Série A
+    getOddsByTournament(TOURNAMENT_SERIE_A).catch(() => new Map()),
   ]);
 
   const roundMatches = matchesRes.matches;
@@ -265,7 +269,53 @@ export async function fetchRoundMatchInputs(
     }
   }
 
-  // ── Etapa 2B: Clima para todos os jogos da rodada (paralelo, non-blocking) ─
+  // ── Etapa 2B: Injuries via API-Football (desbloqueia F6 — absenceRate) ──
+  // getInjuriesByDate retorna desfalques confirmados para jogos na data do 1º jogo
+  let injuriesMap = new Map<number, number>(); // teamId → absenceRate (0-1)
+  try {
+    const firstMatchDate = roundMatches[0]?.utcDate?.split("T")[0];
+    if (firstMatchDate) {
+      const injuriesRes = await af.getInjuriesByDate(season, firstMatchDate);
+      // Contar desfalques por time; assumindo elenco principal de ~25 jogadores
+      const countByTeam = new Map<number, number>();
+      for (const item of injuriesRes.response) {
+        const tid = item.team.id;
+        countByTeam.set(tid, (countByTeam.get(tid) ?? 0) + 1);
+      }
+      for (const [tid, count] of countByTeam) {
+        injuriesMap.set(tid, Math.min(1, count / 25));
+      }
+    }
+  } catch {
+    // API-Football indisponível ou quota atingida — usar 0 (sem desfalques conhecidos)
+    injuriesMap = new Map();
+  }
+
+  // ── Etapa 2C: Copa paralela via API-Football (desbloqueia F13) ───────────
+  // Buscar fixtures da Copa do Brasil (league 73) nos próximos 7 dias para
+  // detectar quais times têm jogo paralelo nesta semana.
+  type CupComp = "none" | "copa-br" | "sulamericana" | "libertadores";
+  const cupMap = new Map<number, CupComp>(); // teamId → copa
+  try {
+    const cupLeagues: Array<[number, CupComp]> = [
+      [13, "libertadores"],
+      [11, "sulamericana"],
+      [73, "copa-br"],
+    ];
+    for (const [leagueId, cupName] of cupLeagues) {
+      const cupRes = await af.getFixturesByLeague(leagueId, season);
+      const nextWeek = Date.now() + 7 * 24 * 3600 * 1000;
+      for (const fixture of cupRes.response) {
+        const fixtureTime = new Date(fixture.fixture.date).getTime();
+        if (fixtureTime > Date.now() && fixtureTime < nextWeek) {
+          cupMap.set(fixture.teams.home.id, cupName);
+          cupMap.set(fixture.teams.away.id, cupName);
+        }
+      }
+    }
+  } catch {
+    // Falha silenciosa — usar "none" como default
+  }
   const weatherMap = await fetchWeatherForRound(
     roundMatches.map((m) => ({
       id: m.id.toString(),
@@ -296,29 +346,45 @@ export async function fetchRoundMatchInputs(
     const homeForm10 = extractFormFromMatches(allFinished, homeId, 10);
     const awayForm10 = extractFormFromMatches(allFinished, awayId, 10);
 
-    // Odds: football-data.org free não inclui odds → usar estimativa baseada na diferença de posição
-    // Fórmula calibrada com mercado real do Brasileirão:
-    //   Favoritismo = (awayPos - homePos) / 19, com bônus mandante +0.15
-    //   home_odd: líder em casa ~1.25, lanterna em casa vs líder ~4.50
-    //   draw_odd: inversamente proporcional à diferença
-    //   away_odd: reflete dificuldade de vencer fora
-    const posDiffNorm = homeSt && awaySt
-      ? (awayPos - homePos) / 19
-      : 0; // -1 (mandante é lanterna) a +1 (mandante é líder)
+    const homeTeamName = m.homeTeam.shortName || m.homeTeam.name;
+    const awayTeamName = m.awayTeam.shortName || m.awayTeam.name;
 
-    const homeAdvantage = 0.15; // bônus mandante
-    const strength = Math.max(-1, Math.min(1, posDiffNorm + homeAdvantage));
+    // ── Odds: OddsPapi (Pinnacle) › fallback sintético ──────────────────
+    // Com odds reais: hasValueEdge funciona corretamente → 2-4 âncoras
+    // Fallback: fórmula baseada na posição (igual ao original)
+    let homeOdd: number;
+    let drawOdd: number;
+    let awayOdd: number;
 
-    // Mapear strength para odds realistas do BSA
-    const homeOdd = Math.max(1.12, 1.20 + (1 - strength) * 2.5);
-    const awayOdd = Math.max(1.12, 1.20 + (1 + strength) * 2.5);
-    const drawOdd = Math.max(2.80, 3.00 + Math.abs(strength) * 1.5);
+    const realOdds = lookupOdds(homeTeamName, awayTeamName, oddsMap);
+    if (realOdds) {
+      homeOdd = realOdds.homeOdd;
+      drawOdd = realOdds.drawOdd;
+      awayOdd = realOdds.awayOdd;
+    } else {
+      // Fallback sintético (apenas quando OddsPapi não retorna o jogo)
+      const posDiffNorm = homeSt && awaySt ? (awayPos - homePos) / 19 : 0;
+      const strength = Math.max(-1, Math.min(1, posDiffNorm + 0.15));
+      homeOdd = Math.max(1.12, 1.20 + (1 - strength) * 2.5);
+      awayOdd = Math.max(1.12, 1.20 + (1 + strength) * 2.5);
+      drawOdd = Math.max(2.80, 3.00 + Math.abs(strength) * 1.5);
+    }
+
+    // ── F6 — Ausências (API-Football) ────────────────────────────────────
+    const homeAbsenceRate = injuriesMap.get(homeId) ?? 0;
+    const awayAbsenceRate = injuriesMap.get(awayId) ?? 0;
+
+    // ── F7 — Calendário (big game ahead derivado de Copa paralela) ────────
+    const homeCup = cupMap.get(homeId) ?? ("none" as CupComp);
+    const awayCup = cupMap.get(awayId) ?? ("none" as CupComp);
+    const homeBigGameAhead = homeCup !== "none";
+    const awayBigGameAhead = awayCup !== "none";
 
     return {
       id: m.id.toString(),
-      match: `${m.homeTeam.shortName || m.homeTeam.name} x ${m.awayTeam.shortName || m.awayTeam.name}`,
-      homeTeam: m.homeTeam.shortName || m.homeTeam.name,
-      awayTeam: m.awayTeam.shortName || m.awayTeam.name,
+      match: `${homeTeamName} x ${awayTeamName}`,
+      homeTeam: homeTeamName,
+      awayTeam: awayTeamName,
 
       homePosition: homePos,
       awayPosition: awayPos,
@@ -337,16 +403,18 @@ export async function fetchRoundMatchInputs(
 
       h2hHomeWinRate: h2h ? calcH2HWinRate(h2h, homeId) : 0.4,
 
-      homeAbsenceRate: 0, // football-data.org free não tem injuries
-      awayAbsenceRate: 0,
+      // F6 — Desfalques reais via API-Football
+      homeAbsenceRate,
+      awayAbsenceRate,
 
-      homeBigGameAhead: false,
-      awayBigGameAhead: false,
+      // F7 — Calendário: derivado de copa paralela
+      homeBigGameAhead,
+      awayBigGameAhead,
 
       homeOdd,
       drawOdd,
       awayOdd,
-      homeOddDropped: false,
+      homeOddDropped: false, // detecção de queda de odd requer histórico de odds
 
       // Campos estendidos (Fase 10)
       homeForm10,
@@ -357,17 +425,17 @@ export async function fetchRoundMatchInputs(
       motivationAway: calcMotivation(awayPos, round),
       isClassico: isClassico(m.homeTeam.name, m.awayTeam.name),
 
-      // Fase B: Fatores 11-15
-      refereeCardRate: 2.0, // placeholder — sem fonte de dados de árbitro na API free
+      // F11 — Árbitro: placeholder (sem fonte de dados livre disponível)
+      refereeCardRate: 2.0,
 
       // F12 — Clima (open-meteo.com)
       weatherRain:       weatherMap.get(m.id.toString())?.rain ?? false,
       weatherIntensity:  weatherMap.get(m.id.toString())?.intensity ?? "none",
       weatherTempC:      weatherMap.get(m.id.toString())?.tempC ?? 22,
 
-      // F13 — Copa paralela: placeholder (API-Football não cobre 2025+ no free plan)
-      homeCupCompetition: "none",
-      awayCupCompetition: "none",
+      // F13 — Copa paralela via API-Football
+      homeCupCompetition: homeCup,
+      awayCupCompetition: awayCup,
 
       // F14 — Pressão de posição (calculada a partir da classificação)
       homePressureZone: calcPressureZone(homePos, round),
@@ -376,6 +444,9 @@ export async function fetchRoundMatchInputs(
       // F15 — Histórico no estádio: derivado do aproveitamento em casa da temporada
       // Média ponderada: form em casa nos últimos 10 jogos como mandante
       homeStadiumWinRate: calcStadiumWinRate(allFinished, homeId),
+
+      // Status do jogo (SCHEDULED, TIMED, FINISHED, IN_PLAY etc.)
+      status: m.status,
     };
   });
 

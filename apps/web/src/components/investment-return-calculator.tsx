@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { kelly } from "@/lib/bob/engine/kelly";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -15,6 +16,8 @@ type CalculatorState = {
   rounds: number;
   targetOdd: number;
   hitCount: number;
+  bankroll: number;
+  winProbability: number;
 };
 
 const initialState: CalculatorState = {
@@ -23,6 +26,8 @@ const initialState: CalculatorState = {
   rounds: 38,
   targetOdd: 1500,
   hitCount: 1,
+  bankroll: 200,
+  winProbability: 10,
 };
 
 export function InvestmentReturnCalculator() {
@@ -33,6 +38,13 @@ export function InvestmentReturnCalculator() {
   const grossReturn = state.stakePerVariation * state.targetOdd * state.hitCount;
   const netReturn = grossReturn - seasonInvestment;
   const breakEvenOdd = seasonInvestment / Math.max(state.stakePerVariation, 1);
+
+  const kellyResult = kelly(
+    Math.max(0.001, Math.min(0.999, state.winProbability / 100)),
+    Math.max(1.01, state.targetOdd)
+  );
+  const kellyStake = state.bankroll * kellyResult.half;
+  const quarterStake = state.bankroll * kellyResult.quarter;
 
   function updateField<K extends keyof CalculatorState>(field: K, value: number) {
     setState((current) => ({ ...current, [field]: value }));
@@ -102,6 +114,37 @@ export function InvestmentReturnCalculator() {
               className="rounded-2xl border border-border bg-surface-strong px-4 py-3 outline-none transition focus:border-accent"
             />
           </label>
+
+          <div className="mt-2 border-t border-border pt-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">Critério de Kelly</p>
+            <div className="grid gap-4">
+              <label className="grid gap-2 text-sm font-medium">
+                Banca total (R$)
+                <input
+                  type="number"
+                  min="1"
+                  step="10"
+                  value={state.bankroll}
+                  onChange={(event) => updateField("bankroll", Number(event.target.value) || 100)}
+                  className="rounded-2xl border border-border bg-surface-strong px-4 py-3 outline-none transition focus:border-accent"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                Probabilidade estimada de acerto (%)
+                <input
+                  type="number"
+                  min="1"
+                  max="99"
+                  step="1"
+                  value={state.winProbability}
+                  onChange={(event) =>
+                    updateField("winProbability", Math.max(1, Math.min(99, Number(event.target.value) || 10)))
+                  }
+                  className="rounded-2xl border border-border bg-surface-strong px-4 py-3 outline-none transition focus:border-accent"
+                />
+              </label>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -133,6 +176,49 @@ export function InvestmentReturnCalculator() {
               <strong className="text-foreground"> {breakEvenOdd.toFixed(0)}x</strong>.
             </p>
           </div>
+        </div>
+
+        <div className="panel rounded-3xl p-6">
+          <p className="kicker text-xs text-muted">Critério de Kelly — Gestão de Banca</p>
+          {kellyResult.isPositiveEv ? (
+            <>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Metric
+                  label="Half-Kelly (recomendado)"
+                  value={formatCurrency(kellyStake)}
+                  tone="positive"
+                />
+                <Metric
+                  label="Quarter-Kelly (conservador)"
+                  value={formatCurrency(quarterStake)}
+                />
+                <Metric
+                  label="% da banca (Half-Kelly)"
+                  value={`${kellyResult.recommendedPct.toFixed(2)}%`}
+                />
+                <Metric
+                  label="Odd mínima de equilíbrio"
+                  value={`${kellyResult.breakEvenOdd.toFixed(2)}x`}
+                />
+              </div>
+              <p className="mt-4 text-xs text-muted">
+                Com banca de <strong className="text-foreground">{formatCurrency(state.bankroll)}</strong> e
+                probabilidade estimada de <strong className="text-foreground">{state.winProbability}%</strong>,
+                o Kelly recomenda apostar até{" "}
+                <strong className="text-foreground">{formatCurrency(kellyStake)}</strong> por variação (Half-Kelly).
+                BOB usa Half-Kelly por padrão — nunca exceda 10% da banca por aposta.
+              </p>
+            </>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-signal/30 bg-signal/5 p-4 text-sm text-muted">
+              <p>
+                <strong className="text-foreground">EV negativo</strong> — com {state.winProbability}% de probabilidade
+                e odd de {state.targetOdd}x, o Kelly indica{" "}
+                <strong className="text-foreground">não apostar</strong> nessa configuração. A odd mínima
+                para EV positivo seria <strong className="text-foreground">{kellyResult.breakEvenOdd.toFixed(2)}x</strong>.
+              </p>
+            </div>
+          )}
         </div>
       </section>
     </div>

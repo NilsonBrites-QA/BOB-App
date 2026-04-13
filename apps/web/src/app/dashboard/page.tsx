@@ -7,6 +7,7 @@ import { GlossarySection } from "@/components/glossary";
 import { AberturaDiariaBanner } from "@/components/abertura-diaria-banner";
 import { AnchorCard } from "@/components/anchor-card";
 import { scoreMatch, selectAnchors, generateVariations } from "@/lib/bob/engine";
+import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
 import { detectZebras, type ZebraOpportunity } from "@/lib/bob/engine/zebra-detector";
 import { demoMatches, DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
 import { fetchRoundMatchInputs, getCurrentRound } from "@/lib/bob/connectors";
@@ -123,6 +124,9 @@ export default async function DashboardPage({
     : demoMatches.filter((m) => !excludedIds.has(m.id));
   const zebras: ZebraOpportunity[] = detectZebras(sourceMatches, 3);
 
+  // Dificuldade da rodada
+  const roundDifficulty = analyzeRoundDifficulty(allScored);
+
   // Determinar round e season resolvidos para a narrativa
   const resolvedRound = roundData.source === "api" ? roundData.meta?.round ?? null : null;
   const resolvedSeason = roundData.source === "api" ? roundData.meta?.season ?? null : null;
@@ -171,6 +175,34 @@ export default async function DashboardPage({
           </div>
         </div>
       </section>
+
+      {/* ── Banner de dificuldade da rodada ── */}
+      {(() => {
+        const diffColors = {
+          easy:     { bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-800", badge: "bg-emerald-100 text-emerald-700", label: "RODADA FÁCIL" },
+          balanced: { bg: "bg-sky-50 border-sky-200",         text: "text-sky-800",     badge: "bg-sky-100 text-sky-700",     label: "RODADA EQUILIBRADA" },
+          hard:     { bg: "bg-amber-50 border-amber-200",     text: "text-amber-800",   badge: "bg-amber-100 text-amber-700",   label: "RODADA DIFÍCIL" },
+        };
+        const c = diffColors[roundDifficulty.difficulty];
+        return (
+          <div className={`rounded-2xl border px-5 py-4 ${c.bg}`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${c.badge}`}>
+                  {c.label}
+                </span>
+                <span className={`text-sm font-medium ${c.text}`}>
+                  Score {roundDifficulty.difficultyScore}/100
+                </span>
+              </div>
+              <p className={`text-xs ${c.text} opacity-80`}>
+                {roundDifficulty.reasons.join(" · ")}
+              </p>
+            </div>
+            <p className={`mt-2 text-sm ${c.text}`}>{roundDifficulty.bobMessage}</p>
+          </div>
+        );
+      })()}
 
       {/* ── Âncoras ── */}
       <section className="space-y-4">
@@ -221,7 +253,7 @@ export default async function DashboardPage({
 
         <div className="grid gap-5 xl:grid-cols-2">
           {variations.map((variation) => (
-            <VariationCard key={variation.id} variation={variation} />
+            <VariationCard key={variation.id} variation={variation} teamBadges={teamBadges} />
           ))}
         </div>
       </section>

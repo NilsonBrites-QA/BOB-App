@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { NavLink } from "@/components/nav-link";
+import { MobileNav } from "@/components/mobile-nav";
 import { signOut } from "@/app/auth/actions";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
@@ -48,41 +49,47 @@ export async function SiteShell({ children }: SiteShellProps) {
           </Link>
 
           {isLoggedIn ? (
-            <nav className="flex flex-wrap items-center justify-end gap-1">
-              {/* Análise */}
-              <NavLink href="/dashboard">Dashboard</NavLink>
-              <NavLink href="/estatisticas">Estatísticas</NavLink>
-              <NavLink href="/historico">Histórico</NavLink>
+            <>
+              {/* ── Nav desktop (oculta em mobile) ── */}
+              <nav className="hidden md:flex flex-wrap items-center justify-end gap-1">
+                {/* Análise */}
+                <NavLink href="/dashboard">Dashboard</NavLink>
+                <NavLink href="/estatisticas">Estatísticas</NavLink>
+                <NavLink href="/historico">Histórico</NavLink>
 
-              <span className="mx-1 h-3 w-px shrink-0 bg-border" aria-hidden />
+                <span className="mx-1 h-3 w-px shrink-0 bg-border" aria-hidden />
 
-              {/* Liga */}
-              <NavLink href="/classificacao">Classificação</NavLink>
-              <NavLink href="/calendario">Calendário</NavLink>
+                {/* Liga */}
+                <NavLink href="/classificacao">Classificação</NavLink>
+                <NavLink href="/calendario">Calendário</NavLink>
 
-              <span className="mx-1 h-3 w-px shrink-0 bg-border" aria-hidden />
+                <span className="mx-1 h-3 w-px shrink-0 bg-border" aria-hidden />
 
-              {/* Ferramentas */}
-              <NavLink href="/chat">Chat</NavLink>
-              <NavLink href="/investimento-retorno">I×R</NavLink>
+                {/* Ferramentas */}
+                <NavLink href="/chat">Chat</NavLink>
+                <NavLink href="/investimento-retorno">I×R</NavLink>
 
-              {/* Admin — apenas para ADMIN */}
-              {isAdmin && (
-                <>
-                  <span className="mx-1 h-3 w-px shrink-0 bg-border" aria-hidden />
-                  <NavLink href="/admin">Admin</NavLink>
-                </>
-              )}
+                {/* Admin — apenas para ADMIN */}
+                {isAdmin && (
+                  <>
+                    <span className="mx-1 h-3 w-px shrink-0 bg-border" aria-hidden />
+                    <NavLink href="/admin">Admin</NavLink>
+                  </>
+                )}
 
-              <form action={signOut} className="ml-1">
-                <button
-                  type="submit"
-                  className="rounded-xl border border-border px-3 py-1.5 text-xs text-muted transition hover:border-accent hover:text-foreground"
-                >
-                  Sair
-                </button>
-              </form>
-            </nav>
+                <form action={signOut} className="ml-1">
+                  <button
+                    type="submit"
+                    className="rounded-xl border border-border px-3 py-1.5 text-xs text-muted transition hover:border-accent hover:text-foreground"
+                  >
+                    Sair
+                  </button>
+                </form>
+              </nav>
+
+              {/* ── Hambúrguer mobile ── */}
+              <MobileNav isAdmin={isAdmin} signOutAction={signOut} />
+            </>
           ) : null}
         </div>
       </header>

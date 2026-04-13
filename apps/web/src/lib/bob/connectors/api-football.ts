@@ -98,6 +98,17 @@ export async function getFixturesByRound(season: number, round: number) {
 }
 
 /**
+ * Fixtures de qualquer liga (para copa paralela).
+ * Cache: 4h (pode ter jogos agendados esta semana)
+ */
+export async function getFixturesByLeague(leagueId: number, season: number) {
+  return afFetch<AFFixtureItem>(
+    `/fixtures?league=${leagueId}&season=${season}&next=20`,
+    14400
+  );
+}
+
+/**
  * Últimos N jogos de um time (todas as competições).
  * Cache: 24h
  */

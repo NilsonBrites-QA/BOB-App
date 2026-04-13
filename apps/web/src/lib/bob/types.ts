@@ -25,6 +25,8 @@ export type VariationPick = {
   result: "1" | "X" | "2";
   odd: number;
   isAnchor?: boolean;
+  /** true quando âncora foi selecionada via fallback L1/L2 (marginal) */
+  isMarginal?: boolean;
 };
 
 export type Variation = {

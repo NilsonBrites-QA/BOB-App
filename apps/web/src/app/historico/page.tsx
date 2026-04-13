@@ -186,6 +186,25 @@ export default async function HistoricoPage({
   const metrics = computeMetrics(rounds);
   const maxAccuracy = Math.max(...metrics.perRound.map((r) => r.accuracy ?? 0), 0.01);
 
+  // ── Dados do Cérebro BOB ─────────────────────────────────────────────────
+  const [factorWeights, simResults, antiPatterns] = await Promise.all([
+    prisma.factorWeight.findMany({
+      where: { season: currentYear },
+      orderBy: { round: "desc" },
+      take: 10,
+    }).catch(() => []),
+    prisma.simulationResult.findMany({
+      where: { season: currentYear },
+      orderBy: { round: "desc" },
+      take: 10,
+    }).catch(() => []),
+    prisma.conditionalPattern.findMany({
+      where: { isAntiCorr: true, isSuppressed: false },
+      orderBy: { occurrences: "desc" },
+      take: 8,
+    }).catch(() => []),
+  ]);
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-1 flex-col gap-8 px-4 py-10 sm:px-6 lg:px-10">
@@ -433,6 +452,147 @@ export default async function HistoricoPage({
           )}
         </>
       )}
+
+      {/* ── Cérebro BOB: Autoevolução ─────────────────────────────── */}
+      <section className="space-y-6">
+        <div className="panel rounded-[28px] p-6">
+          <p className="kicker text-xs text-muted">Transparência algorítmica</p>
+          <h2 className="mt-1 text-2xl font-semibold">Cérebro BOB — Autoevolução</h2>
+          <p className="mt-1.5 text-sm text-muted">
+            O que o motor aprendeu, calibrou e suprimiu ao longo da temporada.
+          </p>
+        </div>
+
+        {/* Simulações cegas */}
+        {simResults.length > 0 && (
+          <div className="panel rounded-[20px] p-5 space-y-4">
+            <p className="kicker text-xs text-muted">Simulações cegas (backtest)</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border text-left text-[10px] font-semibold uppercase tracking-wider text-muted">
+                    <th className="px-3 py-2">Rodada</th>
+                    <th className="px-3 py-2 text-right">Âncoras %</th>
+                    <th className="px-3 py-2 text-right">Picks %</th>
+                    <th className="px-3 py-2 text-right">Best odd proj.</th>
+                    <th className="px-3 py-2 text-right">Calibrado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {simResults.map((s) => {
+                    const anchorAcc = s.anchorCount > 0 ? Math.round((s.anchorsCorrect / s.anchorCount) * 100) : null;
+                    const pickAcc   = s.totalPicks  > 0 ? Math.round((s.correctPicks  / s.totalPicks)  * 100) : null;
+                    return (
+                      <tr key={s.id} className="hover:bg-accent/5">
+                        <td className="px-3 py-2 font-semibold">R{s.round}</td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          {anchorAcc !== null
+                            ? <span className={anchorAcc >= 75 ? "text-accent font-semibold" : anchorAcc >= 50 ? "text-signal" : "text-red-500"}>{anchorAcc}%</span>
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          {pickAcc !== null
+                            ? <span className={pickAcc >= 70 ? "text-accent font-semibold" : "text-muted"}>{pickAcc}%</span>
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-muted">
+                          {s.bestOddProjected ? `${Number(s.bestOddProjected).toFixed(0)}x` : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {s.calibrated
+                            ? <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent">✓</span>
+                            : <span className="text-muted/50">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Evolução dos pesos ABQC */}
+        {factorWeights.length > 0 && (
+          <div className="panel rounded-[20px] p-5 space-y-4">
+            <p className="kicker text-xs text-muted">Pesos ABQC — evolução por rodada</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border text-left text-[10px] font-semibold uppercase tracking-wider text-muted">
+                    <th className="px-2 py-2">R</th>
+                    <th className="px-2 py-2 text-right">Tabela</th>
+                    <th className="px-2 py-2 text-right">Forma</th>
+                    <th className="px-2 py-2 text-right">Casa</th>
+                    <th className="px-2 py-2 text-right">Gols</th>
+                    <th className="px-2 py-2 text-right">H2H</th>
+                    <th className="px-2 py-2 text-right">Ausências</th>
+                    <th className="px-2 py-2 text-right">Calendário</th>
+                    <th className="px-2 py-2 text-right">Mercado</th>
+                    <th className="px-2 py-2 text-right">Acurácia</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {factorWeights.map((fw) => (
+                    <tr key={fw.id} className="hover:bg-accent/5">
+                      <td className="px-2 py-2 font-semibold">R{fw.round}</td>
+                      <td className="px-2 py-2 text-right font-mono text-muted">{Number(fw.tableContext).toFixed(1)}</td>
+                      <td className="px-2 py-2 text-right font-mono text-muted">{Number(fw.recentForm).toFixed(1)}</td>
+                      <td className="px-2 py-2 text-right font-mono text-muted">{Number(fw.homeAway).toFixed(1)}</td>
+                      <td className="px-2 py-2 text-right font-mono text-muted">{Number(fw.goalsXg).toFixed(1)}</td>
+                      <td className="px-2 py-2 text-right font-mono text-muted">{Number(fw.h2h).toFixed(1)}</td>
+                      <td className="px-2 py-2 text-right font-mono text-muted">{Number(fw.absences).toFixed(1)}</td>
+                      <td className="px-2 py-2 text-right font-mono text-muted">{Number(fw.calendar).toFixed(1)}</td>
+                      <td className="px-2 py-2 text-right font-mono text-muted">{Number(fw.market).toFixed(1)}</td>
+                      <td className="px-2 py-2 text-right font-mono">
+                        {fw.overallAccuracy
+                          ? <span className={Number(fw.overallAccuracy) >= 0.75 ? "text-accent font-semibold" : "text-muted"}>{Math.round(Number(fw.overallAccuracy) * 100)}%</span>
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Anti-padrões descobertos */}
+        {antiPatterns.length > 0 && (
+          <div className="panel rounded-[20px] p-5 space-y-4">
+            <p className="kicker text-xs text-muted">Anti-correlações descobertas (ABQC)</p>
+            <div className="space-y-2">
+              {antiPatterns.map((p) => {
+                const hitRate = p.occurrences > 0 ? Math.round((p.correct / p.occurrences) * 100) : 0;
+                return (
+                  <div key={p.id} className="flex flex-col gap-1 rounded-xl border border-signal/20 bg-signal/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-foreground">{p.condition}</p>
+                      <p className="mt-0.5 text-[10px] text-muted">
+                        Fatores: {(p.factors as string[]).join(" + ")} · {p.occurrences} ocorrências
+                      </p>
+                    </div>
+                    <span className={[
+                      "shrink-0 rounded-full px-3 py-1 text-xs font-semibold tabular-nums",
+                      hitRate <= 35 ? "bg-red-500/10 text-red-600" : "bg-signal/10 text-signal",
+                    ].join(" ")}>
+                      {hitRate}% acerto
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {(simResults.length === 0 && factorWeights.length === 0 && antiPatterns.length === 0) && (
+          <div className="rounded-[20px] border border-border/60 px-6 py-10 text-center text-muted">
+            <p className="text-2xl">🧠</p>
+            <p className="mt-2 text-sm font-medium">O cérebro ainda está aprendendo</p>
+            <p className="mt-1 text-xs">Os dados de autoevolução (ABQC, simulações, calibração) aparecem aqui após as primeiras rodadas com resultado registrado.</p>
+          </div>
+        )}
+      </section>
 
     </div>
   );

@@ -41,19 +41,35 @@ const POINTS_PER_WIN     = 3;
 
 // ─── Funções de classificação ─────────────────────────────────────────────────
 
-function calcTitleProb(points: number, maxPoints: number, position: number): TitleProb {
-  if (position === 1 && maxPoints < TITLE_THRESHOLD + 2) return "Campeão confirmado";
+function calcTitleProb(points: number, maxPoints: number, position: number, ppg: number): TitleProb {
+  // Líder com mais de 85% da temporada feita e projeção suficiente
+  if (position === 1 && ppg >= 2.0 && points >= 55) return "Campeão confirmado";
   if (maxPoints < TITLE_THRESHOLD) return "Eliminado";
+  // Projeção PPG — se o time mantiver o ritmo, chegará ao título?
+  const projectedFinal = ppg * TOTAL_ROUNDS;
+  if (position <= 2 && projectedFinal >= TITLE_THRESHOLD - 3) return "Alta";
   const gap = TITLE_THRESHOLD - points;
   if (gap <= 5)  return "Alta";
   if (gap <= 15) return "Média";
   return "Baixa";
 }
 
-function calcRelegProb(points: number, maxPoints: number, position: number): RelegProb {
+function calcRelegProb(points: number, maxPoints: number, position: number, roundsDone: number): RelegProb {
+  // Rebaixamento confirmado: matematicamente impossível escapar
   if (position >= 17 && maxPoints < SAFE_THRESHOLD - 5) return "Rebaixado confirmado";
+  // CHECK DE POSIÇÃO: times no top 6 são automaticamente Seguros
+  // (sem este check, o líder com 25pts mostrava "Atenção" pois gap=45-25=20)
+  if (position <= 6) return "Seguro";
+  // Seguro por pontos
   if (points >= SAFE_THRESHOLD + 10) return "Seguro";
+  // Para times realmente em risco: normalizar gap por rodadas restantes
+  const remaining = Math.max(1, TOTAL_ROUNDS - roundsDone);
   const gap = SAFE_THRESHOLD - points;
+  // Se o time tem PPG para alcançar a safe zone sem precisar de corrida improváve
+  const ppg = roundsDone > 0 ? points / roundsDone : 0;
+  const projectedPoints = points + ppg * remaining;
+  if (projectedPoints >= SAFE_THRESHOLD + 5) return "Seguro";
+  // Classificação progressiva
   if (gap <= 3)  return "Crítico";
   if (gap <= 10) return "Risco real";
   if (gap <= 20) return "Atenção";
@@ -88,6 +104,7 @@ export function calcTeamOdds(standings: FDStandingEntry[]): TeamOdds[] {
     const roundsDone  = entry.playedGames;
     const remaining   = Math.max(0, TOTAL_ROUNDS - roundsDone);
     const maxPoints   = entry.points + remaining * POINTS_PER_WIN;
+    const ppg         = roundsDone > 0 ? entry.points / roundsDone : 0;
 
     return {
       teamId:    entry.team.id,
@@ -96,8 +113,8 @@ export function calcTeamOdds(standings: FDStandingEntry[]): TeamOdds[] {
       position:  entry.position,
       roundsDone,
       maxPoints,
-      titleProb: calcTitleProb(entry.points, maxPoints, entry.position),
-      relegProb: calcRelegProb(entry.points, maxPoints, entry.position),
+      titleProb: calcTitleProb(entry.points, maxPoints, entry.position, ppg),
+      relegProb: calcRelegProb(entry.points, maxPoints, entry.position, roundsDone),
       titleNote: titleNote(entry.points, roundsDone),
       relegNote: relegNote(entry.points, roundsDone),
     };
