@@ -263,6 +263,27 @@ model ConditionalPattern {
 
 // ─── Sprint 4: Simulação Retroativa Cega ─────────────────────────────────────
 
+// ─── Memória de Chat ─────────────────────────────────────────────────────────
+
+/**
+ * Histórico de mensagens do chat por usuário.
+ * TTL virtual de 4 dias: filtrar por WHERE created_at > NOW() - INTERVAL '4 days'
+ * nas queries — não há trigger de deleção automática.
+ */
+model ChatMessage {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  role      String   // "user" | "assistant"
+  content   String   @db.Text
+  model     String?  // "claude-sonnet" | "gpt-4o-mini" | "offline"
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("chat_messages")
+}
+
+// ─── Sprint 4: Simulação Retroativa Cega ─────────────────────────────────────
+
 /**
  * Resultado de uma rodada simulada pelo motor cego.
  * "Cego" = motor gerou previsões sem ver o resultado; depois comparamos com o real.

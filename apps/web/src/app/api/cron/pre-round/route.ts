@@ -19,6 +19,7 @@ import { revalidatePath }      from "next/cache";
 import { fetchRoundMatchInputs, getCurrentRound } from "@/lib/bob/connectors";
 import { scoreMatch, selectAnchors, generateVariations } from "@/lib/bob/engine";
 import { saveRound }            from "@/lib/bob/persist";
+import { enrichMatchContext }   from "@/lib/bob/ai/cognitive-analyst";
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
@@ -68,8 +69,23 @@ export async function GET(request: Request) {
     });
   }
 
-  // 3. Motor de scoring + variações
+  // 3. Motor de scoring + enriquecimento contextual (zona cinza) + variações
   const scored     = matchInputs.map(scoreMatch);
+
+  // Zona cinza: score 50–69 — enriquecer com Claude para ajuste contextual
+  const hasClaudeKey = !!process.env.ANTHROPIC_API_KEY;
+  if (hasClaudeKey) {
+    const grayZone = scored.filter((m) => m.score >= 50 && m.score < 70);
+    if (grayZone.length > 0) {
+      await Promise.allSettled(
+        grayZone.map(async (m) => {
+          const enrichment = await enrichMatchContext(m.homeTeam, m.awayTeam, m.score, m.reasons);
+          m.score = enrichment.adjustedScore;
+        })
+      );
+    }
+  }
+
   const anchors    = selectAnchors(matchInputs);
   const anchorIds  = new Set(anchors.map((a) => a.id));
   const pool       = scored.filter((m) => !anchorIds.has(m.id));

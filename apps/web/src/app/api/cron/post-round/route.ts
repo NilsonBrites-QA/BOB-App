@@ -20,6 +20,10 @@ import type { FDMatch } from "@/lib/bob/connectors/football-data";
 import { markPickResult } from "@/lib/bob/persist";
 import { prisma }         from "@/lib/db";
 import { selfReflect }    from "@/lib/bob/ai/self-reflection";
+import { analyzeDualMind } from "@/lib/bob/ai/dual-mind";
+import { backtestRound }   from "@/lib/bob/engine/backtest";
+import { selfCalibrate }   from "@/lib/bob/engine/calibrator";
+import { getLatestWeights } from "@/lib/bob/persist-weights";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -185,23 +189,76 @@ export async function GET(request: Request) {
   revalidatePath("/classificacao");
   revalidatePath("/calendario");
 
-  // 7. Reflexão autônoma do BOB (fire-and-forget — não bloqueia a resposta)
+  // 7. Reflexão autônoma do BOB + Dual-Mind (aguarda — persiste no DB)
+  let reflectionOk   = false;
+  let dualMindOk     = false;
+
   if (allFinished) {
-    selfReflect(season, round).catch((err) =>
-      console.warn("[BOB/post-round] selfReflect falhou (não crítico):", err)
-    );
+    // 7a. Self-reflection (Claude) — persistido como MemoryEvent type="reflection"
+    const reflection = await selfReflect(season, round).catch((err) => {
+      console.warn("[BOB/post-round] selfReflect falhou:", err);
+      return null;
+    });
+    reflectionOk = reflection !== null;
+
+    // 7b. Dual-Mind (Claude + GPT em paralelo) — persistido como MemoryEvent type="dual-analysis"
+    const hasBothKeys = !!(process.env.ANTHROPIC_API_KEY && process.env.OPENAI_API_KEY);
+    if (hasBothKeys) {
+      try {
+        const roundResult = await backtestRound(season, round);
+        if (roundResult && roundResult.totalPicks > 0) {
+          const currentWeights = await getLatestWeights(season);
+          const calibration = selfCalibrate(roundResult, currentWeights);
+
+          const dualResult = await analyzeDualMind({
+            season,
+            round,
+            calibration,
+            roundResult,
+          });
+          dualMindOk = true;
+
+          // Persistir dual-analysis como MemoryEvent adicional
+          const dbRound = await prisma.round.findFirst({
+            where: { number: round, season: { year: season } },
+            select: { id: true },
+          });
+          await prisma.memoryEvent.create({
+            data: {
+              roundId:  dbRound?.id ?? null,
+              layer:    "DECISIONS",
+              type:     "dual-analysis",
+              content:  {
+                narrative:    dualResult.narrative,
+                publicText:   dualResult.reflection.publicText,
+                adminText:    dualResult.reflection.adminText,
+                source:       dualResult.reflection.source,
+                claudeOnline: dualResult.mindstates.claudeOnline,
+                gptOnline:    dualResult.mindstates.gptOnline,
+              },
+              source:   "dual-mind",
+            },
+          });
+          console.info(`[BOB/post-round] Dual-Mind concluído · claude=${dualResult.mindstates.claudeOnline} gpt=${dualResult.mindstates.gptOnline}`);
+        }
+      } catch (err) {
+        console.warn("[BOB/post-round] analyzeDualMind falhou:", err);
+      }
+    }
   }
 
   return NextResponse.json({
-    ok:            true,
-    phase:         "pós-rodada",
+    ok:             true,
+    phase:          "pós-rodada",
     season,
     round,
-    totalFixtures: allMatches.length,
-    finished:      finishedMatches.length,
-    picksUpdated:  updated,
-    picksSkipped:  skipped,
-    roundClosed:   allFinished,
-    timestamp:     new Date().toISOString(),
+    totalFixtures:  allMatches.length,
+    finished:       finishedMatches.length,
+    picksUpdated:   updated,
+    picksSkipped:   skipped,
+    roundClosed:    allFinished,
+    reflectionOk,
+    dualMindOk,
+    timestamp:      new Date().toISOString(),
   });
 }

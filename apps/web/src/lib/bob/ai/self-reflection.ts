@@ -23,6 +23,7 @@ import {
   type RoundReflection,
   type WeightSuggestion,
 } from "@/lib/bob/ai/cognitive-analyst";
+import { prisma }                 from "@/lib/db";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ export async function selfReflect(
     ? roundResult.correctPicks / roundResult.totalPicks
     : 0;
 
-  return {
+  const result: ReflectionResult = {
     season,
     round,
     publicText:  reflection.publicText,
@@ -92,6 +93,40 @@ export async function selfReflect(
     trends,
     source:      reflection.source,
   };
+
+  // Persistir no banco como MemoryEvent (layer=DECISIONS, type="reflection")
+  try {
+    const dbRound = await prisma.round.findFirst({
+      where: {
+        number: round,
+        season: { year: season },
+      },
+      select: { id: true },
+    });
+
+    await prisma.memoryEvent.create({
+      data: {
+        roundId:        dbRound?.id ?? null,
+        layer:          "DECISIONS",
+        type:           "reflection",
+        content:        {
+          publicText:  result.publicText,
+          adminText:   result.adminText,
+          accuracy:    result.accuracy,
+          anchorAcc:   result.anchorAcc,
+          season:      result.season,
+          round:       result.round,
+          source:      result.source,
+        },
+        source:         "bob-self-reflection",
+        relevanceScore: result.accuracy,
+      },
+    });
+  } catch (err) {
+    console.warn("[BOB/self-reflection] Falha ao persistir MemoryEvent:", err);
+  }
+
+  return result;
 }
 
 // ─── buildTrends ──────────────────────────────────────────────────────────────
