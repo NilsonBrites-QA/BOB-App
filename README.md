@@ -1,4 +1,4 @@
-# BOB — Big Odds Bot
+# BOB — Big Odds Brasileirão
 
 > Motor analítico autônomo para o Brasileirão Série A, construído sobre o **Método das Variações** do Camillo.
 

@@ -1,0 +1,755 @@
+# PRD - Bob Bet Analyzer
+## Plataforma de Análise Estatística e Sugestão de Apostas para Futebol Brasileiro
+
+**Versão:** 1.0  
+**Data:** Abril 2026  
+**Autor:** Manus AI  
+**Status:** Documento de Requisitos
+
+## 2. Funcionalidades Principais
+
+### 2.1 Dashboard Principal - Cria Apostas
+
+O dashboard é o ponto de entrada da plataforma, apresentando uma visão geral dos jogos disponíveis e acesso rápido às principais funcionalidades.
+
+**Características:**
+
+- Layout em dark mode com cores verde e branco, inspirado na Bet365
+- Navegação por abas: **Série A**, **Série B**, **Ao Vivo** e **Histórico Bob**
+- Listagem de jogos próximos com informações essenciais:
+  - Times (com logos)
+  - Data e hora do jogo
+  - Odds principais (1x2 - Vitória do mandante, Empate, Vitória do visitante)
+  - Status do jogo (Próximo, Ao Vivo, Encerrado)
+  - Botão de acesso rápido para "Criar Aposta"
+- Filtros por data, time, competição
+- Indicador visual de jogos ao vivo
+
+**Fluxo de Interação:**
+
+1. Usuário acessa o opção Criar Aposta
+2. Seleciona a aba desejada (Série A ou Série B)
+3. Visualiza lista de jogos com odds - 
+4. Clica em um jogo para ver detalhes ou criar aposta
+5. Visualiza lista de Perfis 
+6. Escolhe Perfil e Ve os Palpites divididos por perfis
+
+### 2.2 Funcionalidade "Criar Aposta"
+
+A funcionalidade "Criar Aposta" permite que o usuário monte apostas simples ou combinadas (acumuladores) selecionando múltiplos mercados.
+O BOB faz analises e sincroniza os dados em sua memoria com cache agressivo que NUNCA apaga, O BOB analisa, 
+a IA le as analises (LLM OPENAI ou CLAUDE) E Entrega no front  os palpites, bem organizados e bem estruturados.
+o BOB entrega a aposta pronta para ser copiada, pode seguir o layout do criar aposta do BET365
+Na bet365 A funcionalidade Criar Aposta+ permite que você combine os mercados mais populares de eventos selecionados em uma aposta só. A interface é de fácil utilização, com todas as informações disponíveis em um só lugar. Desta forma, você pode criar o seu próprio acumulador com grandes odds.
+Além disso, a funcionalidade Criar Aposta padrão segue disponível permitindo que você combine mercados e crie a aposta que desejar nos seguintes esportes.
+FUTEBOL.
+
+Você poderá selecionar entre os mercados mais populares e as odds serão atualizadas automaticamente conforme cada seleção for adicionada. Assim, você criará uma aposta simples com o preço para as seleções combinadas.
+Apostas criadas através desta funcionalidade também podem ser incluídas em múltiplas formadas por apostas criadas por meio da funcionalidade Criar Aposta ou por uma combinação de seleções da funcionalidade Criar Aposta e seleções normais.
+Para criar a sua aposta com a funcionalidade Criar Aposta, primeiro será necessário navegar para a partida ou evento desejado antes de selecionar a funcionalidade no cabeçalho. Serão apresentados todos os mercados disponíveis e as suas odds da funcionalidade Criar Aposta serão calculadas com todas as seleções. Quando tiver feito todas as suas seleções, você poderá adicioná-las ao seu cupom de apostas da funcionalidade Criar Aposta e inserir o valor de aposta.
+
+# Termos e Condições
+
+    A funcionalidade Criar Aposta está disponível para Futebol, Tênis, Basquete, Futebol Americano, Beisebol, Rugby Union, Rugby League, Hóquei no Gelo, Futebol Australiano, Boxe, MMA, Críquete, Fórmula 1 (apenas pré-corrida), Handebol, Dardos, Corridas de Cavalos, Tênis de Mesa, E-Sports e Golfe (apenas pré-jogo).
+    Você poderá incluir no máximo 12 mercados de um único esporte em uma aposta criada através da funcionalidade Criar Aposta.
+    Para a funcionalidade Criar Aposta de Futebol, um máximo de seis jogadores por time pode ser selecionado em mercados de gol e de cartão. Por exemplo, até seis jogadores do Liverpool podem ser selecionados em um mercado de Marcador a Qualquer Momento, em uma aposta criada através da funcionalidade Criar Aposta para Man Utd vs Liverpool. Esses jogadores poderão, então, ser combinados com até seis jogadores do Man Utd no mercado Para Receber um Cartão na mesma aposta feita em Criar Aposta, para ter até 12 seleções.
+
+
+O BOB deve escolher e combinar os mercados abaixo por partida
+O Usuario do Bob pode visualizar palpites de criar aposta por partida e por perfil de apostador  Usuario clica na partida e e ve uma lista de perfis de apostar, ele escolhe o perfil de apostador e  ve os palpite pronto e explicado o porque.
+Ele pode ver todos perfis a qualquer hora e a qualquer momento.
+
+Quem cria as apostas é o BOB, o usuario apenas ve os palpites.
+
+
+**Mercados Disponíveis por Jogo:**
+
+| Mercado | Descrição | Opções |
+|---------|-----------|--------|
+| **Resultado (1x2)** | Resultado final do jogo | Vitória do mandante, Empate, Vitória do visitante |
+| **Ambos Marcam** | Se ambos os times marcarão | Sim, Não |
+| **Total de Gols** | Quantidade total de gols | Acima de X, Abaixo de X (X = 1.5, 2.5, 3.5, etc) |
+| **Placar Exato** | Placar final exato | Todas as combinações possíveis |
+| **Chance Dupla** | Dois resultados possíveis | Mandante/Empate, Mandante/Visitante, Empate/Visitante |
+| **Handicap Asiático** | Vantagem/desvantagem de gols | -0.5, -1, -1.5, +0.5, +1, +1.5, etc |
+| **Jogador a Marcar** | Jogador específico marca | Sim, Não (por jogador) |
+| **Gols no 1º Tempo** | Quantidade de gols no 1º tempo | Acima de X, Abaixo de X |
+| **Escanteios** | Quantidade de escanteios | Acima de X, Abaixo de X |
+| **Cartões** | Quantidade de cartões | Acima de X, Abaixo de X |
+
+**Fluxo de Criação de Aposta:**
+
+1. Bob Analisa as Rodadas  - Serie A e Serie B
+2. Bob entrega apostas criadas e divididas por partidas e perfis de apostador
+3. O layout das apostas criafas deve ser similar aos criar apostas do bet365
+4. Sistema calcula automaticamente com base em analises feita pelo BOB - LLMs
+   - Odds combinadas Sistema exibe Apostas com ODDS calculadas reais (Entregues nos perfis corretos)
+   - Todas as partidas devem ter os palpites criados e bem estruturados e entregues todos palpites por perfis
+   - Ex Palmeiras x Corinthians
+      - Perfis 
+| **Perfil 1** | "Conservador" || "Odd Conservadora" |
+| **Perfil 2** | "Moderado" | | "Odd Moderada" |
+| **Perfil 3** | "Agressivo" | | "Odd Alta" |
+| **Perfil 4** | "Matemático/Sistema" || "Odd Arrojada/Agressiva" |
+5. As ODDs são definidas com base no calculo final do Criar aposta juntados todos mercados do CRIAR APOSTA
+6. As apostas criadas pelo BOB ficam salvas na partida e no banco de dados. Dado que usuario volte na rodada e clique na partida as apostas criadas estarão lá.
+
+
+**Tipos de Apostas:**
+
+- **Aposta Simples**: Uma única seleção de mercado
+- **Aposta Combinada (Acumulador)**: Múltiplas seleções que devem acertar para ganhar
+
+### 2.3 Motor de IA "Bob"
+
+O **Bob** é o coração inteligente da plataforma, responsável por analisar estatísticas e gerar sugestões de apostas fundamentadas.
+
+#### 2.3.1 Análise Estatística
+
+Bob analisa os seguintes dados para cada time:
+
+| Métrica | Descrição | Fonte |
+|---------|-----------|-------|
+| **Forma Recente** | Últimos 5 jogos (W/D/L) | Histórico de resultados |
+| **Gols Marcados (Média)** | Média de gols marcados nos últimos 5 jogos | Estatísticas de desempenho |
+| **Gols Sofridos (Média)** | Média de gols sofridos nos últimos 5 jogos | Estatísticas de desempenho |
+| **Posse de Bola (Média)** | Média de posse de bola nos últimos 5 jogos | Dados de posse |
+| **Escanteios (Média)** | Média de escanteios nos últimos 5 jogos | Estatísticas de jogo |
+| **Cartões (Média)** | Média de cartões nos últimos 5 jogos | Estatísticas de disciplina |
+| **Confrontos Diretos** | Histórico de últimos 5 confrontos entre os times | Histórico H2H |
+| **Desempenho em Casa** | Taxa de vitória, gols marcados/sofridos em casa | Estatísticas por local |
+| **Desempenho Fora** | Taxa de vitória, gols marcados/sofridos fora | Estatísticas por local |
+| **Posição na Tabela** | Colocação atual na competição | Tabela de classificação |
+| **Artilheiros** | Jogadores com mais gols no time | Estatísticas individuais |
+
+#### 2.3.2 Perfis de Apostador
+
+Bob oferece palpites personalizados e prontos para 4 perfis distintos:
+
+**1. Apostador Conservador (Seguro/Baixo Risco)**
+
+- **Objetivo**: Maximizar probabilidade de ganho com retornos menores
+- **Odds Típicas**: 1.20 - 1.70
+- **Estratégia**: Seleciona mercados com alta probabilidade de acerto
+- **Exemplos de Sugestões**:
+  - Vitória do favorito (odds 1.30)
+  - Ambos marcam em times ofensivos (odds 1.60)
+  - Total de gols acima em jogos com histórico de muitos gols (odds 1.50)
+   - Outros Mercados com base nas probabilidades 
+
+**2. Apostador Moderado (Equilibrado)**
+
+- **Objetivo**: Balancear risco e retorno
+- **Odds Típicas**: 1.75 a 4.50
+- **Estratégia**: Combina mercados com probabilidade média-alta
+- **Exemplos de Sugestões**:
+  - Chance dupla com odds 1.90
+  - Placar exato com probabilidade moderada (odds 2.50)
+  - Combinação de 2-3 mercados com odds totais 2.80
+   - Outros Mercados com base nas probabilidades 
+
+**3. Apostador Agressivo (Alto Risco/Alto Retorno)**
+
+- **Objetivo**: Potencializar ganhos aceitando maior risco
+- **Odds Típicas**: 3.00 a 15.00
+- **Estratégia**: Seleciona mercados com odds mais altas e menor probabilidade
+- **Exemplos de Sugestões**:
+  - Vitória do azarão (odds 3.50)
+  - Placar exato improvável (odds 4.20)
+  - Acumulador de 3-4 mercados com odds totais 5.00
+
+**4. Apostador Matemático/Sistema**
+
+- **Objetivo**: Maximizar valor esperado (EV) através de modelos probabilísticos
+- **Odds Típicas**: Variáveis (busca por value bets)
+- **Estratégia**: Identifica apostas onde a probabilidade real supera a odds oferecida
+- **Exemplos de Sugestões**:
+  - "Odd 2.10 para evento com 52% de probabilidade (EV positivo de 9%)"
+  - Análise de Kelly Criterion para dimensionamento de apostas
+  - Identificação de discrepâncias entre odds de diferentes mercados
+
+#### 2.3.3 Categorias de Odds Sugeridas
+
+Bob oferece sugestões em 4 categorias de odds, permitindo que o usuário escolha seu nível de risco:
+
+| Categoria | Faixa de Odds | Perfil | Descrição |
+|-----------|---------------|--------|-----------|
+| **Odd Conservadora** | 1.20 - 2.00 | Conservador | Baixo risco, alta probabilidade, retorno pequeno |
+| **Odd Moderada** | 1.80 - 3.50 | Moderado | Equilíbrio entre risco e retorno |
+| **Odd Alta** | 3.00 - 6.00 | Agressivo | Alto risco, baixa probabilidade, retorno grande |
+| **Odd Arrojada/Agressiva** | 6.00+ | Matemático | Muito alto risco, busca por value bets |
+
+#### 2.3.4 Justificativa Detalhada
+
+Cada sugestão do Bob inclui uma justificativa estruturada:
+
+```
+Sugestão: Vitória do Flamengo
+Odd: 1.85
+Categoria: Odd Moderada
+Perfil: Apostador Moderado
+
+Justificativa:
+- Forma Recente: Flamengo em ótima forma (4V-1E nos últimos 5 jogos)
+- Gols Marcados: Média de 2.2 gols/jogo (acima da média da série)
+- Confronto Direto: Venceu 3 dos últimos 5 confrontos contra o Botafogo
+- Desempenho em Casa: 80% de taxa de vitória em casa
+- Artilheiros: Pedro em forma com 3 gols nos últimos 5 jogos
+- Análise: Flamengo é favorito técnico com vantagem de campo. Odd 1.85 oferece bom retorno com probabilidade razoável (~54%).
+
+Confiança: 72%
+```
+
+### 2.4 Bilhete de Aposta Interativo
+
+O bilhete de aposta é a interface onde o usuário visualiza e gerencia suas seleções.
+
+**Componentes:**
+
+- **Resumo de Seleções**: Lista de todos os mercados selecionados com odds individuais
+- **Cálculo Automático**: Exibição em tempo real de:
+  - Odds totais (multiplicação das odds individuais)
+  - Valor da aposta (input do usuário)
+  - Retorno potencial (valor × odds totais)
+  - Lucro potencial (retorno - valor)
+- **Ações**:
+  - Remover seleções individuais
+  - Limpar todas as seleções
+  - Salvar como rascunho
+  - Confirmar aposta
+- **Indicadores Visuais**:
+  - Código de cores por tipo de mercado
+  - Ícones dos times
+  - Status da aposta (Draft, Placed, Won, Lost)
+
+### 2.5 Painel de Estatísticas por Jogo
+
+Ao selecionar um jogo, o usuário acessa um painel detalhado com análise estatística completa.
+
+**Seções do Painel:**
+
+**1. Informações Gerais**
+- Times com logos
+- Data, hora e local do jogo
+- Competição e rodada
+- Status (Próximo, Ao Vivo, Encerrado)
+
+**2. Últimos 5 Confrontos Diretos**
+
+| Data | Mandante | Placar | Visitante | Competição |
+|------|----------|--------|-----------|-----------|
+| 15/03/2026 | Flamengo | 2-1 | Botafogo | Série A |
+| 10/02/2026 | Botafogo | 1-1 | Flamengo | Série A |
+| ... | ... | ... | ... | ... |
+
+**3. Últimos 5 Jogos de Cada Time**
+
+Para cada time:
+- Data do jogo
+- Adversário
+- Placar
+- Gols marcados/sofridos
+- Posse de bola
+- Resultado (W/D/L)
+
+**4. Artilheiros do Time**
+
+| Jogador | Gols | Assistências | Posição |
+|---------|------|--------------|---------|
+| Pedro | 12 | 3 | Atacante |
+| Arrascaeta | 8 | 5 | Meia |
+| ... | ... | ... | ... |
+
+**5. Desempenho em Casa vs Fora**
+
+| Métrica | Em Casa | Fora |
+|---------|---------|------|
+| Vitórias | 10 | 6 |
+| Empates | 2 | 4 |
+| Derrotas | 1 | 3 |
+| Gols Marcados/Jogo | 2.4 | 1.8 |
+| Gols Sofridos/Jogo | 0.9 | 1.3 |
+| Taxa de Vitória | 83% | 50% |
+
+**6. Posição na Tabela**
+
+| Posição | Time | PJ | V | E | D | GP | GC | SG | Pts |
+|---------|------|----|----|----|----|----|----|----|----|
+| 1 | Flamengo | 15 | 10 | 2 | 3 | 28 | 12 | +16 | 32 |
+| 2 | Botafogo | 15 | 9 | 3 | 3 | 25 | 14 | +11 | 30 |
+
+**7. Tendências**
+
+- Sequência atual (ex: 3V-1E-1D)
+- Sequência de gols (ex: Marcou em 4 dos últimos 5)
+- Sequência de cartões
+- Sequência de escanteios
+
+### 2.6 Histórico de Palpites do Bob
+
+A plataforma rastreia todas as sugestões geradas pelo Bob e seus resultados.
+
+**Funcionalidades:**
+
+- **Listagem de Palpites**: Exibição de todas as sugestões com:
+  - Data da sugestão
+  - Jogo (Times)
+  - Mercado e opção sugerida
+  - Odd sugerida
+  - Perfil de apostador
+  - Categoria de odds
+  - Resultado (Won, Lost, Void, Pending)
+  - Confiança da sugestão
+
+- **Filtros**:
+  - Por data
+  - Por perfil de apostador
+  - Por categoria de odds
+  - Por resultado (Ganhas, Perdidas, Pendentes)
+  - Por série (A ou B)
+
+- **Estatísticas Agregadas**:
+  - Taxa de acerto geral
+  - Taxa de acerto por perfil
+  - Taxa de acerto por categoria de odds
+  - ROI simulado por perfil
+  - Número total de sugestões
+  - Ranking de desempenho
+
+**Exemplo de Estatísticas:**
+
+```
+Apostador Conservador:
+- Total de Sugestões: 45
+- Ganhas: 38
+- Perdidas: 7
+- Taxa de Acerto: 84.4%
+- ROI Simulado: +12.5% (considerando aposta de R$100 por sugestão)
+
+Apostador Moderado:
+- Total de Sugestões: 32
+- Ganhas: 21
+- Perdidas: 11
+- Taxa de Acerto: 65.6%
+- ROI Simulado: +8.3%
+
+Apostador Agressivo:
+- Total de Sugestões: 28
+- Ganhas: 15
+- Perdidas: 13
+- Taxa de Acerto: 53.6%
+- ROI Simulado: +15.2%
+
+Apostador Matemático/Sistema:
+- Total de Sugestões: 24
+- Ganhas: 17
+- Perdidas: 7
+- Taxa de Acerto: 70.8%
+- ROI Simulado: +18.7%
+```
+
+### 2.7 Navegação por Abas
+
+A plataforma oferece 4 abas principais de navegação:
+
+| Aba | Conteúdo | Funcionalidades |
+|-----|----------|-----------------|
+| **Série A** | Jogos da Série A do Brasileirão | Listagem, filtros, criar aposta, análise estatística |
+| **Série B** | Jogos da Série B do Brasileirão | Listagem, filtros, criar aposta, análise estatística |
+| **Ao Vivo** | Jogos em andamento | Odds em tempo real, placar ao vivo, análise em tempo real |
+| **Histórico Bob** | Histórico de sugestões do Bob | Filtros, estatísticas, ranking de desempenho |
+
+---
+
+## 3. Requisitos Não-Funcionais
+
+### 3.1 Performance
+
+- **Tempo de Carregamento**: Página inicial deve carregar em menos de 2 segundos
+- **Responsividade**: Interface deve responder a interações do usuário em menos de 500ms
+- **Atualização de Odds**: Odds devem ser atualizadas em tempo real (máximo 5 segundos de latência)
+- **Escalabilidade**: Sistema deve suportar até 10.000 usuários simultâneos
+
+### 3.2 Segurança
+
+- **Autenticação**: OAuth 2.0 com Manus
+- **Criptografia**: HTTPS para todas as comunicações
+- **Proteção de Dados**: LGPD compliance para dados de usuários brasileiros
+- **Rate Limiting**: Proteção contra abuso de API
+- **Validação de Entrada**: Sanitização de todos os inputs do usuário
+
+### 3.3 Disponibilidade
+
+- **Uptime**: 99.5% de disponibilidade
+- **Backup**: Backup diário de dados
+- **Disaster Recovery**: Plano de recuperação em caso de falha
+
+### 3.4 Acessibilidade
+
+- **WCAG 2.1 AA**: Conformidade com padrões de acessibilidade
+- **Contraste de Cores**: Razão de contraste mínima de 4.5:1 para texto
+- **Navegação por Teclado**: Todas as funcionalidades acessíveis via teclado
+- **Leitores de Tela**: Compatibilidade com leitores de tela
+
+### 3.5 Compatibilidade
+
+- **Navegadores**: Chrome, Firefox, Safari, Edge (versões recentes)
+- **Dispositivos**: Desktop, tablet, mobile
+- **Sistemas Operacionais**: Windows, macOS, iOS, Android
+
+---
+
+## 4. Arquitetura Técnica
+
+### 4.1 Stack Tecnológico
+
+| Camada | Tecnologia | Justificativa |
+|--------|-----------|---------------|
+| **Frontend** | React 19 + TypeScript + Tailwind CSS 4 | Framework moderno, tipagem forte, styling eficiente |
+| **Backend** | Node.js + Express 4 + tRPC 11 | JavaScript full-stack, type-safe RPC, performance |
+| **Banco de Dados** | MySQL/TiDB | Relacional, escalável, suporta transações ACID |
+| **Autenticação** | OAuth 2.0 (Manus) | Segurança, integração com plataforma Manus |
+| **LLM/IA** | OpenAI API (GPT-4) | Análise estatística, geração de justificativas |
+| **Armazenamento de Arquivos** | S3 (AWS) | Escalável, confiável, suporta CDN |
+| **Hospedagem** | Manus Platform | Infraestrutura gerenciada, CI/CD integrado |
+
+### 4.2 Estrutura de Banco de Dados
+
+**Tabelas Principais:**
+
+| Tabela | Propósito | Relacionamentos |
+|--------|----------|-----------------|
+| `users` | Dados de usuários | 1:N com `userBets`, `betTickets`, `betHistory` |
+| `teams` | Times do Brasileirão | 1:N com `matches`, `statistics`, `playerStats` |
+| `matches` | Jogos | 1:N com `odds`, `statistics`, `userBets`, `bobSuggestions` |
+| `markets` | Tipos de mercados | 1:N com `odds`, `bobSuggestions` |
+| `odds` | Odds por mercado | N:1 com `matches`, `markets` |
+| `statistics` | Estatísticas por time | N:1 com `teams`, `matches` |
+| `playerStats` | Estatísticas de jogadores | N:1 com `teams` |
+| `userBets` | Apostas do usuário | N:1 com `users`, `matches`, `markets` |
+| `bobSuggestions` | Sugestões do Bob | N:1 com `matches`, `markets` |
+| `betHistory` | Histórico de palpites | N:1 com `users`, `bobSuggestions`, `matches` |
+| `betTickets` | Bilhetes de apostas | N:1 com `users` |
+
+### 4.3 Fluxo de Dados
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Frontend (React)                         │
+│  Dashboard → Criar Aposta → Bilhete → Histórico Bob        │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 API tRPC (Node.js)                          │
+│  Procedures: matches, odds, statistics, bob.suggest        │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+         ┌─────────────┼─────────────┐
+         ▼             ▼             ▼
+    ┌─────────┐  ┌──────────┐  ┌──────────┐
+    │ MySQL   │  │ OpenAI   │  │ Football │
+    │ Database│  │ API (Bob)│  │ Data API │
+    └─────────┘  └──────────┘  └──────────┘
+```
+
+### 4.4 Motor de IA Bob - Arquitetura
+
+**Fluxo de Sugestão:**
+
+1. **Coleta de Dados**: Recupera estatísticas do time, confrontos diretos, forma recente
+2. **Análise Estatística**: Calcula métricas (média de gols, posse, etc)
+3. **Processamento LLM**: Envia dados para GPT-4 com prompt estruturado
+4. **Geração de Sugestões**: LLM retorna sugestões em 4 categorias de odds
+5. **Validação**: Valida odds contra mercado real
+6. **Armazenamento**: Salva sugestão no banco de dados
+7. **Apresentação**: Retorna ao frontend com justificativa
+
+**Prompt do Bob (Estrutura):**
+
+```
+Você é um analista de apostas esportivas especializado em futebol brasileiro.
+Analise os dados do jogo abaixo e gere sugestões de apostas para 4 perfis de apostadores.
+
+DADOS DO JOGO:
+- Mandante: [Time A] (Forma: [W/D/L], Gols/jogo: X.X, Posse: X%)
+- Visitante: [Time B] (Forma: [W/D/L], Gols/jogo: X.X, Posse: X%)
+- Histórico H2H: [Últimos 5 confrontos]
+- Odds Atuais: [Odds disponíveis]
+
+GERE SUGESTÕES EM JSON:
+{
+  "conservador": {
+    "mercado": "...",
+    "opcao": "...",
+    "odd": X.XX,
+    "confianca": X%,
+    "justificativa": "..."
+  },
+  "moderado": {...},
+  "agressivo": {...},
+  "matematico": {...}
+}
+```
+
+### 4.5 Integração com APIs Externas
+
+**Football Data API** (ou similar):
+
+- Endpoint: `/matches` - Lista de jogos
+- Endpoint: `/teams` - Dados dos times
+- Endpoint: `/standings` - Tabela de classificação
+- Endpoint: `/players` - Dados de jogadores
+- Atualização: A cada 5 minutos para jogos ao vivo, a cada hora para dados históricos
+
+**OpenAI API:**
+
+- Modelo: GPT-4
+- Uso: Análise estatística e geração de sugestões do Bob
+- Rate Limit: 100 requisições/minuto
+- Custo: ~$0.03 por sugestão (estimado)
+
+---
+
+
+## 6. Design Visual
+
+### 6.1 Paleta de Cores
+
+| Cor | Hex | Uso |
+|-----|-----|-----|
+| **Verde Primário** | #00A651 | Botões, destaques, links |
+| **Verde Escuro** | #006B3F | Hover states, backgrounds |
+| **Branco** | #FFFFFF | Texto principal, backgrounds |
+| **Cinza Escuro** | #1A1A1A | Background principal (dark mode) |
+| **Cinza Médio** | #333333 | Backgrounds secundários |
+| **Cinza Claro** | #CCCCCC | Borders, texto secundário |
+| **Vermelho** | #E74C3C | Perdas, alertas |
+| **Verde Sucesso** | #27AE60 | Ganhos, confirmações |
+| **Amarelo** | #F39C12 | Avisos, pending |
+
+### 6.2 Tipografia
+
+- **Fonte Principal**: Inter ou Roboto (sans-serif)
+- **Tamanho de Corpo**: 14px - 16px
+- **Tamanho de Títulos**: 24px - 32px
+- **Peso**: Regular (400), Medium (500), Bold (700)
+
+### 6.3 Componentes Principais
+
+**Header:**
+- Logo do Bob Bet Analyzer
+- Navegação por abas (Série A, Série B, Ao Vivo, Histórico Bob)
+- Perfil do usuário / Logout
+
+**Sidebar (Opcional):**
+- Filtros rápidos
+- Favoritos
+- Histórico recente
+
+**Card de Jogo:**
+- Logos dos times
+- Nomes dos times
+- Data e hora
+- Odds principais (1x2)
+- Botão "Criar Aposta"
+- Botão "Ver Análise"
+
+**Bilhete de Aposta:**
+- Resumo de seleções
+- Cálculo de odds
+- Campo de valor da aposta
+- Botões de ação
+
+**Painel de Sugestões do Bob:**
+- 4 cards (um por categoria de odds)
+- Odd sugerida
+- Justificativa
+- Confiança (%)
+- Botão "Adicionar ao Bilhete"
+
+### 6.4 Responsividade
+
+- **Desktop** (1200px+): Layout completo com sidebar
+- **Tablet** (768px - 1199px): Layout adaptado, sidebar colapsável
+- **Mobile** (< 768px): Layout vertical, navegação por abas
+
+---
+
+
+## 8. Métricas e KPIs
+
+### 8.1 Métricas de Desempenho do Bob
+
+| Métrica | Descrição | Meta |
+|---------|-----------|------|
+| **Taxa de Acerto Conservador** | % de sugestões conservadoras que acertam | 75%+ |
+| **Taxa de Acerto Moderado** | % de sugestões moderadas que acertam | 60%+ |
+| **Taxa de Acerto Agressivo** | % de sugestões agressivas que acertam | 45%+ |
+| **Confiança Média** | Confiança média das sugestões | 65%+ |
+
+
+---
+
+## 9. Roadmap de Desenvolvimento
+
+### Fase 1: MVP (Semanas 1-4)
+
+- [ ] Setup inicial do projeto
+- [ ] Dashboard com listagem de jogos (Série A/B)
+- [ ] Integração com Cerebro BOB
+
+### Fase 2: Expansão (Semanas 5-8)
+
+- [ ] Implementar 4 perfis de apostador completos
+- [ ] Painel de estatísticas por jogo
+- [ ] Histórico de palpites
+- [ ] Cálculo de ROI simulado
+
+
+
+
+
+---
+
+## 10. Restrições e Nomenclatura
+
+### 10.1 Nomenclatura Fixa
+
+A seguinte nomenclatura **DEVE** ser mantida em toda a interface e documentação:
+
+| Elemento | Nomenclatura |
+|----------|-------------|
+| **Motor de IA** | "Bob" (sempre com B maiúsculo) |
+| **Perfil 1** | "Conservador" || "Odd Conservadora" |
+| **Perfil 2** | "Moderado" | | "Odd Moderada" |
+| **Perfil 3** | "Agressivo" | | "Odd Alta" |
+| **Perfil 4** | "Matemático/Sistema" || "Odd Arrojada/Agressiva" |
+
+
+### 10.2 Restrições de Design
+
+- Interface **obrigatoriamente** em dark mode
+- Cores primárias: **verde e branco**
+- Inspiração visual: **Bet365**
+- Compatibilidade: Desktop, tablet, mobile
+
+### 10.3 Restrições de Funcionalidade
+
+- Sugestões do Bob devem incluir **sempre** uma justificativa detalhada
+- Cálculo de odds deve ser **sempre** em tempo real
+- Histórico de palpites deve ser **sempre** rastreável
+- Dados de usuários devem ser **sempre** criptografados
+
+---
+
+## 11. Considerações de Segurança e Compliance
+
+### 11.1 Regulamentação
+
+- **LGPD**: Conformidade com Lei Geral de Proteção de Dados (Brasil)
+- **Jogo Responsável**: Avisos sobre riscos de apostas
+- **Termos de Serviço**: Clareza sobre natureza preditiva do Bob
+- **Disclaimer**: "O Bob fornece sugestões baseadas em análise estatística. Não há garantia de acerto."
+
+
+### 11.3 Responsabilidade 
+
+- Avisos claros sobre riscos de apostas
+---
+
+## 12. Apêndice: Exemplos de Sugestões do Bob
+
+### Exemplo 1: Sugestão Conservadora
+
+```
+JOGO: Flamengo vs Botafogo (Série A)
+DATA: 18/04/2026 18:30
+
+SUGESTÃO CONSERVADORA:
+Mercado: Resultado (1x2)
+Opção: Vitória do Flamengo (1)
+Odd: 1.50
+Categoria: Odd Conservadora
+Perfil: Apostador Conservador
+Confiança: 78%
+
+JUSTIFICATIVA:
+Flamengo é favorito técnico com vantagem de campo. Análise:
+- Forma Recente: 4V-1E nos últimos 5 jogos
+- Gols Marcados: 2.4 gols/jogo (acima da média)
+- Desempenho em Casa: 80% de taxa de vitória
+- Confronto Direto: Venceu 3 dos últimos 5 contra o Botafogo
+- Artilheiros: Pedro em forma com 3 gols nos últimos 5 jogos
+
+A odd 1.50 oferece bom retorno com probabilidade alta (~67%).
+Recomendado para apostadores conservadores.
+```
+
+### Exemplo 2: Sugestão Agressiva
+
+```
+JOGO: Série B - Time X vs Time Y
+DATA: 19/04/2026 20:00
+
+SUGESTÃO AGRESSIVA:
+Mercado: Placar Exato
+Opção: 2-1 para Time Y
+Odd: 8.50
+Categoria: Odd Arrojada/Agressiva
+Perfil: Apostador Agressivo
+Confiança: 42%
+
+JUSTIFICATIVA:
+Time Y é azarão mas tem potencial ofensivo. Análise:
+- Time Y em recuperação com 2V-1E nos últimos 3 jogos
+- Time X defensivamente frágil (2.1 gols sofridos/jogo)
+- Placar 2-1 ocorreu em 2 dos últimos 5 confrontos
+- Artilheiro de Time Y em boa forma
+
+Odd 8.50 oferece retorno muito alto com risco correspondente.
+Recomendado apenas para apostadores com apetite por risco.
+```
+
+### Exemplo 3: Sugestão Matemática
+
+```
+JOGO: Série A - Time A vs Time B
+DATA: 20/04/2026 19:00
+
+SUGESTÃO MATEMÁTICA/SISTEMA:
+Mercado: Ambos Marcam
+Opção: Sim
+Odd: 1.95
+Categoria: Odd Moderada
+Perfil: Apostador Matemático/Sistema
+Confiança: 71%
+
+JUSTIFICATIVA MATEMÁTICA:
+Análise de Value Bet:
+- Probabilidade Real: 53% (baseada em histórico)
+- Probabilidade Implícita na Odd: 51.3% (1/1.95)
+- Expected Value (EV): +1.7% (valor positivo)
+- Kelly Criterion: 2.1% do bankroll
+
+Mercado oferece value bet com EV positivo.
+Recomendado para apostadores que buscam maximizar valor esperado.
+```
+
+
+---
+
+## 13. Conclusão
+
+O **Bob Bet Analyzer** é uma plataforma inovadora que combina análise estatística avançada com inteligência artificial para oferecer sugestões de apostas personalizadas. Com suporte a 4 perfis de apostadores alinhado a categorias de odds, a plataforma atende a diferentes tipos de usuários, desde conservadores até agressivos.
+
+A integração do motor "Bob" com dados estatísticos detalhados permite que os usuários tomem decisões mais informadas, enquanto o rastreamento de desempenho oferece transparência sobre a qualidade das sugestões.
+
+Este PRD fornece a base para o desenvolvimento de uma plataforma robusta, escalável e focada na experiência do usuário.
+
+---
+
+**Documento Preparado por**: Manus AI  
+**Data**: Abril 2026  
+**Versão**: 1.0  
+**Status**: Pronto para Desenvolvimento

@@ -54,7 +54,7 @@ type AnthropicMessage = {
   usage: { input_tokens: number; output_tokens: number };
 };
 
-async function callClaude(prompt: string, maxTokens = 600): Promise<string | null> {
+export async function callClaude(prompt: string, maxTokens = 600): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
