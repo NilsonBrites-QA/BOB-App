@@ -319,3 +319,153 @@ model SimulationResult {
   @@map("simulation_results")
 }
 
+// ─── Feature: Criar Aposta ────────────────────────────────────────────────────
+
+model BetMatch {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  externalId   String         @unique @map("external_id")
+  homeTeam     String         @map("home_team")
+  awayTeam     String         @map("away_team")
+  homeCrest    String?        @map("home_crest")
+  awayCrest    String?        @map("away_crest")
+  competition  String         // 'Serie A' | 'Serie B'
+  season       Int
+  round        Int?
+  scheduledAt  DateTime       @map("scheduled_at")
+  status       BetMatchStatus @default(SCHEDULED)
+  homeScore    Int?           @map("home_score")
+  awayScore    Int?           @map("away_score")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  odds         BetOdds[]
+  suggestions  BobSuggestion[]
+  selections   BetSelection[]
+
+  @@index([competition, season, scheduledAt])
+  @@map("bet_matches")
+}
+
+enum BetMatchStatus {
+  SCHEDULED
+  LIVE
+  FINISHED
+  POSTPONED
+  CANCELLED
+
+  @@map("bet_match_status")
+}
+
+model BetOdds {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId     String    @map("match_id") @db.Uuid
+  market      BetMarket
+  option      String    // 'home' | 'draw' | 'away' | 'over_2.5' | 'btts_yes' | ...
+  optionLabel String    @map("option_label")
+  odd         Float
+  isActive    Boolean   @default(true) @map("is_active")
+  source      String?   // 'oddspapi' | 'manual'
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  match       BetMatch  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, market, option])
+  @@map("bet_odds")
+}
+
+enum BetMarket {
+  RESULT_1X2
+  BTTS
+  OVER_UNDER
+  EXACT_SCORE
+  DOUBLE_CHANCE
+  ASIAN_HANDICAP
+  FIRST_HALF_GOALS
+  CORNERS
+  CARDS
+
+  @@map("bet_market")
+}
+
+model BetTicket {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String          @map("user_id") @db.Uuid
+  status          BetTicketStatus @default(DRAFT)
+  stake           Decimal?        @db.Decimal(10, 2)
+  totalOdds       Float?          @map("total_odds")
+  potentialReturn Decimal?        @map("potential_return") @db.Decimal(12, 2)
+  notes           String?
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  selections      BetSelection[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("bet_tickets")
+}
+
+enum BetTicketStatus {
+  DRAFT
+  PLACED
+  WON
+  LOST
+  VOID
+
+  @@map("bet_ticket_status")
+}
+
+model BetSelection {
+  id          String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticketId    String               @map("ticket_id") @db.Uuid
+  matchId     String               @map("match_id") @db.Uuid
+  market      BetMarket
+  option      String
+  optionLabel String               @map("option_label")
+  odd         Float
+  result      BetSelectionResult?
+  createdAt   DateTime             @default(now()) @map("created_at")
+
+  ticket      BetTicket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  match       BetMatch   @relation(fields: [matchId], references: [id])
+
+  @@map("bet_selections")
+}
+
+enum BetSelectionResult {
+  WON
+  LOST
+  VOID
+
+  @@map("bet_selection_result")
+}
+
+model BobSuggestion {
+  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId       String              @map("match_id") @db.Uuid
+  profile       BettorProfile
+  market        BetMarket
+  option        String
+  optionLabel   String              @map("option_label")
+  odd           Float
+  confidence    Float               // 0.0 a 1.0
+  justification String              @db.Text
+  isActive      Boolean             @default(true) @map("is_active")
+  result        BetSelectionResult?
+  createdAt     DateTime            @default(now()) @map("created_at")
+
+  match         BetMatch            @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, profile, market])
+  @@index([matchId])
+  @@map("bob_suggestions")
+}
+
+enum BettorProfile {
+  CONSERVADOR
+  MODERADO
+  AGRESSIVO
+  MATEMATICO
+
+  @@map("bettor_profile")
+}

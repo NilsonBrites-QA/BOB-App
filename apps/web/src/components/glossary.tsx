@@ -108,7 +108,7 @@ export function GlossarySection() {
           <dl className="space-y-1">
             {cat.terms.map((t) => (
               <div key={t} className="flex gap-3 text-sm">
-                <dt className="min-w-[80px] font-mono text-emerald-400">{t}</dt>
+                <dt className="min-w-20 font-mono text-emerald-400">{t}</dt>
                 <dd className="text-zinc-400">{GLOSSARY[t]}</dd>
               </div>
             ))}

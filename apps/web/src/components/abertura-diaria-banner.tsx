@@ -37,9 +37,9 @@ export function AberturaDiariaBanner({ message }: Props) {
   if (!visible) return null;
 
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-[var(--accent)]/20 bg-[var(--accent)]/5 px-5 py-4">
+    <div className="flex items-start gap-3 rounded-2xl border border-accent/20 bg-accent/5 px-5 py-4">
       {/* Avatar BOB */}
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-xs font-bold text-white">
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">
         B
       </div>
       {/* Mensagem */}

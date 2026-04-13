@@ -13,6 +13,8 @@
  */
 
 import { useState, useRef, useEffect, FormEvent } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type Message = {
   id:      number;
@@ -119,7 +121,7 @@ export default function ChatPage() {
                 <button
                   key={s}
                   onClick={() => void send(s)}
-                  className="rounded-2xl border border-border bg-surface-strong px-4 py-3 text-left text-sm text-muted transition-colors hover:bg-[var(--accent-soft)] hover:text-foreground"
+                  className="rounded-2xl border border-border bg-surface-strong px-4 py-3 text-left text-sm text-muted transition-colors hover:bg-accent-soft hover:text-foreground"
                 >
                   {s}
                 </button>
@@ -136,7 +138,7 @@ export default function ChatPage() {
               className={m.role === "user" ? "flex justify-end" : "flex justify-start"}
             >
               {m.role === "assistant" && (
-                <div className="mr-3 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] font-bold text-white">
+                <div className="mr-3 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white">
                   B
                 </div>
               )}
@@ -144,11 +146,17 @@ export default function ChatPage() {
                 className={[
                   "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-7",
                   m.role === "user"
-                    ? "rounded-br-sm bg-[var(--accent)] text-white"
+                    ? "rounded-br-sm bg-accent text-white"
                     : "rounded-bl-sm border border-border bg-surface-strong text-foreground",
                 ].join(" ")}
               >
-                {m.content}
+                {m.role === "assistant" ? (
+                  <div className="prose prose-sm max-w-none prose-p:my-1 prose-li:my-0.5 prose-headings:font-semibold prose-code:rounded prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:text-foreground dark:prose-invert">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                  </div>
+                ) : (
+                  m.content
+                )}
                 {m.role === "assistant" && m.model && m.model !== "offline" && (
                   <p className="mt-1 font-mono text-[10px] text-muted/50">{m.model}</p>
                 )}
@@ -159,7 +167,7 @@ export default function ChatPage() {
           {/* Indicador de digitação */}
           {loading && (
             <div className="flex justify-start">
-              <div className="mr-3 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] font-bold text-white">
+              <div className="mr-3 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white">
                 B
               </div>
               <div className="rounded-2xl rounded-bl-sm border border-border bg-surface-strong px-5 py-4">
@@ -197,13 +205,13 @@ export default function ChatPage() {
             placeholder="Pergunte ao BOB… (Enter para enviar)"
             rows={1}
             disabled={loading}
-            className="flex-1 resize-none rounded-2xl border border-border bg-surface-strong px-4 py-3 text-sm leading-6 text-foreground placeholder:text-muted/50 focus:border-[var(--accent)] focus:outline-none disabled:opacity-50"
+            className="flex-1 resize-none rounded-2xl border border-border bg-surface-strong px-4 py-3 text-sm leading-6 text-foreground placeholder:text-muted/50 focus:border-accent focus:outline-none disabled:opacity-50"
             style={{ maxHeight: "120px", overflowY: "auto", fieldSizing: "content" } as React.CSSProperties}
           />
           <button
             type="submit"
             disabled={loading || !input.trim()}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-opacity hover:opacity-90 disabled:opacity-40"
             aria-label="Enviar"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">

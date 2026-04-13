@@ -201,7 +201,7 @@ export default async function CalibrationPage() {
                         {(row.weights[f] ?? 0).toFixed(1)}
                       </td>
                     ))}
-                    <td className="py-2.5 max-w-[220px] text-[11px] leading-5 text-muted/60">
+                    <td className="py-2.5 max-w-55 text-[11px] leading-5 text-muted/60">
                       {row.calibrationNotes ?? "—"}
                     </td>
                   </tr>

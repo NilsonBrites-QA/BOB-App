@@ -232,7 +232,7 @@ export default async function AdminPage() {
       {/* ── Relatórios ────────────────────────────────────────────── */}
       <section className="panel rounded-3xl p-6">
         <p className="kicker text-xs text-muted">Relatórios analíticos</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <Link
             href="/admin/calibration"
             className="flex flex-col gap-1 rounded-[20px] border border-border bg-surface-strong px-5 py-4 transition hover:border-accent"
@@ -246,6 +246,13 @@ export default async function AdminPage() {
           >
             <span className="text-sm font-semibold">Relatório de temporada</span>
             <span className="text-xs text-muted leading-6">Comparativo V1–V5 por acurácia de picks e ROI acumulado.</span>
+          </Link>
+          <Link
+            href="/admin/cerebro"
+            className="flex flex-col gap-1 rounded-[20px] border border-border bg-surface-strong px-5 py-4 transition hover:border-accent"
+          >
+            <span className="text-sm font-semibold">Cérebro observável</span>
+            <span className="text-xs text-muted leading-6">Telemetria viva do BOB com conexões reais, memória e modo cognitivo.</span>
           </Link>
         </div>
       </section>

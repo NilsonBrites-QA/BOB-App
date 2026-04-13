@@ -105,7 +105,7 @@ export type FDTeamsResponse = {
 
 const BASE = "https://api.football-data.org/v4";
 
-async function fdFetch<T>(path: string, revalidate: number): Promise<T> {
+export async function fdFetch<T>(path: string, revalidate: number): Promise<T> {
   const token = process.env.FOOTBALL_DATA_TOKEN;
   if (!token) {
     throw new Error(

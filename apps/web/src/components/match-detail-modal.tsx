@@ -160,7 +160,7 @@ export function MatchDetailModal({
     >
       <div
         ref={dialogRef}
-        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-border bg-[var(--surface-strong)] shadow-2xl"
+        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-border bg-surface-strong shadow-2xl"
         role="dialog"
         aria-modal="true"
       >
@@ -237,7 +237,7 @@ export function MatchDetailModal({
           </section>
 
           {/* ── Previsão BOB ──────────────────────────────────────────── */}
-          <section className="rounded-[16px] border border-accent/20 bg-accent/5 p-4">
+          <section className="rounded-2xl border border-accent/20 bg-accent/5 p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-muted">Previsão BOB</p>
@@ -293,7 +293,7 @@ export function MatchDetailModal({
             <p className="kicker text-[10px] uppercase tracking-wider text-muted">
               Todos os 15 fatores
             </p>
-            <div className="mt-3 overflow-hidden rounded-[16px] border border-border">
+            <div className="mt-3 overflow-hidden rounded-2xl border border-border">
               <table className="w-full border-collapse text-left text-xs">
                 <thead className="bg-[rgba(18,32,24,0.04)]">
                   <tr>

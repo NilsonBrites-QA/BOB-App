@@ -206,7 +206,7 @@ export default async function CalendarioPage({
 
       {/* ── Link para análise do BOB ───────────────────────────────────── */}
       {bobHasRound && (
-        <div className="flex items-center gap-3 rounded-[16px] border border-accent/20 bg-accent/5 px-5 py-4">
+        <div className="flex items-center gap-3 rounded-2xl border border-accent/20 bg-accent/5 px-5 py-4">
           <span className="text-accent text-lg">✦</span>
           <div className="flex-1">
             <p className="text-sm font-medium text-foreground">O BOB analisou esta rodada</p>
@@ -223,7 +223,7 @@ export default async function CalendarioPage({
 
       {/* ── Mensagem de erro ──────────────────────────────────────────── */}
       {fetchError && (
-        <div className="rounded-[16px] border border-signal/30 bg-signal/5 px-5 py-4 text-sm text-signal">
+        <div className="rounded-2xl border border-signal/30 bg-signal/5 px-5 py-4 text-sm text-signal">
           Não foi possível carregar os jogos. Configure{" "}
           <code className="rounded bg-surface-strong px-1">FOOTBALL_DATA_TOKEN</code> no{" "}
           <code className="rounded bg-surface-strong px-1">.env.local</code>.
@@ -244,7 +244,7 @@ export default async function CalendarioPage({
                   return (
                     <div
                       key={match.id}
-                      className="panel flex items-center gap-3 rounded-[16px] px-4 py-3 sm:gap-5 sm:px-6"
+                      className="panel flex items-center gap-3 rounded-2xl px-4 py-3 sm:gap-5 sm:px-6"
                     >
                       {/* Status */}
                       <span className={["shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold", st.cls].join(" ")}>

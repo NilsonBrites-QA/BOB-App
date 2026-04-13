@@ -3,6 +3,7 @@ import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { NavLink } from "@/components/nav-link";
 import { MobileNav } from "@/components/mobile-nav";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { signOut } from "@/app/auth/actions";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
@@ -35,7 +36,7 @@ export async function SiteShell({ children }: SiteShellProps) {
 
   return (
     <div className="layout-container flex min-h-full flex-col">
-      <header className="sticky top-0 z-20 border-b border-border bg-[rgba(252,250,244,0.86)] backdrop-blur-xl">
+      <header className="sticky top-0 z-20 border-b border-border bg-surface/90 backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-10">
           <Link href="/" className="flex items-center gap-2.5">
             <Image
@@ -66,6 +67,7 @@ export async function SiteShell({ children }: SiteShellProps) {
                 <span className="mx-1 h-3 w-px shrink-0 bg-border" aria-hidden />
 
                 {/* Ferramentas */}
+                <NavLink href="/apostas">Apostas</NavLink>
                 <NavLink href="/chat">Chat</NavLink>
                 <NavLink href="/investimento-retorno">I×R</NavLink>
 
@@ -76,6 +78,8 @@ export async function SiteShell({ children }: SiteShellProps) {
                     <NavLink href="/admin">Admin</NavLink>
                   </>
                 )}
+
+                <ThemeToggle />
 
                 <form action={signOut} className="ml-1">
                   <button

@@ -212,13 +212,13 @@ export default async function SeasonReportPage() {
                         <td className="px-4 py-3 text-right font-mono text-muted">{brl(s.totalStaked)}</td>
                         <td className={[
                           "px-4 py-3 text-right font-mono font-semibold",
-                          s.netReturn >= 0 ? "text-[var(--accent)]" : "text-red-600",
+                          s.netReturn >= 0 ? "text-accent" : "text-red-600",
                         ].join(" ")}>
                           {brl(s.netReturn)}
                         </td>
                         <td className={[
                           "px-4 py-3 text-right font-mono",
-                          s.totalStaked === 0 ? "text-muted" : s.netReturn >= 0 ? "text-[var(--accent)]" : "text-red-600",
+                          s.totalStaked === 0 ? "text-muted" : s.netReturn >= 0 ? "text-accent" : "text-red-600",
                         ].join(" ")}>
                           {roi(s.netReturn, s.totalStaked)}
                         </td>
@@ -255,7 +255,7 @@ export default async function SeasonReportPage() {
                       <div
                         className={[
                           "h-full rounded-full transition-all",
-                          isBest ? "bg-[var(--accent)]" : "bg-[var(--accent-soft)] border border-[var(--accent)]/30",
+                          isBest ? "bg-accent" : "bg-accent-soft border border-accent/30",
                         ].join(" ")}
                         style={{ width: `${pctNum.toFixed(1)}%` }}
                       />

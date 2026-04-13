@@ -10,27 +10,27 @@ const RISK_CONFIG: Record<string, { label: string; dot: string; badge: string }>
   V1: {
     label: "Conservador",
     dot: "bg-emerald-500",
-    badge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    badge: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
   },
   V2: {
     label: "Equilibrado",
     dot: "bg-teal-500",
-    badge: "border-teal-200 bg-teal-50 text-teal-700",
+    badge: "border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950 dark:text-teal-300",
   },
   V3: {
     label: "Analítico",
     dot: "bg-sky-500",
-    badge: "border-sky-200 bg-sky-50 text-sky-700",
+    badge: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300",
   },
   V4: {
     label: "Calculado",
     dot: "bg-amber-500",
-    badge: "border-amber-200 bg-amber-50 text-amber-700",
+    badge: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
   },
   V5: {
     label: "Agressivo",
     dot: "bg-red-500",
-    badge: "border-red-200 bg-red-50 text-red-700",
+    badge: "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300",
   },
 };
 
@@ -87,7 +87,7 @@ export function VariationCard({ variation, teamBadges = {} }: VariationCardProps
             {hasMarginalAnchor && (
               <span
                 title="Esta variação contém âncora marginal — rodada com poucos favoritos claros"
-                className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300"
               >
                 ⚠ marginal
               </span>
@@ -133,7 +133,7 @@ export function VariationCard({ variation, teamBadges = {} }: VariationCardProps
         <button
           type="button"
           onClick={() => setPicksOpen((v) => !v)}
-          className="flex w-full items-center justify-between bg-[rgba(21,86,61,0.04)] px-4 py-2 text-left"
+          className="flex w-full items-center justify-between bg-accent/5 px-4 py-2 text-left dark:bg-accent/10"
           aria-expanded={picksOpen}
         >
           <div className="grid flex-1 grid-cols-[1fr_62px_50px] text-[10px] font-semibold uppercase tracking-wider text-muted">

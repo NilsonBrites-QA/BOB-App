@@ -1,0 +1,801 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BOB Cerebro Real</title>
+  <style>
+    :root {
+      --bg: #f3efe4;
+      --panel: rgba(255, 252, 246, 0.88);
+      --panel-strong: #fffdf8;
+      --text: #14241c;
+      --muted: #61726b;
+      --line: rgba(20, 36, 28, 0.12);
+      --accent: #175b43;
+      --accent-soft: rgba(23, 91, 67, 0.1);
+      --warn: #b87918;
+      --warn-soft: rgba(184, 121, 24, 0.12);
+      --danger: #b24646;
+      --danger-soft: rgba(178, 70, 70, 0.12);
+      --shadow: 0 18px 60px rgba(30, 41, 36, 0.10);
+      --radius: 24px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "IBM Plex Sans", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(23,91,67,0.10), transparent 26%),
+        radial-gradient(circle at bottom right, rgba(184,121,24,0.10), transparent 24%),
+        linear-gradient(180deg, #f7f2e8 0%, var(--bg) 100%);
+    }
+    a { color: inherit; }
+    .shell {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 32px 20px 60px;
+    }
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+    }
+    .hero {
+      padding: 28px;
+      display: grid;
+      gap: 24px;
+      grid-template-columns: 1.25fr .75fr;
+    }
+    .kicker {
+      font-size: 11px;
+      letter-spacing: .26em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    h1 {
+      margin: 10px 0 8px;
+      font-size: clamp(34px, 4vw, 54px);
+      line-height: 1.02;
+    }
+    h2 { margin: 10px 0 12px; }
+    p { line-height: 1.65; }
+    code { font-family: Consolas, monospace; }
+    .muted { color: var(--muted); }
+    .grid-4, .grid-3, .grid-2 {
+      display: grid;
+      gap: 16px;
+    }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .metric {
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 18px;
+    }
+    .metric .value {
+      font-size: clamp(30px, 3vw, 42px);
+      font-weight: 700;
+      margin-top: 8px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--panel-strong);
+    }
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 22px 0 18px;
+    }
+    .tab {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.45);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .tab.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .view { display: none; }
+    .view.active { display: block; }
+    .section { margin-top: 18px; }
+    .section > .panel { padding: 24px; }
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .module-card {
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 18px;
+      cursor: pointer;
+      transition: transform .15s ease, border-color .15s ease;
+    }
+    .module-card:hover { transform: translateY(-2px); border-color: rgba(23,91,67,.25); }
+    .module-card h3 { margin: 10px 0 6px; }
+    .progress {
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(20,36,28,.08);
+      overflow: hidden;
+    }
+    .progress > span {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #2f8162);
+    }
+    .detail {
+      margin-top: 16px;
+      background: #fffdf8;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 18px;
+      min-height: 260px;
+    }
+    .list {
+      display: grid;
+      gap: 10px;
+    }
+    .list-item {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,.6);
+      padding: 14px 16px;
+    }
+    .timeline {
+      display: grid;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .timeline-item {
+      position: relative;
+      padding: 14px 16px 14px 44px;
+      border-radius: 20px;
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+    }
+    .timeline-item::before {
+      content: "";
+      position: absolute;
+      left: 18px;
+      top: 18px;
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+    .code-wrap {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      overflow: hidden;
+      background: #18231e;
+      color: #e9f2ec;
+    }
+    .code-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px;
+      background: rgba(255,255,255,.04);
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    .code-tab {
+      cursor: pointer;
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 999px;
+      padding: 7px 12px;
+      color: rgba(255,255,255,.68);
+      font-size: 12px;
+    }
+    .code-tab.active {
+      background: rgba(255,255,255,.12);
+      color: #fff;
+    }
+    pre {
+      margin: 0;
+      padding: 18px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow: auto;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .status-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .pill {
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font-size: 12px;
+      background: rgba(255,255,255,.45);
+    }
+    .live-empty {
+      padding: 16px;
+      border: 1px dashed var(--line);
+      border-radius: 18px;
+      color: var(--muted);
+    }
+    @media (max-width: 1024px) {
+      .hero, .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div>
+        <div class="kicker">BOB · Cerebro real · auditoria integrada</div>
+        <h1>Documento unico do cerebro BOB</h1>
+        <p class="muted">
+          Snapshot tecnico do estado real do app em 13/04/2026, cruzando produto, codigo, cron, memoria e IA.
+          Esta pagina combina uma auditoria afiada do projeto com dados vivos do cerebro via endpoint autenticado.
+        </p>
+        <div class="status-bar" id="env-badges"></div>
+      </div>
+      <div class="grid-2">
+        <div class="metric">
+          <div class="kicker">Implementacao global</div>
+          <div class="value">78%</div>
+          <p class="muted">Visao completa do BOB: produto, cerebro, UI, memoria, operacao e lacunas ainda abertas.</p>
+        </div>
+        <div class="metric">
+          <div class="kicker">Core Serie A operacional</div>
+          <div class="value">86%</div>
+          <p class="muted">Motor, dashboard, chat, cron, admin e memoria basica funcionando de ponta a ponta.</p>
+        </div>
+        <div class="metric">
+          <div class="kicker">Ponto mais forte</div>
+          <div class="value" style="font-size:28px">Motor + cron + IA</div>
+          <p class="muted">O nucleo de decisao e o pos-rodada estao ligados e persistem aprendizado real.</p>
+        </div>
+        <div class="metric">
+          <div class="kicker">Maior gap</div>
+          <div class="value" style="font-size:28px">Serie B + produto premium</div>
+          <p class="muted">O cerebro existe, mas a visao completa de multiplas competicoes e stats profundas ainda nao fechou.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="tabs" id="tabs"></div>
+
+    <section id="view-overview" class="view active"></section>
+    <section id="view-modules" class="view"></section>
+    <section id="view-live" class="view"></section>
+    <section id="view-integrations" class="view"></section>
+    <section id="view-snippets" class="view"></section>
+    <section id="view-path" class="view"></section>
+  </div>
+
+  <script>
+    const AUDIT = {
+      implementation: {
+        overall: 78,
+        core: 86,
+        methodology: [
+          { area: 'Infra, auth, deploy e admin', weight: 15, score: 92 },
+          { area: 'Motor deterministico e variacoes', weight: 20, score: 88 },
+          { area: 'Pipeline de dados Serie A', weight: 15, score: 80 },
+          { area: 'IA, chat e personalidade', weight: 15, score: 85 },
+          { area: 'Memoria, reflexao e calibracao', weight: 15, score: 74 },
+          { area: 'UX e paginas principais', weight: 10, score: 78 },
+          { area: 'Serie B e multicompeticao', weight: 5, score: 20 },
+          { area: 'Kelly e banca', weight: 2, score: 25 },
+          { area: 'Testes e hardening', weight: 3, score: 45 }
+        ]
+      },
+      tabs: [
+        { id: 'overview', label: 'Visao geral' },
+        { id: 'modules', label: 'Modulos' },
+        { id: 'live', label: 'Cerebro vivo' },
+        { id: 'integrations', label: 'Integracoes' },
+        { id: 'snippets', label: 'Snippets' },
+        { id: 'path', label: 'Melhor caminho' }
+      ],
+      modules: [
+        {
+          key: 'motor',
+          title: 'Motor deterministico',
+          status: 'completo',
+          score: 88,
+          summary: 'Scoring, ancoras, variacoes V1-V5, round difficulty e filtro de valor estao ativos.',
+          works: [
+            'scoreMatch e selectAnchors rodam no dashboard e nas APIs de rodada',
+            '15 fatores existem no scoring atual',
+            'round-analyzer esta implementado e usado no chat e dashboard',
+            'variations.ts ja opera com perfis distintos e odd floors'
+          ],
+          gaps: [
+            'Kelly criterion ainda ausente',
+            'Parte dos fatores depende de dados externos ainda nao preenchidos em 100%'
+          ],
+          files: [
+            'apps/web/src/lib/bob/engine/scoring.ts',
+            'apps/web/src/lib/bob/engine/variations.ts',
+            'apps/web/src/lib/bob/engine/round-analyzer.ts'
+          ]
+        },
+        {
+          key: 'dados',
+          title: 'Pipeline de dados',
+          status: 'parcial',
+          score: 80,
+          summary: 'Serie A esta bem coberta. Serie B e alguns enriquecimentos ainda estao incompletos.',
+          works: [
+            'football-data abastece standings, fixtures e calendario',
+            'TheSportsDB abastece badges',
+            'open-meteo fornece clima',
+            'API bob round entrega rodada processada em JSON'
+          ],
+          gaps: [
+            'Serie B ainda nao esta integrada ponta a ponta',
+            'API-Football e OddsPapi nao estao explorados de forma plena em toda a experiencia',
+            'calendario ainda usa 2025 hardcoded no banco para rounds analisados'
+          ],
+          files: [
+            'apps/web/src/lib/bob/connectors/index.ts',
+            'apps/web/src/lib/bob/connectors/football-data.ts',
+            'apps/web/src/lib/bob/connectors/api-football.ts',
+            'apps/web/src/lib/bob/connectors/oddspapi.ts',
+            'apps/web/src/app/calendario/page.tsx'
+          ]
+        },
+        {
+          key: 'ia',
+          title: 'IA e personalidade',
+          status: 'completo',
+          score: 85,
+          summary: 'Chat, narrativa, reflexao e dual-mind estao ligados ao cerebro do BOB.',
+          works: [
+            'Chat usa contexto real da rodada e reflexoes recentes',
+            'BOB_FAITH e personalidade canonica existem e ja orientam o sistema',
+            'post-round aciona selfReflect e dual-mind com persistencia',
+            'chat history agora usa banco, nao apenas localStorage'
+          ],
+          gaps: [
+            'Ainda nao existe uma tela dedicada de introspecao ao vivo do cerebro',
+            'A qualidade depende da presenca das chaves das LLMs no ambiente'
+          ],
+          files: [
+            'apps/web/src/app/api/bob/chat/route.ts',
+            'apps/web/src/lib/bob/personality.ts',
+            'apps/web/src/lib/bob/ai/self-reflection.ts',
+            'apps/web/src/lib/bob/ai/dual-mind.ts'
+          ]
+        },
+        {
+          key: 'memoria',
+          title: 'Memoria e autoevolucao',
+          status: 'parcial',
+          score: 74,
+          summary: 'O sistema ja persiste cognicoes reais, mas ainda nao mostra tudo de forma unificada ao usuario.',
+          works: [
+            'MemoryEvent recebe reflection e dual-analysis',
+            'Historico ja mostra reflexoes do BOB',
+            'Admin calibration mostra pesos e padroes condicionais',
+            'SimulationResult e FactorWeight existem e sao consultados'
+          ],
+          gaps: [
+            'Nao existe ainda um knowledge graph navegavel ou memoria profunda visual integrada',
+            'ConditionalPattern existe, mas sua influencia ainda e menos visivel no produto',
+            'O usuario comum ainda nao enxerga a cadeia inteira do aprendizado'
+          ],
+          files: [
+            'apps/web/src/app/historico/page.tsx',
+            'apps/web/src/app/admin/calibration/page.tsx',
+            'apps/web/prisma/schema.prisma'
+          ]
+        },
+        {
+          key: 'produto',
+          title: 'Produto e UX',
+          status: 'parcial',
+          score: 78,
+          summary: 'Dashboard, historico, estatisticas, classificacao e calendario existem, mas ainda faltam aprofundamento e coesao premium.',
+          works: [
+            'Dashboard esta bem estruturado e usa badges reais',
+            'Historico, classificacao, calendario e estatisticas existem',
+            'VariationCard ja usa TeamBadge e risco visual',
+            'AnchorCard agora permite aceitar ou rejeitar localmente'
+          ],
+          gaps: [
+            'Estatisticas ainda nao entregam profundidade tecnica de elite',
+            'Aceitar/rejeitar ancora ainda nao persiste no banco nem recalcula o motor',
+            'Fluxo de proxima rodada ainda precisa virar experiencia de produto explicita'
+          ],
+          files: [
+            'apps/web/src/app/dashboard/page.tsx',
+            'apps/web/src/app/estatisticas/page.tsx',
+            'apps/web/src/components/anchor-card.tsx',
+            'apps/web/src/components/variation-card.tsx'
+          ]
+        },
+        {
+          key: 'serie-b',
+          title: 'Serie B e expansao',
+          status: 'faltando',
+          score: 20,
+          summary: 'Ha sinais iniciais no chat e no mapeamento de torneios, mas o fluxo completo ainda nao existe.',
+          works: [
+            'getSerieBStandings foi adicionado',
+            'OddsPapi ja mapeia o tournamentId da Serie B'
+          ],
+          gaps: [
+            'Sem dashboard dedicado, sem cron, sem persistencia por competicao, sem estatisticas completas',
+            'Sem separacao completa de produto para Serie B'
+          ],
+          files: [
+            'apps/web/src/lib/bob/connectors/football-data.ts',
+            'apps/web/src/lib/bob/connectors/oddspapi.ts',
+            'apps/web/src/app/api/bob/chat/route.ts'
+          ]
+        }
+      ],
+      strengths: [
+        'Nucleo do produto esta de pe: dashboard, motor, chat, cron, admin e persistencia.',
+        'O cerebro do pos-rodada existe e grava reflexao e dual-mind no banco.',
+        'A camada visual principal ja parou de parecer prototipo simples.',
+        'O projeto tem documentacao densa o suficiente para guiar a proxima fase com rigor.'
+      ],
+      attention: [
+        'README raiz esta desatualizado frente ao estado real do projeto.',
+        'Parte da documentacao antiga ainda fala em fases pendentes ja superadas pelo codigo.',
+        'Calendario consulta rounds analisados com season year 2025, enquanto o resto do app opera 2026.',
+        'O RF-21 foi parcialmente atendido visualmente, mas nao no dominio do motor.',
+        'BOB completo ainda nao deve ser vendido mentalmente como multiliga ou Serie B pronta.'
+      ],
+      disconnected: [
+        'Knowledge graph de memoria profunda ainda nao se materializou no produto.',
+        'Kelly criterion ainda nao existe como motor de sugestao de stake.',
+        'Serie B ainda nao foi promovida a feature de produto completa.',
+        'Nao existia endpoint unificado do cerebro no produto atual; esta pagina o cria agora.'
+      ],
+      architecture: [
+        { stage: 'Pre-round', text: 'Cron pre-round detecta a rodada, busca dados, roda scoring, define ancoras, gera variacoes e persiste.' },
+        { stage: 'Dashboard', text: 'Usuario consome ancoras, variacoes, narrativa e abertura diaria com identidade BOB.' },
+        { stage: 'Chat', text: 'Chat injeta standings, rodada, variacoes e reflexoes recentes, respondendo com o tom do BOB.' },
+        { stage: 'Post-round', text: 'Cron fecha picks, roda backtest, gera reflexao, executa dual-mind e revalida paginas.' },
+        { stage: 'Memoria', text: 'MemoryEvent, FactorWeight, ConditionalPattern e SimulationResult guardam a evolucao cognitiva.' },
+        { stage: 'Admin e historico', text: 'Historico e calibration expoem parte do aprendizado e da autoevolucao do sistema.' }
+      ],
+      bestPath: [
+        'Primeiro fechar a espinha dorsal do cerebro: endpoint unificado, painel unico de memoria e historico cognitivo navegavel.',
+        'Depois aprofundar estatisticas por jogo e proxima rodada para elevar a inteligencia percebida.',
+        'Na sequencia, persistir aceitar/rejeitar ancora no banco e plugar no recalc real das variacoes.',
+        'So depois promover Serie B a produto completo, com competicao isolada e pipeline proprio.',
+        'Kelly, testes e refinamento premium entram por ultimo para endurecer o produto.'
+      ],
+      snippets: {
+        javascript: "// Browser JS\nasync function carregarCerebro() {\n  const res = await fetch('/api/bob/brain/status');\n  if (!res.ok) throw new Error('Falha ao carregar cerebro');\n  return res.json();\n}\n\ncarregarCerebro().then(console.log);",
+        nodejs: "// Node.js 18+\nconst res = await fetch('https://seu-host/api/bob/brain/status', {\n  headers: { Cookie: 'sua_sessao_aqui' }\n});\nconst data = await res.json();\nconsole.log(data.snapshot, data.memory.slice(0, 3));",
+        python: "# Python\nimport requests\n\ns = requests.Session()\nres = s.get('https://seu-host/api/bob/brain/status')\nres.raise_for_status()\nbrain = res.json()\nprint(brain['snapshot'])",
+        java: "// Java 21+\nHttpClient client = HttpClient.newHttpClient();\nHttpRequest request = HttpRequest.newBuilder()\n  .uri(URI.create('https://seu-host/api/bob/brain/status'))\n  .header('Cookie', 'sua_sessao_aqui')\n  .build();\nHttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());\nSystem.out.println(response.body());",
+        php: "<?php\n$ch = curl_init('https://seu-host/api/bob/brain/status');\ncurl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\ncurl_setopt($ch, CURLOPT_HTTPHEADER, ['Cookie: sua_sessao_aqui']);\n$response = curl_exec($ch);\necho $response;",
+        markdown: "# BOB Cerebro\n\n- Endpoint vivo: /api/bob/brain/status\n- Rodada atual: consulte snapshot.latestRound\n- Memoria recente: memory[]\n- Evolucao de pesos: factorWeights[]\n- Simulacoes: simulations[]\n\n> Use esta estrutura para dashboards, observabilidade e auditoria do cerebro."
+      }
+    };
+
+    let liveData = null;
+    const tabsEl = document.getElementById('tabs');
+    const envBadgesEl = document.getElementById('env-badges');
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+    }
+
+    function badge(label, state) {
+      const color = state === 'ok' ? 'var(--accent)' : state === 'warn' ? 'var(--warn)' : 'var(--danger)';
+      return `<span class="badge"><span style="width:10px;height:10px;border-radius:999px;background:${color};display:inline-block"></span>${label}</span>`;
+    }
+
+    function formatPct(value) {
+      if (value == null || Number.isNaN(value)) return '—';
+      return `${Math.round(value * 100)}%`;
+    }
+
+    function renderTabs() {
+      tabsEl.innerHTML = AUDIT.tabs.map((tab, index) => `
+        <button class="tab ${index === 0 ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>
+      `).join('');
+      tabsEl.querySelectorAll('.tab').forEach((button) => {
+        button.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach((el) => el.classList.remove('active'));
+          document.querySelectorAll('.view').forEach((el) => el.classList.remove('active'));
+          button.classList.add('active');
+          document.getElementById(`view-${button.dataset.tab}`).classList.add('active');
+        });
+      });
+    }
+
+    function renderOverview() {
+      const methodology = AUDIT.implementation.methodology.map((item) => `
+        <div class="list-item">
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
+            <strong>${item.area}</strong>
+            <span class="pill">peso ${item.weight}% · score ${item.score}%</span>
+          </div>
+          <div class="progress" style="margin-top:10px"><span style="width:${item.score}%"></span></div>
+        </div>
+      `).join('');
+
+      document.getElementById('view-overview').innerHTML = `
+        <div class="section grid-2">
+          <div class="panel">
+            <div class="kicker">Leitura executiva</div>
+            <h2>O que ja esta bem implementado</h2>
+            <div class="list">${AUDIT.strengths.map((item) => `<div class="list-item">${item}</div>`).join('')}</div>
+          </div>
+          <div class="panel">
+            <div class="kicker">Pontos de atencao</div>
+            <h2>Onde ainda existe risco</h2>
+            <div class="list">${AUDIT.attention.map((item) => `<div class="list-item">${item}</div>`).join('')}</div>
+          </div>
+        </div>
+        <div class="section panel">
+          <div class="kicker">Metodologia do percentual</div>
+          <h2>Como cheguei aos 78%</h2>
+          <div class="list">${methodology}</div>
+        </div>
+        <div class="section panel">
+          <div class="kicker">Arquitetura conectada</div>
+          <h2>Fluxo real do cerebro</h2>
+          <div class="timeline">${AUDIT.architecture.map((step) => `<div class="timeline-item"><strong>${step.stage}</strong><div class="muted">${step.text}</div></div>`).join('')}</div>
+        </div>
+      `;
+    }
+
+    function renderModules() {
+      const cards = AUDIT.modules.map((module) => `
+        <button class="module-card" data-module="${module.key}">
+          <div class="kicker">${module.status}</div>
+          <h3>${module.title}</h3>
+          <p class="muted">${module.summary}</p>
+          <div class="progress"><span style="width:${module.score}%"></span></div>
+        </button>
+      `).join('');
+
+      document.getElementById('view-modules').innerHTML = `
+        <div class="panel">
+          <div class="kicker">Mapa de modulos</div>
+          <h2>O que esta ligado, parcial ou faltando</h2>
+          <div class="module-grid">${cards}</div>
+          <div id="module-detail" class="detail"></div>
+        </div>
+      `;
+
+      const detail = document.getElementById('module-detail');
+      function paint(module) {
+        detail.innerHTML = `
+          <div class="kicker">${module.status} · ${module.score}%</div>
+          <h3>${module.title}</h3>
+          <p class="muted">${module.summary}</p>
+          <div class="grid-2">
+            <div>
+              <h4>Funciona hoje</h4>
+              <div class="list">${module.works.map((item) => `<div class="list-item">${item}</div>`).join('')}</div>
+            </div>
+            <div>
+              <h4>Gap real</h4>
+              <div class="list">${module.gaps.map((item) => `<div class="list-item">${item}</div>`).join('')}</div>
+            </div>
+          </div>
+          <div style="margin-top:14px">
+            <h4>Arquivos-chave</h4>
+            <div class="list">${module.files.map((file) => `<div class="list-item"><code>${file}</code></div>`).join('')}</div>
+          </div>
+        `;
+      }
+      paint(AUDIT.modules[0]);
+      document.querySelectorAll('[data-module]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const module = AUDIT.modules.find((item) => item.key === button.dataset.module);
+          if (module) paint(module);
+        });
+      });
+    }
+
+    function renderLive() {
+      const root = document.getElementById('view-live');
+      if (!liveData) {
+        root.innerHTML = `
+          <div class="panel">
+            <div class="kicker">Cerebro vivo</div>
+            <h2>Endpoint autentico do cerebro</h2>
+            <div class="live-empty">Esta tela consulta <code>/api/bob/brain/status</code>. Se voce nao estiver logado, o fetch falha com 401 e a auditoria continua util mesmo assim.</div>
+          </div>
+        `;
+        return;
+      }
+
+      const memory = liveData.memory.length
+        ? liveData.memory.map((event) => `
+            <div class="list-item">
+              <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+                <div>
+                  <strong>${event.type} · R${event.round?.number ?? '—'}</strong>
+                  <div class="muted">${new Date(event.createdAt).toLocaleString('pt-BR')}</div>
+                </div>
+                <span class="pill">${event.summary.source || event.source || 'brain'}</span>
+              </div>
+              <p>${escapeHtml(event.summary.publicText || event.summary.narrative || 'Sem resumo publico')}</p>
+            </div>
+          `).join('')
+        : '<div class="live-empty">Nenhum evento de memoria retornado.</div>';
+
+      const rounds = liveData.rounds.length
+        ? liveData.rounds.map((round) => `
+            <div class="list-item">
+              <strong>Rodada ${round.number}</strong>
+              <div class="muted">status ${round.status} · ${round.anchors} ancoras · ${round.variations} variacoes · ${round.memoryEvents} eventos</div>
+            </div>
+          `).join('')
+        : '<div class="live-empty">Nenhuma rodada encontrada.</div>';
+
+      const weights = liveData.factorWeights.length
+        ? liveData.factorWeights.map((row) => `
+            <div class="list-item">
+              <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+                <strong>R${row.round}</strong>
+                <span class="pill">overall ${formatPct(row.overallAccuracy)} · ancora ${formatPct(row.anchorAccuracy)}</span>
+              </div>
+              <div class="muted">Tabela ${row.weights.tableContext ?? '—'} · Forma ${row.weights.recentForm ?? '—'} · Mercado ${row.weights.market ?? '—'} · Motivacao ${row.weights.motivation ?? '—'}</div>
+            </div>
+          `).join('')
+        : '<div class="live-empty">Nenhum snapshot de peso retornado.</div>';
+
+      root.innerHTML = `
+        <div class="section grid-4">
+          <div class="metric"><div class="kicker">Memoria total</div><div class="value">${liveData.snapshot.totalMemoryEvents}</div></div>
+          <div class="metric"><div class="kicker">Reflexoes</div><div class="value">${liveData.snapshot.totalReflections}</div></div>
+          <div class="metric"><div class="kicker">Dual analyses</div><div class="value">${liveData.snapshot.totalDualAnalyses}</div></div>
+          <div class="metric"><div class="kicker">Mensagens de chat</div><div class="value">${liveData.snapshot.totalChatMessages}</div></div>
+        </div>
+        <div class="section grid-3">
+          <div class="panel"><div class="kicker">Rodadas</div><h2>Estado vivo das rodadas</h2><div class="list">${rounds}</div></div>
+          <div class="panel"><div class="kicker">Memoria recente</div><h2>Reflexoes e cognicoes</h2><div class="list">${memory}</div></div>
+          <div class="panel"><div class="kicker">Calibracao</div><h2>Evolucao dos pesos</h2><div class="list">${weights}</div></div>
+        </div>
+      `;
+    }
+
+    function renderIntegrations() {
+      const env = liveData?.env || {};
+      document.getElementById('view-integrations').innerHTML = `
+        <div class="section grid-2">
+          <div class="panel">
+            <div class="kicker">Integracoes ativas</div>
+            <h2>Mapa de conectividade</h2>
+            <div class="list">
+              <div class="list-item">football-data: ${env.footballData ? 'ativo' : 'desligado'} · standings, fixtures, calendario, classificacao</div>
+              <div class="list-item">Anthropic: ${env.anthropic ? 'ativo' : 'desligado'} · reflexao e analise cognitiva</div>
+              <div class="list-item">OpenAI: ${env.openai ? 'ativo' : 'desligado'} · narrativa e dual-mind</div>
+              <div class="list-item">API-Football: ${env.apiFootball ? 'configurada' : 'nao configurada'} · enrich, injuries, lineups</div>
+              <div class="list-item">OddsPapi: ${env.oddspapi ? 'configurada' : 'nao configurada'} · odds reais Serie A e B</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="kicker">Partes desligadas ou incompletas</div>
+            <h2>O que ainda nao esta 100%</h2>
+            <div class="list">${AUDIT.disconnected.map((item) => `<div class="list-item">${item}</div>`).join('')}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSnippets() {
+      const languages = Object.keys(AUDIT.snippets);
+      document.getElementById('view-snippets').innerHTML = `
+        <div class="panel">
+          <div class="kicker">Front + linguagens</div>
+          <h2>Como conectar neste cerebro</h2>
+          <p class="muted">Os snippets abaixo demonstram como consumir o endpoint vivo do cerebro a partir de browser, Node.js, Python, Java, PHP e Markdown operacional.</p>
+          <div class="code-wrap">
+            <div class="code-tabs">${languages.map((language, index) => `<button class="code-tab ${index === 0 ? 'active' : ''}" data-code="${language}">${language}</button>`).join('')}</div>
+            <pre id="code-output"></pre>
+          </div>
+        </div>
+      `;
+      const output = document.getElementById('code-output');
+      function paint(language) { output.textContent = AUDIT.snippets[language]; }
+      paint(languages[0]);
+      document.querySelectorAll('[data-code]').forEach((button) => {
+        button.addEventListener('click', () => {
+          document.querySelectorAll('.code-tab').forEach((el) => el.classList.remove('active'));
+          button.classList.add('active');
+          paint(button.dataset.code);
+        });
+      });
+    }
+
+    function renderPath() {
+      document.getElementById('view-path').innerHTML = `
+        <div class="section grid-2">
+          <div class="panel">
+            <div class="kicker">Melhor caminho</div>
+            <h2>Sequencia recomendada</h2>
+            <div class="timeline">${AUDIT.bestPath.map((item, index) => `<div class="timeline-item"><strong>Passo ${index + 1}</strong><div class="muted">${item}</div></div>`).join('')}</div>
+          </div>
+          <div class="panel">
+            <div class="kicker">Resultado esperado</div>
+            <h2>Onde isso leva o produto</h2>
+            <div class="list">
+              <div class="list-item">Curto prazo: cerebro unificado e observavel para voce e para o usuario.</div>
+              <div class="list-item">Medio prazo: estatisticas realmente premium e proxima rodada mais inteligente.</div>
+              <div class="list-item">Longo prazo: Serie B madura, multicompeticao, banca/Kelly e IA cada vez mais auditavel.</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function loadLive() {
+      try {
+        const res = await fetch('/api/bob/brain/status', { credentials: 'include' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        liveData = await res.json();
+      } catch (_) {
+        liveData = null;
+      }
+    }
+
+    function paintEnvBadges() {
+      const source = liveData?.env;
+      if (!source) {
+        envBadgesEl.innerHTML = [
+          badge('auditoria estatica pronta', 'ok'),
+          badge('dados vivos exigem login', 'warn')
+        ].join('');
+        return;
+      }
+      envBadgesEl.innerHTML = [
+        badge(`football-data ${source.footballData ? 'on' : 'off'}`, source.footballData ? 'ok' : 'danger'),
+        badge(`anthropic ${source.anthropic ? 'on' : 'off'}`, source.anthropic ? 'ok' : 'warn'),
+        badge(`openai ${source.openai ? 'on' : 'off'}`, source.openai ? 'ok' : 'warn'),
+        badge(`api-football ${source.apiFootball ? 'on' : 'off'}`, source.apiFootball ? 'ok' : 'warn'),
+        badge(`oddspapi ${source.oddspapi ? 'on' : 'off'}`, source.oddspapi ? 'ok' : 'warn')
+      ].join('');
+    }
+
+    async function boot() {
+      renderTabs();
+      await loadLive();
+      paintEnvBadges();
+      renderOverview();
+      renderModules();
+      renderLive();
+      renderIntegrations();
+      renderSnippets();
+      renderPath();
+    }
+
+    boot();
+  </script>
+</body>
+</html>

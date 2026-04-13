@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* Faz com que dark: classes respondam a data-theme="dark" no html */
+@custom-variant dark (&:where([data-theme="dark"] *));
 
 :root {
   --background: #f2f0e8;
@@ -11,6 +15,19 @@
   --accent-soft: #d2e8dc;
   --signal: #b88a2f;
   --border: rgba(18, 32, 24, 0.13);
+}
+
+html[data-theme="dark"] {
+  --background: #0f1512;
+  --foreground: #e7eee9;
+  --surface: rgba(20, 29, 24, 0.84);
+  --surface-strong: #141e18;
+  --muted: #94a89c;
+  --accent: #2e8b63;
+  --accent-strong: #cdf2de;
+  --accent-soft: rgba(46, 139, 99, 0.22);
+  --signal: #d4a651;
+  --border: rgba(214, 234, 223, 0.14);
 }
 
 @theme inline {
@@ -45,6 +62,13 @@ body {
   font-family: var(--font-space-grotesk), sans-serif;
 }
 
+html[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 8% -4%, rgba(212, 166, 81, 0.16), transparent 22%),
+    radial-gradient(circle at 90% -10%, rgba(46, 139, 99, 0.2), transparent 24%),
+    linear-gradient(180deg, #0f1512 0%, #0b110e 100%);
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -63,6 +87,12 @@ a {
   backdrop-filter: blur(12px);
 }
 
+html[data-theme="dark"] .panel {
+  box-shadow:
+    0 20px 55px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
 .kicker {
   font-family: var(--font-plex-mono), monospace;
   letter-spacing: 0.18em;
@@ -79,4 +109,9 @@ a {
 .layout-container {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.08) 40%, transparent 100%);
+}
+
+html[data-theme="dark"] .layout-container {
+  background:
+    linear-gradient(180deg, rgba(46, 139, 99, 0.06) 0%, rgba(46, 139, 99, 0.02) 40%, transparent 100%);
 }

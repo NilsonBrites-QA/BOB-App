@@ -26,6 +26,7 @@
     { "path": "/api/cron/post-round", "schedule": "0 4 * * 6" },
     { "path": "/api/cron/post-round", "schedule": "0 4 * * 0" },
     { "path": "/api/cron/simulate",   "schedule": "0 11 * * 2" },
-    { "path": "/api/cron/calibrate",  "schedule": "0 12 * * 3" }
+    { "path": "/api/cron/calibrate",  "schedule": "0 12 * * 3" },
+    { "path": "/api/cron/import-matches", "schedule": "0 8 * * *" }
   ]
 }

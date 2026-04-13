@@ -75,6 +75,7 @@ export function MobileNav({ isAdmin, signOutAction }: MobileNavProps) {
               <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-widest text-muted">
                 Ferramentas
               </p>
+              <Link href="/apostas" onClick={close} className={linkClass}>Apostas</Link>
               <Link href="/chat" onClick={close} className={linkClass}>Chat</Link>
               <Link href="/investimento-retorno" onClick={close} className={linkClass}>Investimento × Retorno</Link>
 
@@ -82,6 +83,7 @@ export function MobileNav({ isAdmin, signOutAction }: MobileNavProps) {
                 <>
                   <div className="my-2 h-px bg-border" />
                   <Link href="/admin" onClick={close} className={linkClass}>Admin</Link>
+                  <Link href="/admin/cerebro" onClick={close} className={linkClass}>Cérebro</Link>
                 </>
               )}
 
