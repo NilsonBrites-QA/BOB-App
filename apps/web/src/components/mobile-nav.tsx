@@ -48,13 +48,13 @@ export function MobileNav({ isAdmin, signOutAction }: MobileNavProps) {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-30 bg-black/20 backdrop-blur-sm"
+            className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm"
             onClick={close}
             aria-hidden
           />
 
           {/* Menu panel */}
-          <div className="fixed inset-x-0 top-14.25 z-40 max-h-[80vh] overflow-y-auto border-b border-border bg-surface p-4 shadow-xl">
+          <div className="fixed inset-x-0 top-14 z-40 max-h-[85vh] overflow-y-auto border-b border-border bg-background p-4 shadow-2xl">
             <nav className="space-y-1">
               <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-widest text-muted">
                 Análise

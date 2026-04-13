@@ -63,8 +63,28 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
+      data-theme="dark"
+      suppressHydrationWarning
       className={`${spaceGrotesk.variable} ${plexMono.variable} h-full antialiased`}
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+             __html: `
+              (function() {
+                try {
+                  var stored = window.localStorage.getItem("bob-theme");
+                  if (stored === "light") {
+                    document.documentElement.setAttribute("data-theme", "light");
+                  } else if (!stored && window.matchMedia("(prefers-color-scheme: light)").matches) {
+                    document.documentElement.setAttribute("data-theme", "light");
+                  }
+                } catch (e) {}
+              })();
+            `
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">
         <ThemeInit />
         <ServiceWorkerInit />

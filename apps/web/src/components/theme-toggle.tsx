@@ -12,8 +12,10 @@ function applyTheme(mode: ThemeMode) {
 export function ThemeToggle() {
   const [mode, setMode] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "dark";
-    // Padrão é dark; só muda se o usuário salvou "light" explicitamente
-    return window.localStorage.getItem("bob-theme") === "light" ? "light" : "dark";
+    
+    const stored = window.localStorage.getItem("bob-theme");
+    if (stored === "light" || stored === "dark") return stored as ThemeMode;
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   });
 
   useEffect(() => {

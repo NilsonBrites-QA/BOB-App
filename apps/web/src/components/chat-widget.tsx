@@ -31,9 +31,9 @@ type Message = {
 // â”€â”€â”€ Constantes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const STARTERS = [
-  "Quem lidera o BrasileirÃ£o?",
-  "Quais sÃ£o os Ã¢ncoras da rodada?",
-  "Explica a diferenÃ§a entre V1 e V5",
+  "Quem lidera o Brasileirão?",
+  "Quais são os âncoras da rodada?",
+  "Explica a diferença entre V1 e V5",
   "Como funciona o score do BOB?",
 ];
 
@@ -49,10 +49,10 @@ function relativeTime(date: Date): string {
   const days  = Math.floor(diff / 86_400_000);
 
   if (mins < 1)    return "agora";
-  if (mins < 60)   return `hÃ¡ ${mins}min`;
-  if (hours < 24)  return `hÃ¡ ${hours}h`;
+  if (mins < 60)   return `há ${mins}min`;
+  if (hours < 24)  return `há ${hours}h`;
   if (days === 1)  return "ontem";
-  return `hÃ¡ ${days} dias`;
+  return `há ${days} dias`;
 }
 
 function absoluteTime(date: Date): string {
@@ -227,7 +227,7 @@ export function ChatWidget() {
 
       {/* Janela do chat */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 flex h-135 w-95 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl sm:w-105">
+        <div className="fixed bottom-4 left-4 right-4 z-50 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:bottom-24 sm:left-auto sm:right-6 sm:h-[540px] sm:w-[420px]">
 
           {/* Header */}
           <div className="flex items-center gap-3 border-b border-border bg-surface-strong px-4 py-3">
@@ -364,7 +364,7 @@ export function ChatWidget() {
                 placeholder="Pergunte ao BOB…"
                 rows={1}
                 disabled={loading}
-                className="flex-1 resize-none rounded-xl border border-border bg-surface px-3 py-2 text-xs leading-5 text-foreground placeholder:text-muted/50 focus:border-accent focus:outline-none disabled:opacity-50"
+                className="flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-xs leading-5 text-foreground placeholder:text-muted/50 focus:border-accent focus:outline-none disabled:opacity-50"
                 style={{ maxHeight: "80px", overflowY: "auto", fieldSizing: "content" } as React.CSSProperties}
               />
               <button
