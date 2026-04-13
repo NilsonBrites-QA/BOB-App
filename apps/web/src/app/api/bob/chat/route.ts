@@ -49,7 +49,7 @@ async function buildRoundContext(): Promise<string> {
     ).join("\n");
 
     const upcomingMatches = result.matches.filter(
-      (m) => m.status !== "FINISHED" && m.status !== "CANCELLED" && m.status !== "POSTPONED"
+      (m) => m.status == null || (m.status !== "FINISHED" && m.status !== "CANCELLED" && m.status !== "POSTPONED")
     );
 
     if (upcomingMatches.length === 0) {
