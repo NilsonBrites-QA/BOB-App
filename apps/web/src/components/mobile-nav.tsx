@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type MobileNavProps = {
   isAdmin?: boolean;
@@ -86,6 +87,13 @@ export function MobileNav({ isAdmin, signOutAction }: MobileNavProps) {
                   <Link href="/admin/cerebro" onClick={close} className={linkClass}>Cérebro</Link>
                 </>
               )}
+
+              <div className="my-2 h-px bg-border" />
+
+              <div className="flex items-center justify-between px-4 py-2">
+                <span className="text-sm text-muted">Aparência</span>
+                <ThemeToggle />
+              </div>
 
               <div className="my-2 h-px bg-border" />
 
