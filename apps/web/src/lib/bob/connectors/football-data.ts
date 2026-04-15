@@ -8,7 +8,24 @@
  * Cache: Next.js fetch revalidate.
  *
  * Competition code: BSA (id 2013) — Campeonato Brasileiro Série A.
+ *
+ * ─── Arquitetura de Cache (PRD §9) ───────────────────────────────────────────
+ *
+ * As funções deste módulo existem em dois sabores:
+ *
+ *   RAW (sem sufixo):    Acesso direto à API — sem validação de throttle.
+ *                        Usadas por cron jobs (post-round, chat) que precisam
+ *                        de dados frescos independente do intervalo.
+ *
+ *   GATED (sufixo *Gated): Acesso controlado — bloqueado se já houve sync
+ *                           nas últimas 24h para o mesmo endpoint.
+ *                           Retornam `T | null` (null = throttle ativo).
+ *
+ * Taxa máxima: 10 req/min (free tier). O padrão Gated garante ~4 req/rodada.
  */
+
+import { prisma } from "@/lib/db";
+import { checkFootballData, recordSync } from "./cache-gate";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -130,7 +147,49 @@ export async function fdFetch<T>(path: string, revalidate: number): Promise<T> {
   return (await res.json()) as T;
 }
 
-// ─── Endpoints ────────────────────────────────────────────────────────────────
+// ─── Helpers internos: Log de Sync (L1 + L2) ─────────────────────────────────
+
+/**
+ * Consulta o banco (L2) para obter o timestamp da última sincronização
+ * de um endpoint do football-data.org. Passado ao cache-gate para que ele
+ * decida se o throttle de 24h foi respeitado.
+ */
+async function _getLastSyncFD(cacheKey: string): Promise<Date | null> {
+  const row = await prisma.apiSyncLog.findFirst({
+    where: { source: "football-data", cacheKey },
+    orderBy: { syncedAt: "desc" },
+    select: { syncedAt: true },
+  });
+  return row?.syncedAt ?? null;
+}
+
+/**
+ * Registra uma sincronização bem-sucedida:
+ *   L1 → Map em memória do cache-gate (imediato, sem I/O)
+ *   L2 → Tabela api_sync_log no banco (Event Sourcing, assíncrono)
+ *
+ * Chamado APENAS após confirmação de resposta 2xx da API.
+ * Falhas no log não interrompem o fluxo principal.
+ */
+async function _logSyncFD(cacheKey: string, recordCount: number): Promise<void> {
+  recordSync("football-data", cacheKey);
+  try {
+    await prisma.apiSyncLog.create({
+      data: {
+        source:      "football-data",
+        cacheKey,
+        windowLabel: null,
+        statusCode:  200,
+        recordCount,
+        notes:       "Throttle 24h — sync autorizado pelo cache-gate.",
+      },
+    });
+  } catch (err) {
+    console.error(`[Football-Data] Falha ao registrar api_sync_log (${cacheKey}):`, err);
+  }
+}
+
+// ─── Endpoints RAW (sem controle de throttle) ─────────────────────────────────
 
 /**
  * Classificação atual do Brasileirão Série A.
@@ -202,4 +261,93 @@ export async function getCurrentMatchday(): Promise<number> {
  */
 export async function getTeams(): Promise<FDTeamsResponse> {
   return fdFetch<FDTeamsResponse>("/competitions/BSA/teams", 86400);
+}
+
+// ─── Endpoints GATED (pipeline oficial — throttle 24h obrigatório) ────────────
+//
+// Usados exclusivamente pelo connectors/index.ts (orquestrador oficial).
+// Retornam null quando o throttle de 24h está ativo para o cacheKey.
+// Cada função possui um cacheKey fixo e único que identifica o endpoint.
+
+/**
+ * [GATED — 24h] Classificação do Brasileirão Série A.
+ *
+ * cacheKey: "FD-BSA-standings"
+ * Objetivo: fornecer a tabela de pontos para o Anchor Score e UI.
+ */
+export async function getStandingsGated(): Promise<FDStandingsResponse | null> {
+  const cacheKey = "FD-BSA-standings";
+  const lastSyncedAt = await _getLastSyncFD(cacheKey);
+  const decision = checkFootballData(cacheKey, lastSyncedAt);
+
+  console.info(`[Football-Data/Gated] ${decision.reason}`);
+  if (!decision.allowed) return null;
+
+  const result = await getStandings();
+  // standings retorna um objeto com standings[].table[] — contar entradas do TOTAL
+  const totalGroup = result.standings.find((s) => s.type === "TOTAL");
+  const recordCount = totalGroup?.table.length ?? 0;
+  await _logSyncFD(cacheKey, recordCount);
+  return result;
+}
+
+/**
+ * [GATED — 24h] Jogos de uma rodada específica.
+ *
+ * cacheKey: `FD-BSA-matchday-${matchday}`
+ * Objetivo: calendário da rodada para exibição + triggers do orquestrador.
+ */
+export async function getMatchesByMatchdayGated(
+  matchday: number
+): Promise<FDMatchesResponse | null> {
+  const cacheKey = `FD-BSA-matchday-${matchday}`;
+  const lastSyncedAt = await _getLastSyncFD(cacheKey);
+  const decision = checkFootballData(cacheKey, lastSyncedAt);
+
+  console.info(`[Football-Data/Gated] ${decision.reason}`);
+  if (!decision.allowed) return null;
+
+  const result = await getMatchesByMatchday(matchday);
+  await _logSyncFD(cacheKey, result.matches.length);
+  return result;
+}
+
+/**
+ * [GATED — 24h] Todos os jogos finalizados da temporada.
+ *
+ * cacheKey: "FD-BSA-finished"
+ * Objetivo: cálculo de forma e histórico de resultados recentes.
+ */
+export async function getFinishedMatchesGated(
+  limit = 100
+): Promise<FDMatchesResponse | null> {
+  const cacheKey = "FD-BSA-finished";
+  const lastSyncedAt = await _getLastSyncFD(cacheKey);
+  const decision = checkFootballData(cacheKey, lastSyncedAt);
+
+  console.info(`[Football-Data/Gated] ${decision.reason}`);
+  if (!decision.allowed) return null;
+
+  const result = await getFinishedMatches(limit);
+  await _logSyncFD(cacheKey, result.matches.length);
+  return result;
+}
+
+/**
+ * [GATED — 24h] Times do Brasileirão com elenco (squad).
+ *
+ * cacheKey: "FD-BSA-teams"
+ * Objetivo: mapeamento de times para enriquecer assets do TheSportsDB.
+ */
+export async function getTeamsGated(): Promise<FDTeamsResponse | null> {
+  const cacheKey = "FD-BSA-teams";
+  const lastSyncedAt = await _getLastSyncFD(cacheKey);
+  const decision = checkFootballData(cacheKey, lastSyncedAt);
+
+  console.info(`[Football-Data/Gated] ${decision.reason}`);
+  if (!decision.allowed) return null;
+
+  const result = await getTeams();
+  await _logSyncFD(cacheKey, result.teams.length);
+  return result;
 }

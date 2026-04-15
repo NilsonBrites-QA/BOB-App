@@ -48,6 +48,13 @@ Tudo que o cérebro observa entra aqui:
 * dados de APIs externas
 * eventos do mundo real
 * resultados anteriores
+* Resultados x Palpites
+* Erros
+* Acertos
+* Analise profunda dos dados
+* Busca por dados e se sentir falta avisa via feedback que precisa ser alimentado com determinado dados que não está encontrando
+
+** Obs: O cerebro pode usar ferramentas de buscas das LLM OPEN AI E CLAUDE para busca contextos, noticias em sites confiaveis, e dados precisos para tornar o cerebro mais inteligente e dado que seja necessario ação humana para criar nova chave de api em site externo ou etc, ele avisa via feedback **
 
 Isso vira um **fluxo de eventos**.
 
@@ -61,6 +68,7 @@ Exemplo:
 * API externa mostra árbitro com tendência a poucos cartões
 * clima indica chuva
 * mandante sem dois titulares
+* Fluxos mais importantes são os que tornam ele mais inteligente e com senso critico para melhorias, analise de dados profundas de futebol para aperfeiçõar analise.
 
 Tudo isso entra como insumo bruto.
 
@@ -76,6 +84,13 @@ Exemplo:
   * tendência em jogos grandes
   * desvio padrão
   * impacto em mercados específicos
+  * Tendencia de gols no 1º tempo
+  * media de cantos no 1º tempo
+  * media de cantos no 2º tempo
+ * Media de chutes no alvo e medias de finalização
+  *  Possibilidade de ambos marcam 
+  * outros mercados
+
 
 * “usuário gosta de apostas conservadoras” vira:
 
@@ -99,6 +114,11 @@ Exemplo:
 * em 4 de abril o usuário montou 6 bilhetes
 * rejeitou todos com mais de 3 seleções
 * aceitou justificativas com foco em probabilidade e não em emoção
+* Memorizar resultados, estatiscas, dados de jogos passado 
+* cache persistente de dados que já foram consultados
+* memoria de palpites entregues, 
+* memoria de senso analitico
+* memoria de pontos a melhorar na busca por dados para entrega de palpites.
 
 ### b) Memória semântica
 
@@ -109,6 +129,7 @@ Exemplo:
 * times com técnico X tendem a pressionar alto no 2º tempo
 * jogos com chuva reduzem velocidade média e finalizações limpas
 * perfil do usuário: prefere segurança a explosão de retorno
+* Memoria robusta, pergunta para LLM o que ele deve memorizar sobre dados estatisticos de partidas para torna-lo mais inteligente
 
 ### c) Memória procedural
 
@@ -119,6 +140,7 @@ Exemplo:
 * estratégia para montar bilhete conservador
 * regra para filtrar jogos com amostra insuficiente
 * fluxo ideal para gerar recomendação antes do jogo
+* Usa LLM para tornar esse dado melhor e mais inteligente e robusto
 
 ### d) Memória de padrões
 
@@ -129,6 +151,8 @@ Exemplo:
 * sempre que A joga com B e árbitro Y apita, o padrão muda
 * quando odd se move rápido nas últimas 2h, o mercado corrige informação nova
 * usuário responde melhor a explicações curtas + nível de confiança
+* Usa LLM para ter mais força e inteligencia de busca e guardar memoria
+LLM indica pontos importantates que devem ser consultados e detectados
 
 ## Onde guardar isso
 

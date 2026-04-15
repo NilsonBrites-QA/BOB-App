@@ -12,6 +12,34 @@
  * O header "x-ratelimit-requests-remaining" é logado para monitorar o consumo.
  */
 
+/**
+ * BOB — Cliente HTTP para a API-Football (v3.football.api-sports.io)
+ *
+ * ─── Arquitetura de Cache (PRD §9 — "O Bisturi") ──────────────────────────────
+ *
+ * As funções deste módulo existem em dois sabores:
+ *
+ *   RAW (sem sufixo):    Acesso direto à API — sem validação de janela.
+ *                        Usadas por cron jobs (backfill, post-round) que precisam
+ *                        de dados históricos ou de resultado independente de horário.
+ *
+ *   GATED (sufixo *Gated): Acesso controlado — bloqueado fora das janelas do PRD.
+ *                           Usadas pelo pipeline oficial via connectors/index.ts.
+ *                           Requerem `kickoffAt: Date` (kickoff do jogo alvo).
+ *                           Retornam `AFResponse<T> | null` (null = fora de janela).
+ *
+ * Janelas da API-Football ("O Bisturi"):
+ *   T-48h → fixtures + odds base         (48h → 36h antes do kickoff)
+ *   T-24h → predições + team stats       (24h → 12h antes do kickoff)
+ *   T-1h  → escalações oficiais          (90min → kickoff)
+ *
+ * Budget free: 100 req/dia. O padrão Gated garante ~6-10 req/rodada.
+ * O header "x-ratelimit-requests-remaining" é logado para monitorar o consumo.
+ */
+
+import { prisma } from "@/lib/db";
+import { checkApiFootball, recordSync, type WindowName } from "./cache-gate";
+
 import type {
   AFResponse,
   AFStandingsGroup,
@@ -70,7 +98,58 @@ async function afFetch<T>(
   return data;
 }
 
-// ─── Endpoints ────────────────────────────────────────────────────────────────
+// ─── Helpers internos: Log de Sync (L1 + L2) ────────────────────────────────
+
+/**
+ * Consulta o banco (L2) para obter o timestamp da última sincronização
+ * bem-sucedida de um endpoint+janela. Passado ao cache-gate para que ele
+ * decida se a janela já foi sincronizada ou não.
+ */
+async function _getLastSyncAF(
+  cacheKey: string,
+  windowLabel: WindowName
+): Promise<Date | null> {
+  const row = await prisma.apiSyncLog.findFirst({
+    where: { source: "api-football", cacheKey, windowLabel },
+    orderBy: { syncedAt: "desc" },
+    select: { syncedAt: true },
+  });
+  return row?.syncedAt ?? null;
+}
+
+/**
+ * Registra uma sincronização bem-sucedida:
+ *   L1 → Map em memória do cache-gate (imediato, sem I/O)
+ *   L2 → Tabela api_sync_log no banco (Event Sourcing, assíncrono)
+ *
+ * Chamado APENAS após confirmação de resposta 2xx da API.
+ * Falhas no log não interrompem o fluxo principal.
+ */
+async function _logSyncAF(
+  cacheKey: string,
+  windowLabel: WindowName,
+  kickoffAt: Date,
+  recordCount: number
+): Promise<void> {
+  recordSync("api-football", cacheKey, windowLabel);
+  try {
+    await prisma.apiSyncLog.create({
+      data: {
+        source:      "api-football",
+        cacheKey,
+        windowLabel,
+        kickoffAt,
+        statusCode:  200,
+        recordCount,
+        notes:       `Janela ${windowLabel} — sync autorizado pelo cache-gate.`,
+      },
+    });
+  } catch (err) {
+    console.error(`[API-Football] Falha ao registrar api_sync_log (${cacheKey}):`, err);
+  }
+}
+
+// ─── Endpoints RAW (sem controle de janela) ───────────────────────────────────
 
 /**
  * Tabela de classificação do Brasileirão Série A.
@@ -186,4 +265,144 @@ export async function getCurrentRound(season: number): Promise<number | null> {
   const roundStr = next.league.round; // ex: "Regular Season - 15"
   const match = roundStr.match(/(\d+)$/);
   return match ? parseInt(match[1], 10) : null;
+}
+
+// ─── Endpoints GATED (pipeline oficial — janelas obrigatórias) ────────────────
+//
+// Usados exclusivamente pelo connectors/index.ts (orquestrador oficial).
+// Retornam null quando fora da janela — o chamador trata null como fallback.
+
+/**
+ * [GATED — T-48h] Fixtures de uma rodada específica.
+ *
+ * Janela: 48h → 36h antes do kickoff do primeiro jogo da rodada.
+ * Objetivo: confirmar fixtures agendados + odds base para o Anchor Score.
+ *
+ * @param kickoffAt - Kickoff do primeiro jogo da rodada (UTC)
+ */
+export async function getFixturesByRoundGated(
+  season: number,
+  round: number,
+  kickoffAt: Date
+): Promise<AFResponse<AFFixtureItem> | null> {
+  const cacheKey = `af-fixtures-s${season}-r${round}`;
+  const lastSyncedAt = await _getLastSyncAF(cacheKey, "T-48h");
+  const decision = checkApiFootball(cacheKey, kickoffAt, lastSyncedAt);
+
+  console.info(`[API-Football/Gated] ${decision.reason}`);
+  if (!decision.allowed) return null;
+
+  const result = await getFixturesByRound(season, round);
+  await _logSyncAF(cacheKey, "T-48h", kickoffAt, result.results);
+  return result;
+}
+
+/**
+ * [GATED — T-48h] Odds pré-jogo por fixture.
+ *
+ * Janela: 48h → 36h antes do kickoff.
+ * Objetivo: odds base para cálculo de de-vigging e Anchor Score.
+ *
+ * @param kickoffAt - Kickoff do jogo específico (UTC)
+ */
+export async function getOddsGated(
+  fixtureId: number,
+  kickoffAt: Date
+): Promise<AFResponse<AFOddsItem> | null> {
+  const cacheKey = `af-odds-fixture-${fixtureId}`;
+  const lastSyncedAt = await _getLastSyncAF(cacheKey, "T-48h");
+  const decision = checkApiFootball(cacheKey, kickoffAt, lastSyncedAt);
+
+  console.info(`[API-Football/Gated] ${decision.reason}`);
+  if (!decision.allowed) return null;
+
+  const result = await getOdds(fixtureId);
+  await _logSyncAF(cacheKey, "T-48h", kickoffAt, result.results);
+  return result;
+}
+
+/**
+ * [GATED — T-24h] Estatísticas de um time na temporada.
+ *
+ * Janela: 24h → 12h antes do kickoff.
+ * Objetivo: alimentar fatores de processo (form, home/away breakdown)
+ * no Anchor Score antes da geração das variações.
+ *
+ * @param kickoffAt - Kickoff do jogo do time (UTC)
+ */
+export async function getTeamStatsGated(
+  teamId: number,
+  season: number,
+  kickoffAt: Date
+): Promise<AFResponse<AFTeamStatistics> | null> {
+  const cacheKey = `af-team-stats-${teamId}-s${season}`;
+  const lastSyncedAt = await _getLastSyncAF(cacheKey, "T-24h");
+  const decision = checkApiFootball(cacheKey, kickoffAt, lastSyncedAt);
+
+  console.info(`[API-Football/Gated] ${decision.reason}`);
+  if (!decision.allowed) return null;
+
+  const result = await getTeamStats(teamId, season);
+  await _logSyncAF(cacheKey, "T-24h", kickoffAt, result.results);
+  return result;
+}
+
+/**
+ * [GATED — T-24h] Lesões e suspensões por data.
+ *
+ * Janela: 24h → 12h antes do kickoff.
+ * Objetivo: identificar desfalques que reduzem o Anchor Score antes
+ * da geração das variações (fator `absences` no motor de scoring).
+ *
+ * @param kickoffAt - Kickoff dos jogos da data informada (UTC)
+ */
+export async function getInjuriesByDateGated(
+  season: number,
+  date: string,
+  kickoffAt: Date
+): Promise<AFResponse<AFInjuryItem> | null> {
+  const cacheKey = `af-injuries-s${season}-d${date}`;
+  const lastSyncedAt = await _getLastSyncAF(cacheKey, "T-24h");
+  const decision = checkApiFootball(cacheKey, kickoffAt, lastSyncedAt);
+
+  console.info(`[API-Football/Gated] ${decision.reason}`);
+  if (!decision.allowed) return null;
+
+  const result = await getInjuriesByDate(season, date);
+  await _logSyncAF(cacheKey, "T-24h", kickoffAt, result.results);
+  return result;
+}
+
+/**
+ * [GATED — T-1h] Escalações oficiais de uma fixture.
+ *
+ * Janela: 90min → kickoff (janela de recalibração de emergência).
+ * Objetivo: detectar ausência de titular-chave e disparar o alerta
+ * de recalibração do Anchor Score (PRD §3 — "Congelamento e Alertas").
+ *
+ * Se a escalação confirmar desfalque crítico, o motor rebaixa o nível de
+ * confiança da âncora: "Sinal interrompido. Rebaixando nível T-1h."
+ *
+ * @param fixtureId - ID da fixture no API-Football
+ * @param kickoffAt - Kickoff exato do jogo (UTC)
+ */
+export async function getLineupsGated(
+  fixtureId: number,
+  kickoffAt: Date
+): Promise<AFResponse<{ team: { id: number; name: string }; startXI: unknown[] }> | null> {
+  const cacheKey = `af-lineups-fixture-${fixtureId}`;
+  const lastSyncedAt = await _getLastSyncAF(cacheKey, "T-1h");
+  const decision = checkApiFootball(cacheKey, kickoffAt, lastSyncedAt);
+
+  console.info(`[API-Football/Gated] ${decision.reason}`);
+  if (!decision.allowed) return null;
+
+  // Escalações são fetched sem cache de ISR (Next.js): informação muda até
+  // minutos antes do jogo. revalidate=0 garante dado sempre fresco nesta janela.
+  const result = await afFetch<{ team: { id: number; name: string }; startXI: unknown[] }>(
+    `/fixtures/lineups?fixture=${fixtureId}`,
+    0 // sem cache ISR — janela T-1h é de altíssima urgência
+  );
+  await _logSyncAF(cacheKey, "T-1h", kickoffAt, result.results);
+  return result;
 }

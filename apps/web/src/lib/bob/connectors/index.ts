@@ -12,9 +12,46 @@
  *   5. open-meteo.com — clima por estádio — gratuito e ilimitado
  */
 
-import * as fd from "./football-data";
+// ─── Imports com política de acesso em camadas ─────────────────────────────────────────────
+//
+// Regra central (PRD §9 — "O Bisturi"):
+//   GATED   → caminho oficial — checkgate L1+L2 antes de chamar a API.
+//   RAW     → fallback INTERNO — acessa ISR do Next.js (edge cache).
+//             NÃO re-exportadas; invisíveis para módulos externos.
+//   DB-FIRST → TheSportsDB — leitura pura do banco, sem API call.
+//
+// ╳ PROIBIDO adicionar re-exportações de funções raw via este arquivo. ╳
+
+// football-data.org ───────────────────────────────────────────────────
+import {
+  // Gated (caminho primário) — throttle 24h enforced via cache-gate
+  getStandingsGated,
+  getMatchesByMatchdayGated,
+  getFinishedMatchesGated,
+  // Raw (fallback interno) — ISR edge cache, sem nova chamada à API
+  getStandings,
+  getMatchesByMatchday,
+  getFinishedMatches,
+  // H2H: dados históricos; loop já é sequencial/throttled (sem janela aplicável)
+  getH2H,
+  // getCurrentMatchday: usado pelo getCurrentRound() — sem janela de throttle
+  getCurrentMatchday,
+} from "./football-data";
 import type { FDMatch, FDStandingEntry, FDH2HResponse } from "./football-data";
-import * as af from "./api-football";
+
+// api-football (“O Bisturi”) ─────────────────────────────────────────
+import {
+  // Gated (primário) — janelas T-48h / T-24h / T-1h do PRD
+  getInjuriesByDateGated,
+  // Enriquecimento: Copa detection — não está nas 3 janelas do PRD §9.
+  // Chamado apenas 3× por rodada; não exposto publicamente pelo index.ts.
+  getFixturesByLeague,
+} from "./api-football";
+
+// TheSportsDB — DB-first absoluto ──────────────────────────────────
+import { getTeamAssetsMap } from "./thesportsdb";
+export type { TeamAssetRow } from "./thesportsdb";
+
 import { getOddsByTournament, lookupOdds, TOURNAMENT_SERIE_A } from "./oddspapi";
 import type { MatchInput } from "@/lib/bob/engine/scoring";
 import { fetchWeatherForRound } from "./weather";
@@ -23,6 +60,12 @@ import { fetchWeatherForRound } from "./weather";
 
 export type FetchRoundResult = {
   matches: MatchInput[];
+  /**
+   * Assets visuais dos times (logos, escudos, banners) — DB-first.
+   * Keyed pelo nome curto do time em lowercase (ex: "flamengo", "palmeiras").
+   * Pode ser vazio se `syncAllTeams()` ainda não foi executado no setup.
+   */
+  assets: Map<string, import("./thesportsdb").TeamAssetRow>;
   meta: {
     season: number;
     round: number;
@@ -31,6 +74,17 @@ export type FetchRoundResult = {
     source: "football-data" | "api-football" | "demo";
     /** ISO string da data/hora do primeiro jogo da rodada (UTC) */
     firstMatchAt: string | null;
+    /**
+     * Rastreio de quais fontes passaram pelo path gated (L2 hit = sync autorizado)
+     * vs. path ISR (null = throttle ativo, dado servido do edge cache).
+     * Exposto ao BOB Live Brain Console (Fase 4) via `meta.gatedHits`.
+     */
+    gatedHits: {
+      standings: boolean;
+      matchday: boolean;
+      finished: boolean;
+      injuries: boolean;
+    };
   };
 };
 
@@ -230,11 +284,30 @@ export async function fetchRoundMatchInputs(
   season: number,
   round: number
 ): Promise<FetchRoundResult> {
-  // ── Etapa 1: dados base em paralelo ─────────────────────────────────────
+  // ── Etapa 1: dados base em paralelo (gated-first + fallback ISR) ──────────
+  //
+  // Padrão: gatedFn().then(r => r ?? rawFn())
+  //   Se gated retorna dado  → API chamada + L2 (api_sync_log) atualizado.
+  //   Se gated retorna null  → throttle ativo; rawFn() serve do ISR edge cache
+  //                            (Next.js fetch com revalidate já cacheado — sem
+  //                             nova chamada à API).
+  //
+  // gatedHits: rastreia o caminho tomado para o BOB Live Brain Console.
+  const gatedHits = { standings: false, matchday: false, finished: false, injuries: false };
+
   const [standingsRes, matchesRes, finishedRes, oddsMap] = await Promise.all([
-    fd.getStandings(),
-    fd.getMatchesByMatchday(round),
-    fd.getFinishedMatches(200),
+    getStandingsGated().then((r) => {
+      if (r) gatedHits.standings = true;
+      return r ?? getStandings();
+    }),
+    getMatchesByMatchdayGated(round).then((r) => {
+      if (r) gatedHits.matchday = true;
+      return r ?? getMatchesByMatchday(round);
+    }),
+    getFinishedMatchesGated(200).then((r) => {
+      if (r) gatedHits.finished = true;
+      return r ?? getFinishedMatches(200);
+    }),
     // OddsPapi: odds reais Pinnacle para o Brasileirão Série A
     getOddsByTournament(TOURNAMENT_SERIE_A).catch(() => new Map()),
   ]);
@@ -243,6 +316,7 @@ export async function fetchRoundMatchInputs(
   if (roundMatches.length === 0) {
     return {
       matches: [],
+      assets: new Map(),
       meta: {
         season,
         round,
@@ -250,6 +324,7 @@ export async function fetchRoundMatchInputs(
         generatedAt: new Date().toISOString(),
         source: "football-data",
         firstMatchAt: null,
+        gatedHits,
       },
     };
   }
@@ -269,25 +344,34 @@ export async function fetchRoundMatchInputs(
     }
   }
 
-  // ── Etapa 2B: Injuries via API-Football (desbloqueia F6 — absenceRate) ──
-  // getInjuriesByDate retorna desfalques confirmados para jogos na data do 1º jogo
+  // ── Etapa 2B: Injuries (GATED T-24h — desbloqueia F6 — absenceRate) ──────
+  // getInjuriesByDateGated: janela -24h → -12h antes do kickoff.
+  // null = fora de janela ou já sincronizado hoje → usar injuriesMap vazio.
   let injuriesMap = new Map<number, number>(); // teamId → absenceRate (0-1)
   try {
     const firstMatchDate = roundMatches[0]?.utcDate?.split("T")[0];
+    // firstKickoffAt: exigido pelo cache-gate para validar a janela T-24h
+    const firstKickoffAt = roundMatches[0]?.utcDate
+      ? new Date(roundMatches[0].utcDate)
+      : new Date(Date.now() + 48 * 3600 * 1000); // fallback conservador
     if (firstMatchDate) {
-      const injuriesRes = await af.getInjuriesByDate(season, firstMatchDate);
-      // Contar desfalques por time; assumindo elenco principal de ~25 jogadores
-      const countByTeam = new Map<number, number>();
-      for (const item of injuriesRes.response) {
-        const tid = item.team.id;
-        countByTeam.set(tid, (countByTeam.get(tid) ?? 0) + 1);
+      const injuriesRes = await getInjuriesByDateGated(season, firstMatchDate, firstKickoffAt);
+      if (injuriesRes) {
+        gatedHits.injuries = true;
+        // Contar desfalques por time; assumindo elenco principal de ~25 jogadores
+        const countByTeam = new Map<number, number>();
+        for (const item of injuriesRes.response) {
+          const tid = item.team.id;
+          countByTeam.set(tid, (countByTeam.get(tid) ?? 0) + 1);
+        }
+        for (const [tid, count] of countByTeam) {
+          injuriesMap.set(tid, Math.min(1, count / 25));
+        }
       }
-      for (const [tid, count] of countByTeam) {
-        injuriesMap.set(tid, Math.min(1, count / 25));
-      }
+      // null = janela T-24h inativa ou throttle — injuriesMap permanece vazio
     }
   } catch {
-    // API-Football indisponível ou quota atingida — usar 0 (sem desfalques conhecidos)
+    // API-Football indisponível ou quota atingida — continuar sem desfalques
     injuriesMap = new Map();
   }
 
@@ -303,7 +387,7 @@ export async function fetchRoundMatchInputs(
       [73, "copa-br"],
     ];
     for (const [leagueId, cupName] of cupLeagues) {
-      const cupRes = await af.getFixturesByLeague(leagueId, season);
+      const cupRes = await getFixturesByLeague(leagueId, season);
       const nextWeek = Date.now() + 7 * 24 * 3600 * 1000;
       for (const fixture of cupRes.response) {
         const fixtureTime = new Date(fixture.fixture.date).getTime();
@@ -316,6 +400,13 @@ export async function fetchRoundMatchInputs(
   } catch {
     // Falha silenciosa — usar "none" como default
   }
+
+  // ── Etapa 2D: Assets visuais dos times (DB-first — sem chamada de API) ────
+  // getTeamAssetsMap() lê exclusivamente do banco (tabela team_assets).
+  // Não possui janela de cache: ou está no banco (sync já feito) ou não.
+  // Se vazio: syncAllTeams() deve ser executado como setup job (TheSportsDB).
+  const assets = await getTeamAssetsMap().catch(() => new Map());
+
   const weatherMap = await fetchWeatherForRound(
     roundMatches.map((m) => ({
       id: m.id.toString(),
@@ -452,6 +543,7 @@ export async function fetchRoundMatchInputs(
 
   return {
     matches,
+    assets,
     meta: {
       season,
       round,
@@ -462,6 +554,7 @@ export async function fetchRoundMatchInputs(
         .map((m) => m.utcDate)
         .filter(Boolean)
         .sort()[0] ?? null,
+      gatedHits,
     },
   };
 }
@@ -472,8 +565,20 @@ export async function fetchRoundMatchInputs(
  */
 export async function getCurrentRound(): Promise<number | null> {
   try {
-    return await fd.getCurrentMatchday();
+    return await getCurrentMatchday();
   } catch {
     return null;
   }
 }
+
+// ─── Re-exports seguros pelo Orquestrador ─────────────────────────────────────
+//
+// Apenas funções que NÃO burlam o cache-gate são re-exportadas daqui.
+// Funções raw de football-data e api-football NÃO constam nesta lista.
+
+/**
+ * Assets visuais dos times (logos, escudos, banners).
+ * DB-first absoluto: leitura pura do banco, sem chamada de API.
+ * Re-exportada para uso direto pelo Cérebro e pelo Live Brain Console.
+ */
+export { getTeamAssetsMap } from "./thesportsdb";

@@ -255,6 +255,15 @@ model ConditionalPattern {
   lastSeenRound  Int?     @map("last_seen_round")
   lastSeenSeason Int?     @map("last_seen_season")
 
+  /**
+   * Embedding semântico do padrão — vetor de 1536 dimensões (OpenAI text-embedding-3-small).
+   * Permite busca por similaridade coseno (HNSW) na Memória Semântica do Cérebro.
+   * Requer a extensão pgvector ativa no Supabase (migration 009_pgvector_embedding.sql).
+   * Prisma usa Unsupported(): o campo existe no banco mas não é mapeado para TypeScript.
+   * Queries de similarity search devem ser feitas via SQL raw ($queryRaw).
+   */
+  embedding      Unsupported("vector(1536)")?
+
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt      @map("updated_at")
 
@@ -468,4 +477,105 @@ enum BettorProfile {
   MATEMATICO
 
   @@map("bettor_profile")
+}
+
+// ─── Fase 1: Fundação — Assets de Times (TheSportsDB) ────────────────────────
+
+/**
+ * Cache permanente de assets visuais por time (logos, escudos, banners).
+ * Fonte: TheSportsDB. Política DB-first absoluta.
+ *
+ * Regra PRD §9: "Sincronizado uma única vez e armazenado permanentemente."
+ * NUNCA executar DELETE/TRUNCATE nesta tabela. Append-only.
+ *
+ * IDs cruzados (footballDataId, apiFootballId) permitem que o conector
+ * index.ts resolva assets a partir de qualquer fonte primária.
+ */
+model TeamAsset {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// ID do time no TheSportsDB (ex: "133613") — chave de lookup primária
+  tsdbId          String   @unique @map("tsdb_id")
+
+  name            String
+  shortName       String?  @map("short_name")
+
+  /// URL do escudo/badge principal (strTeamBadge no TheSportsDB)
+  logoUrl         String?  @map("logo_url")
+  /// URL do logo alternativo (strTeamLogo)
+  badgeUrl        String?  @map("badge_url")
+  /// URL do banner em HD (strTeamBanner)
+  bannerUrl       String?  @map("banner_url")
+
+  stadiumName     String?  @map("stadium_name")
+  stadiumThumb    String?  @map("stadium_thumb")
+  country         String?
+
+  /// ID no football-data.org — para matching cruzado de fontes
+  footballDataId  Int?     @map("football_data_id")
+  /// ID no API-Football — para matching cruzado de fontes
+  apiFootballId   Int?     @map("api_football_id")
+
+  /// Imutável: data da primeira e única sincronização com a API externa
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("team_assets")
+}
+
+// ─── Fase 1: Fundação — Log de Sincronização de APIs ─────────────────────────
+
+/**
+ * Log imutável (Event Sourcing) de cada sincronização bem-sucedida com as
+ * APIs externas. Implementa a camada L2 do cache-gate.ts.
+ *
+ * Este modelo é a fonte de verdade persistente para o `lastSyncedAt` que os
+ * conectores passam ao cache-gate. A camada L1 (Map em memória no cache-gate)
+ * é volátil; esta tabela garante continuidade entre cold starts de servidor.
+ *
+ * Regra PRD §9: imutabilidade de dados de aprendizado e contexto operacional.
+ * NUNCA executar DELETE/TRUNCATE nesta tabela. Append-only.
+ */
+model ApiSyncLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /**
+   * Fonte sincronizada. Valores permitidos:
+   *   'thesportsdb' | 'football-data' | 'api-football' | 'oddspapi'
+   * Constraint CHECK aplicada na migration SQL (Prisma não suporta CHECK nativamente).
+   */
+  source      String
+
+  /**
+   * Chave de cache no mesmo formato usado pelo cache-gate.ts.
+   * Exemplos: "BSA-2026-standings", "fixtures-round-10", "lineups-fixture-123456"
+   */
+  cacheKey    String   @map("cache_key")
+
+  /**
+   * Janela da API-Football em que o sync ocorreu.
+   * Nulo para TheSportsDB, football-data e OddsPapi.
+   * Valores: 'T-48h' | 'T-24h' | 'T-1h'
+   */
+  windowLabel String?  @map("window_label")
+
+  /**
+   * Kickoff UTC do jogo-alvo — preenchido apenas para syncs de api-football.
+   * Necessário ao cache-gate para calcular se a janela ainda é válida.
+   */
+  kickoffAt   DateTime? @map("kickoff_at")
+
+  /// Data/hora UTC em que o sync foi realizado (= quando a resposta 2xx chegou)
+  syncedAt    DateTime  @default(now()) @map("synced_at")
+
+  /// HTTP status da resposta da API externa (200, 206, etc.)
+  statusCode  Int?      @map("status_code")
+
+  /// Número de registros retornados pela API nesta chamada
+  recordCount Int?      @map("record_count")
+
+  /// Contexto livre (ex: "Sinal interrompido — fallback ativo", "Janela T-1h")
+  notes       String?   @db.Text
+
+  @@index([source, cacheKey, windowLabel, syncedAt(sort: Desc)], name: "api_sync_log_lookup")
+  @@map("api_sync_log")
 }
