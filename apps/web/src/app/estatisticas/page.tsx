@@ -75,7 +75,7 @@ export default async function EstatisticasPage({
   let teamBadges: Record<string, string | null> = {};
   try {
     const assetsMap = await getTeamAssetsMap();
-    assetsMap.forEach((v, k) => { teamBadges[k] = v.badge; });
+    assetsMap.forEach((v, k) => { teamBadges[k] = v.badgeUrl; });
   } catch {
     // silently ignore — escudos são opcionais
   }
