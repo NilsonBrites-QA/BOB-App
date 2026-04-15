@@ -87,7 +87,7 @@ export default async function DashboardPage({
   let teamBadges: Record<string, string | null> = {};
   try {
     const assetsMap = await getTeamAssetsMap();
-    assetsMap.forEach((v, k) => { teamBadges[k] = v.badge; });
+    assetsMap.forEach((v, k) => { teamBadges[k] = v.badgeUrl; });
   } catch {
     // silently ignore — badges são opcionais
   }
