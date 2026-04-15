@@ -817,7 +817,7 @@ export function formatSimulationReport(report: SimulationReport): string {
       ? ` (quase-acerto: "${v.missedPicks[0]?.match ?? "?"}")`
       : "";
     lines.push(
-      `  ${v.id}: ${v.status.padEnd(5)} — ` +
+      `  ${v.variationId}: ${v.status.padEnd(5)} — ` +
         `${v.correctPicks}/${v.totalPicks} picks corretos | ` +
         `odd projetada ${v.projectedOdd.toFixed(0)}${missInfo}`
     );

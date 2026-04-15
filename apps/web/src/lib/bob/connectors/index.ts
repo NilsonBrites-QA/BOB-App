@@ -337,7 +337,7 @@ export async function fetchRoundMatchInputs(
   const h2hMap = new Map<number, FDH2HResponse>();
   for (const m of roundMatches) {
     try {
-      const h2h = await fd.getH2H(m.id, 10);
+      const h2h = await getH2H(m.id, 10);
       h2hMap.set(m.id, h2h);
     } catch {
       // Se falhar (rate limit), continua sem H2H para esse jogo
