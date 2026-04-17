@@ -188,7 +188,7 @@ export function MatchDetailModal({
                 )}
               </div>
               <p className="mt-0.5 text-sm text-muted">
-                Score BOB: <span className="font-mono font-bold text-foreground">{match.score}</span>
+                Confiança BOB: <span className="font-mono font-bold text-foreground">{match.score}</span>
               </p>
             </div>
           </div>
@@ -236,18 +236,18 @@ export function MatchDetailModal({
             </div>
           </section>
 
-          {/* ── Previsão BOB ──────────────────────────────────────────── */}
+          {/* ── Leitura do BOB ────────────────────────────────────────── */}
           <section className="rounded-2xl border border-accent/20 bg-accent/5 p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted">Previsão BOB</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted">Leitura do BOB</p>
                 <p className="mt-1 text-lg font-semibold">{suggestedLabel}</p>
                 <p className="mt-0.5 text-xs text-muted">
                   Confiança: <span className={`font-semibold ${confColor}`}>{confLabel}</span>
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] uppercase tracking-wider text-muted">Score</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted">Confiança</p>
                 <p className="font-mono text-3xl font-bold tabular-nums text-foreground">
                   {match.score}
                 </p>
@@ -381,7 +381,7 @@ export function MatchDetailModal({
         {/* ── Footer ───────────────────────────────────────────────────── */}
         <div className="border-t border-border px-6 py-4">
           <p className="text-[10px] text-muted">
-            Análise gerada pelo motor BOB. Score baseado em 15 fatores com pesos adaptativos (ABQC).
+            Leitura estatística do BOB baseada em 15 fatores da rodada.
             Não constitui aconselhamento financeiro.
           </p>
         </div>

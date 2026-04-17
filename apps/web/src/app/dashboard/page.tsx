@@ -13,6 +13,7 @@ import { demoMatches, DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/
 import { fetchRoundMatchInputs, getCurrentRound } from "@/lib/bob/connectors";
 import { getTeamAssetsMap } from "@/lib/bob/connectors/thesportsdb";
 import { BOB_COPY } from "@/lib/bob/personality";
+import { TeamIdentity } from "@/components/team-identity";
 
 // ─── Helper: formata ISO date → "Sáb, 12 Abr · 16:00" ───────────────────────
 
@@ -144,10 +145,10 @@ export default async function DashboardPage({
       <section className="panel rounded-[28px] p-8">
         <div className="grid gap-8 lg:grid-cols-[1fr_auto]">
           <div className="space-y-3">
-            <p className="kicker text-xs text-muted">Brasileirão Série A · Motor ativo</p>
+            <p className="kicker text-xs text-muted">Brasileirão Série A · painel premium da rodada</p>
             <h1 className="text-4xl font-semibold leading-tight">{roundLabel}</h1>
             <p className="text-base leading-7 text-muted">
-              {anchors.length} âncoras selecionadas · {variations.length} cenários montados · {allScored.length} jogos analisados
+              {anchors.length} âncoras em destaque · {variations.length} leituras prontas · {allScored.length} jogos no radar
             </p>
           </div>
 
@@ -155,22 +156,22 @@ export default async function DashboardPage({
             <SectionCard
               title="Primeiro jogo"
               value={firstMatch}
-              description="Horário de abertura da rodada"
+              description="Abertura oficial da rodada"
             />
             <SectionCard
-              title="Cutoff"
+              title="Janela final"
               value={cutoff}
-              description="Prazo final — 1h antes do apito"
+              description="Último ajuste antes do apito"
             />
             <SectionCard
               title="Âncoras"
               value={`${anchors.length} de ${allScored.length}`}
-              description="Presentes em todas as variações"
+              description="Base principal do portfólio"
             />
             <SectionCard
               title="Cenários"
               value={`${variations.length} variações`}
-              description="Do conservador ao agressivo"
+              description="Proteção, equilíbrio e teto de odd"
             />
           </div>
         </div>
@@ -192,7 +193,7 @@ export default async function DashboardPage({
                   {c.label}
                 </span>
                 <span className={`text-sm font-medium ${c.text}`}>
-                  Score {roundDifficulty.difficultyScore}/100
+                  Leitura {roundDifficulty.difficultyScore}/100
                 </span>
               </div>
               <p className={`text-xs ${c.text} opacity-80`}>
@@ -208,18 +209,18 @@ export default async function DashboardPage({
       <section className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="kicker text-xs text-muted">Âncoras do motor</p>
-            <h2 className="mt-1 text-2xl font-semibold">Jogos com maior confiança analítica</h2>
+            <p className="kicker text-xs text-muted">Âncoras da rodada</p>
+            <h2 className="mt-1 text-2xl font-semibold">Base mais forte da sua leitura</h2>
           </div>
           {anchors.length > 0 && (
-            <p className="text-xs text-muted">Score 0–100</p>
+            <p className="text-xs text-muted">Confiança 0–100</p>
           )}
         </div>
 
         {excludedIds.size > 0 && (
           <div className="flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
             <span>
-              {excludedIds.size} jogo{excludedIds.size > 1 ? "s" : ""} excluído{excludedIds.size > 1 ? "s" : ""} — âncoras e variações foram recalculadas.
+              {excludedIds.size} jogo{excludedIds.size > 1 ? "s" : ""} excluído{excludedIds.size > 1 ? "s" : ""} — a leitura da rodada foi recalculada.
             </span>
             <a href="/dashboard" className="ml-4 font-semibold underline decoration-dotted">
               Limpar
@@ -243,11 +244,11 @@ export default async function DashboardPage({
       <section className="space-y-4">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <p className="kicker text-xs text-muted">Cenários do método BOB</p>
-            <h2 className="mt-1 text-2xl font-semibold">5 variações · do conservador ao agressivo</h2>
+            <p className="kicker text-xs text-muted">Portfólio BOB da rodada</p>
+            <h2 className="mt-1 text-2xl font-semibold">5 cenários para entrar com clareza</h2>
           </div>
           <p className="hidden max-w-xs text-right text-sm leading-6 text-muted lg:block">
-            Geradas em tempo real pelo motor determinístico com base nas âncoras e nos jogos de preenchimento.
+            Cada cenário combina proteção, valor e odd alvo para orientar sua entrada na rodada.
           </p>
         </div>
 
@@ -261,11 +262,14 @@ export default async function DashboardPage({
       {/* ── Oportunidades de Zebra ── */}
       {zebras.length > 0 && (
         <section className="space-y-4">
-          <div>
-            <p className="kicker text-xs text-muted">Alerta do motor</p>
-            <h2 className="mt-1 text-2xl font-semibold">
-              ⚡ {zebras.length === 1 ? "Oportunidade de Zebra" : `${zebras.length} Oportunidades de Zebra`}
-            </h2>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="kicker text-xs text-muted">Oportunidade de Zebra</p>
+              <h2 className="mt-1 text-2xl font-semibold">⚡ Oportunidade de Zebra</h2>
+            </div>
+            <span className="rounded-full border border-signal/25 bg-signal/5 px-3 py-1 text-xs font-medium text-signal">
+              {zebras.length} jogo{zebras.length > 1 ? "s" : ""} no radar
+            </span>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {zebras.map((z) => (
@@ -274,11 +278,26 @@ export default async function DashboardPage({
                 className="panel rounded-[20px] border border-signal/20 bg-signal/5 p-5 space-y-3"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold leading-tight">{z.match}</p>
-                    <p className="mt-0.5 text-xs text-muted">
-                      {z.homeTeam} #{z.homePosition} &nbsp;×&nbsp; {z.awayTeam} #{z.awayPosition}
-                    </p>
+                  <div className="min-w-0 space-y-1.5">
+                    <TeamIdentity
+                      teamName={z.homeTeam}
+                      badgeUrl={teamBadges[z.homeTeam] ?? null}
+                      badgeSize={22}
+                      className="min-w-0"
+                      nameClassName="text-sm font-semibold"
+                      subtitle={`Mandante · ${z.homePosition}º na tabela`}
+                    />
+                    <div className="flex items-center gap-2 pl-1">
+                      <span className="h-px w-3 shrink-0 bg-border/80" />
+                      <TeamIdentity
+                        teamName={z.awayTeam}
+                        badgeUrl={teamBadges[z.awayTeam] ?? null}
+                        badgeSize={22}
+                        className="min-w-0"
+                        nameClassName="text-sm font-medium"
+                        subtitle={`Visitante · ${z.awayPosition}º na tabela`}
+                      />
+                    </div>
                   </div>
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-signal/15">
                     <span className="font-mono text-xs font-bold text-signal">{z.zebraScore}</span>
@@ -302,7 +321,7 @@ export default async function DashboardPage({
             ))}
           </div>
           <p className="text-xs text-muted">
-            Zebras são oportunidades informativas — o motor não as inclui automaticamente nas variações. Use seu julgamento.
+            Use a zebra como leitura complementar de valor. Quando ela aparecer, ajuste sua entrada com disciplina.
           </p>
         </section>
       )}

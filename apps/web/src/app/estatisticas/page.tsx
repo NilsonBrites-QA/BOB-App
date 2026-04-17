@@ -120,11 +120,11 @@ export default async function EstatisticasPage({
           <div>
             <p className="kicker text-xs text-muted">Estatísticas · {roundLabel}</p>
             <h1 className="mt-2 text-3xl font-semibold leading-tight sm:text-4xl">
-              Análise de todos os jogos
+              Raio-X dos confrontos da rodada
             </h1>
             <p className="mt-2 text-sm leading-7 text-muted">
-              {totalGames} jogos analisados · {anchors.length} âncoras identificadas.
-              Clique em qualquer jogo para ver o detalhamento completo dos 15 fatores.
+              {totalGames} jogos em leitura · {anchors.length} âncoras em destaque.
+              Abra qualquer confronto para ver a leitura completa do BOB e os pontos de atenção da partida.
             </p>
             {/* Navegação entre rodadas */}
             {roundData.source === "api" && roundData.meta && (
@@ -158,14 +158,14 @@ export default async function EstatisticasPage({
               description="na rodada"
             />
             <SectionCard
-              title="Score médio"
+              title="Confiança média"
               value={String(avgScore)}
-              description="do motor BOB"
+              description="leitura do painel"
             />
             <SectionCard
               title="Âncoras"
               value={String(anchors.length)}
-              description={`melhor: ${bestScore}`}
+              description={`pico: ${bestScore}`}
             />
           </div>
         </div>
@@ -175,7 +175,7 @@ export default async function EstatisticasPage({
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted">Ordenar por:</span>
         {(["score", "home", "odd"] as SortKey[]).map((key) => {
-          const label = key === "score" ? "Score" : key === "home" ? "Mandante (A–Z)" : "Odd";
+          const label = key === "score" ? "Confiança" : key === "home" ? "Mandante (A–Z)" : "Odd";
           const active = sortKey === key;
           return (
             <a
@@ -212,7 +212,7 @@ export default async function EstatisticasPage({
 
       {/* ── Legenda de confiança ───────────────────────────────────────── */}
       <section className="panel rounded-[20px] p-5">
-        <p className="kicker text-xs text-muted">Legenda de confiança</p>
+        <p className="kicker text-xs text-muted">Faixa de confiança</p>
         <div className="mt-3 flex flex-wrap gap-6 text-sm">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-accent" />
@@ -228,8 +228,8 @@ export default async function EstatisticasPage({
           </div>
         </div>
         <p className="mt-4 text-xs text-muted">
-          Barras de probabilidade (1 / X / 2) derivadas das odds de mercado, normalizadas. 
-          Score BOB é independente das odds — confronta o mercado com algoritmo próprio.
+          Probabilidades 1 / X / 2 derivadas das odds de mercado, já normalizadas.
+          A leitura do BOB cruza esse preço com o contexto da rodada para destacar os melhores pontos de entrada.
         </p>
       </section>
 

@@ -227,34 +227,42 @@ export function ChatWidget() {
 
       {/* Janela do chat */}
       {open && (
-        <div className="fixed bottom-4 left-4 right-4 z-50 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:bottom-24 sm:left-auto sm:right-6 sm:h-[540px] sm:w-[420px]">
+        <div className="fixed bottom-4 left-4 right-4 z-50 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:bottom-24 sm:left-auto sm:right-6 sm:h-[540px] sm:w-[420px] sm:max-w-[calc(100vw-3rem)]">
 
           {/* Header */}
-          <div className="flex items-center gap-3 border-b border-border bg-surface-strong px-4 py-3">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-surface-strong px-4 py-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">
               B
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-foreground">BOB</p>
-              <p className="text-[11px] text-muted">Big Odds Brasileirão · ao vivo</p>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <p className="truncate text-sm font-semibold text-foreground">BOB</p>
+                <span className="inline-flex shrink-0 items-center rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
+                  Ao vivo
+                </span>
+              </div>
+              <p className="truncate text-[11px] text-muted">Big Odds Brasileirão · leitura em tempo real</p>
             </div>
-            {messages.length > 0 && (
+            <div className="flex shrink-0 items-center gap-1">
+              {messages.length > 0 && (
+                <button
+                  onClick={clearConversation}
+                  className="shrink-0 rounded-md px-2 py-1 text-[11px] text-muted hover:bg-surface hover:text-foreground"
+                  title="Limpar conversa"
+                >
+                  Limpar
+                </button>
+              )}
               <button
-                onClick={clearConversation}
-                className="rounded-md px-2 py-1 text-[11px] text-muted hover:bg-surface hover:text-foreground"
-                title="Limpar conversa"
+                onClick={() => setOpen(false)}
+                className="shrink-0 rounded-full p-1.5 text-muted hover:bg-surface hover:text-foreground"
+                aria-label="Fechar chat"
               >
-                Limpar
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
               </button>
-            )}
-            <button
-              onClick={() => setOpen(false)}
-              className="rounded-full p-1.5 text-muted hover:bg-surface hover:text-foreground"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-            </button>
+            </div>
           </div>
 
           {/* Messages area */}

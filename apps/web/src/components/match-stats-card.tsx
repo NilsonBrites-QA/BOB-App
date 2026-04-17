@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { TeamBadge } from "./team-badge";
+import { TeamIdentity } from "./team-identity";
 import { MatchDetailModal } from "./match-detail-modal";
 import type { ScoredMatch } from "@/lib/bob/engine/scoring";
 import type { FactorBreakdown } from "@/lib/bob/engine/factor-breakdown";
@@ -65,19 +65,23 @@ export function MatchStatsCard({
       >
         {/* ── Topo: times + âncora badge ─────────────────────────────── */}
         <div className="flex items-start justify-between gap-3">
-          {/* Times */}
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <TeamBadge teamName={match.homeTeam} badgeUrl={homeBadgeUrl} size={24} />
-              <span className="text-xs font-semibold text-muted">vs</span>
-              <TeamBadge teamName={match.awayTeam} badgeUrl={awayBadgeUrl} size={24} />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold leading-tight">
-                {match.homeTeam}
-                <span className="mx-1.5 text-muted font-normal">×</span>
-                {match.awayTeam}
-              </p>
+          <div className="min-w-0 flex flex-1 flex-col gap-1.5">
+            <TeamIdentity
+              teamName={match.homeTeam}
+              badgeUrl={homeBadgeUrl}
+              badgeSize={24}
+              className="min-w-0"
+              nameClassName="text-sm font-semibold"
+            />
+            <div className="flex items-center gap-2 pl-1">
+              <span className="h-px w-3 shrink-0 bg-border/80" />
+              <TeamIdentity
+                teamName={match.awayTeam}
+                badgeUrl={awayBadgeUrl}
+                badgeSize={24}
+                className="min-w-0"
+                nameClassName="text-sm font-semibold"
+              />
             </div>
           </div>
 
@@ -110,7 +114,7 @@ export function MatchStatsCard({
         <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/60 pt-3">
           <div className="flex items-center gap-3">
             <div className="flex flex-col">
-              <span className="text-[10px] uppercase tracking-wider text-muted">Previsão BOB</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted">Leitura do BOB</span>
               <span className="mt-0.5 text-sm font-semibold">
                 {resultLabel(match.suggestedResult, match.homeTeam, match.awayTeam)}
               </span>

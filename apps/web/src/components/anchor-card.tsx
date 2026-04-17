@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { TeamBadge } from "./team-badge";
+import { TeamIdentity } from "./team-identity";
 import { ExcludeMatchButton } from "./exclude-match-button";
 import type { ScoredMatch } from "@/lib/bob/engine/scoring";
 
@@ -104,11 +104,16 @@ export function AnchorCard({ anchor, badgeUrl, awayBadgeUrl }: AnchorCardProps) 
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3 min-w-0">
-          <TeamBadge teamName={anchor.homeTeam} badgeUrl={badgeUrl} size={36} className="mt-0.5 shrink-0" />
-          <div className="min-w-0">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div className="min-w-0 flex-1 space-y-2">
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold leading-snug truncate">{anchor.homeTeam}</h2>
+              <TeamIdentity
+                teamName={anchor.homeTeam}
+                badgeUrl={badgeUrl}
+                badgeSize={36}
+                className="flex-1"
+                nameClassName="text-base font-semibold leading-snug"
+              />
               {isMarginal && (
                 <span
                   title="Âncora marginal — value edge não totalmente confirmado"
@@ -118,9 +123,15 @@ export function AnchorCard({ anchor, badgeUrl, awayBadgeUrl }: AnchorCardProps) 
                 </span>
               )}
             </div>
-            <div className="mt-0.5 flex items-center gap-1.5">
-              <TeamBadge teamName={anchor.awayTeam} badgeUrl={awayBadgeUrl} size={16} />
-              <p className="text-xs text-muted truncate">vs. {anchor.awayTeam}</p>
+            <div className="flex items-center gap-2 pl-1">
+              <span className="h-px w-3 shrink-0 bg-border/80" />
+              <TeamIdentity
+                teamName={anchor.awayTeam}
+                badgeUrl={awayBadgeUrl}
+                badgeSize={18}
+                className="min-w-0"
+                nameClassName="text-xs font-medium text-muted"
+              />
             </div>
           </div>
         </div>
@@ -193,7 +204,7 @@ export function AnchorCard({ anchor, badgeUrl, awayBadgeUrl }: AnchorCardProps) 
             aria-expanded={drawerOpen}
           >
             <span className={`transition-transform duration-150 ${drawerOpen ? "rotate-90" : "rotate-0"}`}>▶</span>
-            {drawerOpen ? "Ocultar" : "Ver"} breakdown dos 15 fatores
+            {drawerOpen ? "Ocultar" : "Ver"} leitura dos 15 fatores
           </button>
 
           {drawerOpen && (

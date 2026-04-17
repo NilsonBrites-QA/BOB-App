@@ -4,6 +4,7 @@ import { getStandings } from "@/lib/bob/connectors/football-data";
 import { calcTeamOdds } from "@/lib/bob/engine/standings-odds";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
+import { TeamIdentity } from "@/components/team-identity";
 import type { TeamOdds, TitleProb, RelegProb } from "@/lib/bob/engine/standings-odds";
 
 // ─── Helpers visuais ──────────────────────────────────────────────────────────
@@ -186,17 +187,14 @@ export default async function ClassificacaoPage() {
                       {/* Time */}
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
-                          {entry.team.crest && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={entry.team.crest}
-                              alt={entry.team.shortName}
-                              width={20}
-                              height={20}
-                              className="h-5 w-5 object-contain"
-                            />
-                          )}
-                          <span className="font-medium">{entry.team.shortName || entry.team.name}</span>
+                          <TeamIdentity
+                            teamName={entry.team.name}
+                            displayName={entry.team.shortName || entry.team.name}
+                            badgeUrl={entry.team.crest}
+                            badgeSize={20}
+                            className="flex-1"
+                            nameClassName="font-medium"
+                          />
                           {zone.label && (
                             <span className={`hidden text-[10px] font-medium lg:inline ${zone.text}`}>
                               {zone.label}

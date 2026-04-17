@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { signOut } from "@/app/auth/actions";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
+import { FRONTEND_SURFACE, FRONTEND_VERSION } from "@/lib/frontend-meta";
 
 type SiteShellProps = {
   children: React.ReactNode;
@@ -102,7 +103,7 @@ export async function SiteShell({ children }: SiteShellProps) {
 
       <footer className="mt-8 border-t border-border px-4 py-6 sm:px-6 lg:px-10">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-2 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
-          <p>BOB v0.1.0 · inteligência operacional por rodada · controle de acesso e performance</p>
+          <p>BOB {FRONTEND_VERSION} · Big Odds Brasileirão · {FRONTEND_SURFACE}</p>
           <p className="font-mono">apps/web</p>
         </div>
       </footer>

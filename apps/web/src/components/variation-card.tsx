@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Variation } from "@/lib/bob/types";
-import { TeamBadge } from "./team-badge";
+import { TeamIdentity } from "./team-identity";
 
 // ─── Config de risco por variação ─────────────────────────────────────────────
 
@@ -35,9 +35,9 @@ const RISK_CONFIG: Record<string, { label: string; dot: string; badge: string }>
 };
 
 const RESULT_LABEL: Record<string, string> = {
-  "1": "Casa",
+  "1": "Mandante",
   X: "Empate",
-  "2": "Fora",
+  "2": "Visitante",
 };
 
 const RESULT_STYLE: Record<string, string> = {
@@ -57,6 +57,39 @@ function splitTeams(match: string): [string, string] {
   return [(parts[0] ?? "").trim(), (parts[1] ?? "").trim()];
 }
 
+const SCENARIO_COPY: Record<string, { posture: string; summary: string }> = {
+  V1: {
+    posture:
+      "Entrada mais protegida para quem quer apoiar a rodada nos favoritos mais sólidos.",
+    summary:
+      "Ideal quando a prioridade é preservar a base do bilhete com jogos de apoio mais limpos.",
+  },
+  V2: {
+    posture:
+      "Mistura proteção e valor em confrontos que aceitam empate sem desorganizar a leitura.",
+    summary:
+      "Boa alternativa para buscar odd maior com margem de segurança nas partidas mais equilibradas.",
+  },
+  V3: {
+    posture:
+      "Leitura direta da rodada, com favoritismo forte sustentando a múltipla do começo ao fim.",
+    summary:
+      "Funciona melhor quando o panorama da rodada aponta com clareza para os lados mais fortes.",
+  },
+  V4: {
+    posture:
+      "Seleção mais curta para concentrar valor em menos jogos, mas com preço alto por escolha.",
+    summary:
+      "Pensada para quem prefere filtrar ruído e entrar apenas onde a rodada entrega leitura mais nítida.",
+  },
+  V5: {
+    posture:
+      "Cenário ousado para rodadas travadas, com mais espaço para empate e ruptura de mercado.",
+    summary:
+      "É a leitura para buscar teto alto quando a rodada pede coragem seletiva e disciplina na entrada.",
+  },
+};
+
 type VariationCardProps = {
   variation: Variation;
   teamBadges?: Record<string, string | null>;
@@ -65,6 +98,10 @@ type VariationCardProps = {
 export function VariationCard({ variation, teamBadges = {} }: VariationCardProps) {
   const risk = RISK_CONFIG[variation.id] ?? RISK_CONFIG.V1!;
   const [picksOpen, setPicksOpen] = useState(true);
+  const premiumCopy = SCENARIO_COPY[variation.id] ?? {
+    posture: variation.posture,
+    summary: variation.summary,
+  };
 
   // Verifica se alguma âncora desta variação é "marginal" (fallback L1/L2)
   const hasMarginalAnchor = variation.picks.some(
@@ -99,7 +136,7 @@ export function VariationCard({ variation, teamBadges = {} }: VariationCardProps
         {/* Odd em destaque */}
         <div className="shrink-0 rounded-2xl bg-accent-soft px-4 py-2.5 text-right">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-accent-strong/60">
-            Odd proj.
+            Odd alvo
           </p>
           <p className="mt-0.5 text-2xl font-bold tabular-nums leading-none text-accent-strong">
             {formatOdd(variation.projectedOdd)}
@@ -108,8 +145,8 @@ export function VariationCard({ variation, teamBadges = {} }: VariationCardProps
       </div>
 
       {/* ── Postura + Sumário ── */}
-      <p className="mt-3 text-sm leading-6 text-muted">{variation.posture}</p>
-      <p className="mt-1 text-sm leading-6 text-muted">{variation.summary}</p>
+      <p className="mt-3 text-sm leading-6 text-muted">{premiumCopy.posture}</p>
+      <p className="mt-1 text-sm leading-6 text-muted">{premiumCopy.summary}</p>
 
       {/* ── Stats row ── */}
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -123,7 +160,7 @@ export function VariationCard({ variation, teamBadges = {} }: VariationCardProps
               : "border-border text-muted"
           }`}
         >
-          Âncoras {variation.anchorsTogether ? "juntas ✓" : "separadas"}
+          Âncoras {variation.anchorsTogether ? "preservadas" : "distribuídas"}
         </span>
       </div>
 
@@ -136,9 +173,9 @@ export function VariationCard({ variation, teamBadges = {} }: VariationCardProps
           className="flex w-full items-center justify-between bg-accent/5 px-4 py-2 text-left dark:bg-accent/10"
           aria-expanded={picksOpen}
         >
-          <div className="grid flex-1 grid-cols-[1fr_62px_50px] text-[10px] font-semibold uppercase tracking-wider text-muted">
-            <span>Jogo</span>
-            <span>Resultado</span>
+          <div className="grid flex-1 grid-cols-[1fr_74px_56px] text-[10px] font-semibold uppercase tracking-wider text-muted">
+            <span>Confronto</span>
+            <span>Palpite</span>
             <span className="text-right">Odd</span>
           </div>
           <span className={`ml-2 text-muted transition-transform duration-200 ${picksOpen ? "rotate-180" : "rotate-0"}`}>
@@ -154,38 +191,44 @@ export function VariationCard({ variation, teamBadges = {} }: VariationCardProps
               return (
                 <div
                   key={`${variation.id}-${pick.match}`}
-                  className="grid grid-cols-[1fr_62px_50px] items-center gap-2 px-4 py-2.5"
+                  className="grid grid-cols-[1fr_74px_56px] items-start gap-3 px-4 py-3"
                 >
-                  {/* Jogo */}
-                  <div className="flex min-w-0 items-center gap-2">
-                    {/* Escudos sobrepostos */}
-                    <div className="flex shrink-0 -space-x-1.5">
-                      <TeamBadge
+                  <div className="min-w-0 space-y-2">
+                    <div className="space-y-1.5">
+                      <TeamIdentity
                         teamName={homeTeam}
                         badgeUrl={teamBadges[homeTeam] ?? null}
-                        size={22}
-                        className="ring-1 ring-background"
+                        badgeSize={20}
+                        className="min-w-0"
+                        nameClassName="text-sm font-semibold"
                       />
-                      <TeamBadge
-                        teamName={awayTeam}
-                        badgeUrl={teamBadges[awayTeam] ?? null}
-                        size={22}
-                        className="ring-1 ring-background"
-                      />
+                      <div className="flex items-center gap-2 pl-1">
+                        <span className="h-px w-3 shrink-0 bg-border/80" />
+                        <TeamIdentity
+                          teamName={awayTeam}
+                          badgeUrl={teamBadges[awayTeam] ?? null}
+                          badgeSize={20}
+                          className="min-w-0"
+                          nameClassName="text-sm font-medium text-muted"
+                        />
+                      </div>
                     </div>
-                    <span className="truncate text-sm font-medium">{pick.match}</span>
-                    {pick.isAnchor && (
-                      <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
-                        âncora
-                      </span>
-                    )}
-                    {pick.isAnchor && pick.isMarginal && (
-                      <span
-                        title="Âncora marginal — value edge não totalmente confirmado"
-                        className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-700"
-                      >
-                        !
-                      </span>
+                    {(pick.isAnchor || pick.isMarginal) && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {pick.isAnchor && (
+                          <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold leading-none text-white">
+                            Âncora
+                          </span>
+                        )}
+                        {pick.isAnchor && pick.isMarginal && (
+                          <span
+                            title="Âncora marginal — leitura mais sensível da rodada"
+                            className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold leading-none text-amber-700"
+                          >
+                            Marginal
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
 
