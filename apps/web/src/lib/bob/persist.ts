@@ -15,6 +15,7 @@
 import { prisma } from "@/lib/db";
 import type { ScoredMatch } from "@/lib/bob/engine/scoring";
 import type { Variation }   from "@/lib/bob/types";
+import type { Variation as BeamVariation } from "@/lib/bob/engine/beam-search";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -22,9 +23,51 @@ export type SaveRoundInput = {
   season: number;
   round: number;
   anchors: ScoredMatch[];
-  variations: Variation[];
+  variations: Variation[] | BeamVariation[]; // Aceita ambos os formatos
   source: "api" | "football-data" | "api-football" | "demo";
 };
+
+/**
+ * Converte variação do beam-search para formato legado (types.Variation)
+ */
+function convertBeamVariationToLegacy(beamVar: BeamVariation): Variation {
+  // Mapear legs para picks
+  const picks = beamVar.legs.map(leg => ({
+    fixtureId: leg.matchId,
+    match: `${leg.homeTeam} x ${leg.awayTeam}`,
+    result: leg.pickOutcome === "Home" ? "1" : leg.pickOutcome === "Away" ? "2" : "X" as "1" | "X" | "2",
+    odd: leg.pickOdd,
+    isAnchor: leg.isAnchor,
+  }));
+
+  // Mapear títulos baseados no ID
+  const titles: Record<string, string> = {
+    V1: "Segurança",
+    V2: "Equilíbrio", 
+    V3: "Lógica Pura",
+    V4: "Curta de pressão",
+    V5: "Extrema",
+  };
+
+  const postures: Record<string, string> = {
+    V1: "Conservadora",
+    V2: "Moderada",
+    V3: "Neutra",
+    V4: "Agressiva",
+    V5: "Máxima agressão",
+  };
+
+  return {
+    id: beamVar.id,
+    title: titles[beamVar.id] || `Variação ${beamVar.id}`,
+    posture: postures[beamVar.id] || "Neutra",
+    projectedOdd: beamVar.combinedOdd,
+    gameCount: beamVar.legCount,
+    anchorsTogether: beamVar.anchorPrimaryCount >= 3,
+    summary: beamVar.transparencyNotes?.[0] || `${beamVar.legCount} jogos selecionados`,
+    picks,
+  };
+}
 
 export type SaveRoundResult = {
   roundDbId: string;
@@ -63,6 +106,15 @@ function toPickResult(r: string): "HOME" | "DRAW" | "AWAY" {
  * Idempotente: se já existir rodada com mesmo season+round, retorna o ID existente.
  */
 export async function saveRound(input: SaveRoundInput): Promise<SaveRoundResult> {
+  // Converter variações se vierem do formato beam-search
+  const variations: Variation[] = input.variations.map(v => {
+    // Detectar se é beam variation pelo formato
+    if ('legs' in v && 'combinedOdd' in v) {
+      return convertBeamVariationToLegacy(v as unknown as BeamVariation);
+    }
+    return v as Variation;
+  });
+
   // Buscar ou criar temporada
   const season = await prisma.season.upsert({
     where:  { year: input.season },
@@ -109,7 +161,7 @@ export async function saveRound(input: SaveRoundInput): Promise<SaveRoundResult>
 
     // Variações + picks
     let variationIndex = 0;
-    for (const v of input.variations) {
+    for (const v of variations) {
       variationIndex++;
       const dbVariation = await tx.variation.create({
         data: {

@@ -10,16 +10,18 @@ type NavLinkProps = {
 
 export function NavLink({ href, children }: NavLinkProps) {
   const pathname = usePathname();
-  const isActive = href === "/" ? pathname === href : pathname.startsWith(href);
+  const isActive = href === "/"
+    ? pathname === href
+    : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <Link
       href={href}
       className={[
-        "rounded-full px-4 py-2 text-sm font-semibold transition-colors",
+        "rounded-full px-4 py-2 text-sm font-semibold transition-all",
         isActive
-          ? "bg-accent text-white shadow-[0_8px_20px_rgba(21,86,61,0.24)]"
-          : "bg-transparent text-foreground/90 hover:bg-[rgba(21,86,61,0.08)]",
+          ? "bg-accent text-white shadow-[0_12px_28px_rgba(21,86,61,0.26)]"
+          : "bg-transparent text-foreground/90 hover:bg-[rgba(21,86,61,0.08)] hover:text-foreground",
       ].join(" ")}
     >
       {children}

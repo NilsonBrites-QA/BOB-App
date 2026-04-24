@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ADMIN_NAV_ITEMS, APP_NAV_GROUPS } from "@/lib/navigation";
 
 type MobileNavProps = {
   isAdmin?: boolean;
@@ -11,11 +13,17 @@ type MobileNavProps = {
 
 export function MobileNav({ isAdmin, signOutAction }: MobileNavProps) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
 
   const close = () => setOpen(false);
 
-  const linkClass =
-    "block rounded-xl px-4 py-2.5 text-sm font-medium text-foreground hover:bg-accent/10 hover:text-accent-strong";
+  const linkClass = (href: string) =>
+    [
+      "block rounded-2xl px-4 py-3 text-sm font-medium transition",
+      pathname === href || pathname.startsWith(`${href}/`)
+        ? "bg-accent text-white shadow-[0_12px_28px_rgba(21,86,61,0.22)]"
+        : "bg-transparent text-foreground hover:bg-accent/10 hover:text-accent-strong",
+    ].join(" ");
 
   return (
     <div className="md:hidden">
@@ -54,53 +62,57 @@ export function MobileNav({ isAdmin, signOutAction }: MobileNavProps) {
           />
 
           {/* Menu panel */}
-          <div className="fixed inset-x-0 top-14 z-40 max-h-[85vh] overflow-y-auto border-b border-border bg-background p-4 shadow-2xl">
-            <nav className="space-y-1">
-              <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-widest text-muted">
-                Análise
+          <div className="fixed inset-x-3 top-16 z-40 max-h-[calc(100vh-5.5rem)] overflow-y-auto rounded-[28px] border border-border bg-background/95 p-4 shadow-2xl backdrop-blur-xl">
+            <div className="mb-4 rounded-[24px] border border-border/80 bg-surface px-4 py-4">
+              <p className="kicker text-[10px] text-muted">Navegação</p>
+              <p className="mt-2 text-base font-semibold">Painel do apostador</p>
+              <p className="mt-1 text-sm leading-6 text-muted">
+                Acesse rapidamente a leitura da rodada, a liga e o console do BOB.
               </p>
-              <Link href="/dashboard" onClick={close} className={linkClass}>Dashboard</Link>
-              <Link href="/estatisticas" onClick={close} className={linkClass}>Estatísticas</Link>
-              <Link href="/historico" onClick={close} className={linkClass}>Histórico</Link>
+            </div>
 
-              <div className="my-2 h-px bg-border" />
-
-              <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-widest text-muted">
-                Liga
-              </p>
-              <Link href="/classificacao" onClick={close} className={linkClass}>Classificação</Link>
-              <Link href="/calendario" onClick={close} className={linkClass}>Calendário</Link>
-
-              <div className="my-2 h-px bg-border" />
-
-              <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-widest text-muted">
-                Ferramentas
-              </p>
-              <Link href="/apostas" onClick={close} className={linkClass}>Apostas</Link>
-              <Link href="/chat" onClick={close} className={linkClass}>Chat</Link>
-              <Link href="/investimento-retorno" onClick={close} className={linkClass}>Investimento × Retorno</Link>
+            <nav className="space-y-3">
+              {APP_NAV_GROUPS.map((group) => (
+                <div key={group.id} className="rounded-[24px] border border-border/80 bg-surface px-3 py-3">
+                  <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted">
+                    {group.label}
+                  </p>
+                  <div className="space-y-1">
+                    {group.items.map((item) => (
+                      <Link key={item.href} href={item.href} onClick={close} className={linkClass(item.href)}>
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
 
               {isAdmin && (
-                <>
-                  <div className="my-2 h-px bg-border" />
-                  <Link href="/admin" onClick={close} className={linkClass}>Admin</Link>
-                  <Link href="/admin/cerebro" onClick={close} className={linkClass}>Cérebro</Link>
-                </>
+                <div className="rounded-[24px] border border-border/80 bg-surface px-3 py-3">
+                  <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted">
+                    Admin
+                  </p>
+                  <div className="space-y-1">
+                    {ADMIN_NAV_ITEMS.map((item) => (
+                      <Link key={item.href} href={item.href} onClick={close} className={linkClass(item.href)}>
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
               )}
 
-              <div className="my-2 h-px bg-border" />
-
-              <div className="flex items-center justify-between px-4 py-2">
-                <span className="text-sm text-muted">Aparência</span>
-                <ThemeToggle />
+              <div className="rounded-[24px] border border-border/80 bg-surface px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted">Aparência</span>
+                  <ThemeToggle />
+                </div>
               </div>
-
-              <div className="my-2 h-px bg-border" />
 
               <form action={signOutAction}>
                 <button
                   type="submit"
-                  className="w-full rounded-xl border border-border px-4 py-2.5 text-left text-sm text-muted hover:border-accent hover:text-foreground"
+                  className="w-full rounded-[20px] border border-border px-4 py-3 text-left text-sm text-muted transition hover:border-accent hover:text-foreground"
                 >
                   Sair da conta
                 </button>

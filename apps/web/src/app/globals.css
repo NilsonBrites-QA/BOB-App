@@ -60,6 +60,7 @@ body {
     linear-gradient(180deg, #f6f3ea 0%, #ece7d8 100%);
   color: var(--foreground);
   font-family: var(--font-space-grotesk), sans-serif;
+  background-attachment: fixed;
 }
 
 html[data-theme="dark"] body {
@@ -85,6 +86,10 @@ a {
     0 20px 55px rgba(21, 31, 24, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.45);
   backdrop-filter: blur(12px);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
 }
 
 html[data-theme="dark"] .panel {
@@ -114,4 +119,57 @@ html[data-theme="dark"] .panel {
 html[data-theme="dark"] .layout-container {
   background:
     linear-gradient(180deg, rgba(46, 139, 99, 0.06) 0%, rgba(46, 139, 99, 0.02) 40%, transparent 100%);
+}
+
+.panel-hover:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 28px 70px rgba(21, 31, 24, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.48);
+}
+
+html[data-theme="dark"] .panel-hover:hover {
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.hero-panel {
+  position: relative;
+  isolation: isolate;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.04)),
+    var(--surface);
+}
+
+.hero-panel::before {
+  content: "";
+  position: absolute;
+  right: -6rem;
+  top: -5rem;
+  width: 18rem;
+  height: 18rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(21, 86, 61, 0.18), transparent 68%);
+  pointer-events: none;
+}
+
+.hero-panel::after {
+  content: "";
+  position: absolute;
+  left: -4rem;
+  bottom: -6rem;
+  width: 16rem;
+  height: 16rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(184, 138, 47, 0.14), transparent 70%);
+  pointer-events: none;
+}
+
+html[data-theme="dark"] .hero-panel::before {
+  background: radial-gradient(circle, rgba(46, 139, 99, 0.22), transparent 68%);
+}
+
+html[data-theme="dark"] .hero-panel::after {
+  background: radial-gradient(circle, rgba(212, 166, 81, 0.14), transparent 70%);
 }

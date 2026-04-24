@@ -109,7 +109,13 @@ function pct(value: number | null) {
   return `${Math.round(value * 100)}%`;
 }
 
-export function BrainObservatory({ initialSeason }: { initialSeason: number }) {
+export function BrainObservatory({
+  initialSeason,
+  latestSeasonWithData,
+}: {
+  initialSeason: number;
+  latestSeasonWithData: number | null;
+}) {
   const [season, setSeason] = useState<number>(initialSeason);
   const [data, setData] = useState<BrainStatusResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -117,20 +123,7 @@ export function BrainObservatory({ initialSeason }: { initialSeason: number }) {
   const [cursor, setCursor] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [highlightIds, setHighlightIds] = useState<string[]>([]);
-
-  // Lê o tema global (data-theme no html) para manter consistência com o ThemeToggle
-  const [isDark, setIsDark] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return document.documentElement.getAttribute("data-theme") === "dark";
-  });
-
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setIsDark(document.documentElement.getAttribute("data-theme") === "dark");
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => observer.disconnect();
-  }, []);
+  const [pollState, setPollState] = useState<"live" | "stale" | "error">("live");
 
   async function loadSnapshot(targetSeason: number) {
     setLoading(true);
@@ -153,9 +146,11 @@ export function BrainObservatory({ initialSeason }: { initialSeason: number }) {
       setCursor(payload.live.cursor ?? null);
       setLastSync(payload.generatedAt);
       setHighlightIds(payload.memory.slice(-3).map((item) => item.id));
+      setPollState("live");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro inesperado.";
       setError(message);
+      setPollState("error");
     } finally {
       setLoading(false);
     }
@@ -180,7 +175,10 @@ export function BrainObservatory({ initialSeason }: { initialSeason: number }) {
           cache: "no-store",
         });
 
-        if (!res.ok) return;
+        if (!res.ok) {
+          setPollState("stale");
+          return;
+        }
 
         const incoming = (await res.json()) as BrainStatusResponse;
 
@@ -205,8 +203,9 @@ export function BrainObservatory({ initialSeason }: { initialSeason: number }) {
 
         setCursor(incoming.live.cursor ?? cursor);
         setLastSync(incoming.generatedAt);
+        setPollState("live");
       } catch {
-        // Silencia erros de polling para não quebrar o painel.
+        setPollState("stale");
       }
     }, 10000);
 
@@ -225,40 +224,85 @@ export function BrainObservatory({ initialSeason }: { initialSeason: number }) {
     ];
   }, [data]);
 
+  const showEmptyState = Boolean(
+    data &&
+      data.snapshot.roundsTracked === 0 &&
+      data.snapshot.totalMemoryEvents === 0 &&
+      data.snapshot.totalSimulations === 0 &&
+      data.snapshot.totalPatterns === 0,
+  );
+
+  const pollStateMeta =
+    pollState === "live"
+      ? {
+          label: "Sinal ao vivo",
+          className: "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+          helper: "Polling ativo com resposta recente do cérebro.",
+        }
+      : pollState === "stale"
+        ? {
+            label: "Sinal congelado",
+            className: "border-signal/20 bg-signal/10 text-signal",
+            helper: "O último polling não confirmou atualização nova.",
+          }
+        : {
+            label: "Falha de sincronização",
+            className: "border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300",
+            helper: "A captura do estado atual falhou nesta tentativa.",
+          };
+
   return (
     <div className="space-y-5">
       {/* ── Cabeçalho ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">
-            Observabilidade · Tempo Real
-          </p>
-          <h2 className="mt-1 text-2xl font-semibold">Cérebro BOB</h2>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="flex items-center gap-1.5 rounded-full border border-border bg-surface-strong px-3 py-1 text-[11px] text-muted">
-            <span className={`h-1.5 w-1.5 rounded-full ${data ? "animate-pulse bg-emerald-500" : "bg-muted/50"}`} />
-            polling 10s · {fmtDate(lastSync)}
-          </span>
-          <div className="flex items-center gap-1.5">
-            <label htmlFor="brain-season" className="text-xs text-muted">Temporada</label>
-            <input
-              id="brain-season"
-              type="number"
-              value={season}
-              onChange={(e) => setSeason(Number(e.target.value) || new Date().getFullYear())}
-              className="w-20 rounded-lg border border-border bg-surface-strong px-2 py-1 text-xs text-foreground"
-            />
+      <section className="panel rounded-[28px] p-5 sm:p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-3xl">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted">
+              Observabilidade do cérebro
+            </p>
+            <h2 className="mt-2 text-3xl font-semibold">Console vivo de memória, padrões e integrações</h2>
+            <p className="mt-3 text-sm leading-7 text-muted">
+              Este painel mostra o estado real do cérebro do BOB: sinais conectados, volume de memória operacional e o pulso mais recente de aprendizado da temporada escolhida.
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={() => loadSnapshot(season)}
-            className="rounded-xl border border-accent/25 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition hover:bg-accent/15 active:scale-95"
-          >
-            Atualizar
-          </button>
+
+          <div className="space-y-3 lg:min-w-[22rem]">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className={["rounded-full border px-3 py-1 text-[11px] font-medium", pollStateMeta.className].join(" ")}>
+                {pollStateMeta.label}
+              </span>
+              <span className="rounded-full border border-border bg-surface-strong px-3 py-1 text-[11px] text-muted">
+                polling 10s · {fmtDate(lastSync)}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex items-center gap-1.5">
+                <label htmlFor="brain-season" className="text-xs text-muted">Temporada</label>
+                <input
+                  id="brain-season"
+                  type="number"
+                  value={season}
+                  onChange={(e) => setSeason(Number(e.target.value) || new Date().getFullYear())}
+                  className="w-24 rounded-xl border border-border bg-surface-strong px-3 py-2 text-xs text-foreground"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => loadSnapshot(season)}
+                className="rounded-xl border border-accent/25 bg-accent/10 px-3 py-2 text-xs font-medium text-accent transition hover:bg-accent/15 active:scale-95"
+              >
+                Atualizar
+              </button>
+            </div>
+
+            <p className="text-right text-xs leading-6 text-muted">
+              {pollStateMeta.helper}
+              {latestSeasonWithData ? ` Última temporada com dados: ${latestSeasonWithData}.` : ""}
+            </p>
+          </div>
         </div>
-      </div>
+      </section>
 
       {/* ── Estados de loading / erro ───────────────────────────────────────── */}
       {loading && !data && (
@@ -272,8 +316,57 @@ export function BrainObservatory({ initialSeason }: { initialSeason: number }) {
         </div>
       )}
 
+      {showEmptyState && (
+        <div className="rounded-[24px] border border-amber-300/70 bg-amber-50 px-5 py-5 text-sm text-amber-950 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-100">
+          <p className="font-semibold">
+            O Cérebro ainda não tem telemetria operacional para a temporada {season}.
+          </p>
+          <p className="mt-1 leading-6 text-amber-900/80 dark:text-amber-100/80">
+            Neste banco ainda não existem rodadas processadas, memórias, simulações ou pesos calibrados.
+            O painel passa a ganhar vida depois da primeira rodada entregue ao motor.
+          </p>
+          <p className="mt-2 text-xs uppercase tracking-[0.12em] text-amber-700/80 dark:text-amber-200/80">
+            {latestSeasonWithData
+              ? `Última temporada com dados: ${latestSeasonWithData}`
+              : "Nenhuma temporada com dados foi encontrada no ambiente atual"}
+          </p>
+        </div>
+      )}
+
       {data && (
         <>
+          <section className="grid gap-4 lg:grid-cols-4">
+            <div className="panel rounded-[24px] p-4">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-muted">Rodadas rastreadas</p>
+              <p className="mt-2 text-3xl font-semibold">{data.snapshot.roundsTracked}</p>
+              <p className="mt-2 text-xs leading-6 text-muted">Quantidade de rodadas que já entraram na memória operacional.</p>
+            </div>
+            <div className="panel rounded-[24px] p-4">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-muted">Memórias vivas</p>
+              <p className="mt-2 text-3xl font-semibold">{data.snapshot.totalMemoryEvents}</p>
+              <p className="mt-2 text-xs leading-6 text-muted">Eventos cognitivos atualmente visíveis neste snapshot.</p>
+            </div>
+            <div className="panel rounded-[24px] p-4">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-muted">Simulações</p>
+              <p className="mt-2 text-3xl font-semibold">{data.snapshot.totalSimulations}</p>
+              <p className="mt-2 text-xs leading-6 text-muted">Volume de execução cega já persistido para leitura técnica.</p>
+            </div>
+            <div className="panel rounded-[24px] p-4">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-muted">Modo cognitivo</p>
+              <p className="mt-2 text-2xl font-semibold">{data.brain.thinkingMode.replace(/_/g, " ")}</p>
+              <p className="mt-2 text-xs leading-6 text-muted">Aprendizado 24h: {data.brain.learningVelocity24h} · Última memória: {data.brain.latestMemoryType ?? "—"}.</p>
+            </div>
+          </section>
+
+          {pollState !== "live" && (
+            <div className="rounded-[20px] border border-signal/25 bg-signal/8 px-4 py-3 text-sm text-muted">
+              <p className="font-semibold text-signal">{pollStateMeta.label}</p>
+              <p className="mt-1 leading-6">
+                O painel manteve o último snapshot disponível em vez de parecer vazio. Atualize manualmente quando quiser forçar uma nova leitura do estado.
+              </p>
+            </div>
+          )}
+
           {/* ── Grade principal: Feed | Núcleo | Conexões ──────────────────── */}
           <div className="grid gap-4 lg:grid-cols-[1fr_260px_1fr]">
 

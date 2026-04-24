@@ -1,0 +1,265 @@
+Error: Can't resolve 'tailwindcss' in 'G:\Desenvolvimento Clientes\BOB-App\apps'
+    [2m[at finishWithoutResolve (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:587:18)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:679:14][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:16:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m {
+  details: "resolve 'tailwindcss' in 'G:\\Desenvolvimento Clientes\\BOB-App\\apps'\n" +
+    '  Parsed request is a module\n' +
+    '  No description file found in G:\\Desenvolvimento Clientes\\BOB-App\\apps or above\n' +
+    '  resolve as module\n' +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\apps\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\node_modules doesn't exist or is not a directory"
+}
+Error: Can't resolve 'tailwindcss' in 'G:\Desenvolvimento Clientes\BOB-App\apps'
+    [2m[at finishWithoutResolve (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:587:18)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:679:14][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:16:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m {
+  details: "resolve 'tailwindcss' in 'G:\\Desenvolvimento Clientes\\BOB-App\\apps'\n" +
+    '  Parsed request is a module\n' +
+    '  No description file found in G:\\Desenvolvimento Clientes\\BOB-App\\apps or above\n' +
+    '  resolve as module\n' +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\apps\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\node_modules doesn't exist or is not a directory"
+}
+Error: Can't resolve 'tailwindcss' in 'G:\Desenvolvimento Clientes\BOB-App\apps'
+    [2m[at finishWithoutResolve (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:587:18)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:679:14][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:16:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m {
+  details: "resolve 'tailwindcss' in 'G:\\Desenvolvimento Clientes\\BOB-App\\apps'\n" +
+    '  Parsed request is a module\n' +
+    '  No description file found in G:\\Desenvolvimento Clientes\\BOB-App\\apps or above\n' +
+    '  resolve as module\n' +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\apps\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\node_modules doesn't exist or is not a directory"
+}
+Error: Can't resolve 'tailwindcss' in 'G:\Desenvolvimento Clientes\BOB-App\apps'
+    [2m[at finishWithoutResolve (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:587:18)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:679:14][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:16:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m {
+  details: "resolve 'tailwindcss' in 'G:\\Desenvolvimento Clientes\\BOB-App\\apps'\n" +
+    '  Parsed request is a module\n' +
+    '  No description file found in G:\\Desenvolvimento Clientes\\BOB-App\\apps or above\n' +
+    '  resolve as module\n' +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\apps\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\node_modules doesn't exist or is not a directory"
+}
+Error: Can't resolve 'tailwindcss' in 'G:\Desenvolvimento Clientes\BOB-App\apps'
+    [2m[at finishWithoutResolve (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:587:18)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:679:14][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:16:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m {
+  details: "resolve 'tailwindcss' in 'G:\\Desenvolvimento Clientes\\BOB-App\\apps'\n" +
+    '  Parsed request is a module\n' +
+    '  No description file found in G:\\Desenvolvimento Clientes\\BOB-App\\apps or above\n' +
+    '  resolve as module\n' +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\apps\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\node_modules doesn't exist or is not a directory"
+}
+Error: Can't resolve 'tailwindcss' in 'G:\Desenvolvimento Clientes\BOB-App\apps'
+    [2m[at finishWithoutResolve (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:587:18)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:679:14][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:16:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m {
+  details: "resolve 'tailwindcss' in 'G:\\Desenvolvimento Clientes\\BOB-App\\apps'\n" +
+    '  Parsed request is a module\n' +
+    '  No description file found in G:\\Desenvolvimento Clientes\\BOB-App\\apps or above\n' +
+    '  resolve as module\n' +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\apps\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\node_modules doesn't exist or is not a directory"
+}
+Error: Can't resolve 'tailwindcss' in 'G:\Desenvolvimento Clientes\BOB-App\apps'
+    [2m[at finishWithoutResolve (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:587:18)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:679:14][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:16:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m {
+  details: "resolve 'tailwindcss' in 'G:\\Desenvolvimento Clientes\\BOB-App\\apps'\n" +
+    '  Parsed request is a module\n' +
+    '  No description file found in G:\\Desenvolvimento Clientes\\BOB-App\\apps or above\n' +
+    '  resolve as module\n' +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\apps\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\node_modules doesn't exist or is not a directory"
+}
+
+#
+# Fatal process OOM in Re-embedded builtins: set permissions
+#
+
+Error: Can't resolve 'tailwindcss' in 'G:\Desenvolvimento Clientes\BOB-App\apps'
+    [2m[at finishWithoutResolve (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:587:18)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:679:14][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:16:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m {
+  details: "resolve 'tailwindcss' in 'G:\\Desenvolvimento Clientes\\BOB-App\\apps'\n" +
+    '  Parsed request is a module\n' +
+    '  No description file found in G:\\Desenvolvimento Clientes\\BOB-App\\apps or above\n' +
+    '  resolve as module\n' +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\apps\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\node_modules doesn't exist or is not a directory"
+}
+Error: Can't resolve 'tailwindcss' in 'G:\Desenvolvimento Clientes\BOB-App\apps'
+    [2m[at finishWithoutResolve (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:587:18)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:679:14][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:16:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m {
+  details: "resolve 'tailwindcss' in 'G:\\Desenvolvimento Clientes\\BOB-App\\apps'\n" +
+    '  Parsed request is a module\n' +
+    '  No description file found in G:\\Desenvolvimento Clientes\\BOB-App\\apps or above\n' +
+    '  resolve as module\n' +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\apps\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\node_modules doesn't exist or is not a directory"
+}
+Error: Can't resolve 'tailwindcss' in 'G:\Desenvolvimento Clientes\BOB-App\apps'
+    [2m[at finishWithoutResolve (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:587:18)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:679:14][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:16:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m {
+  details: "resolve 'tailwindcss' in 'G:\\Desenvolvimento Clientes\\BOB-App\\apps'\n" +
+    '  Parsed request is a module\n' +
+    '  No description file found in G:\\Desenvolvimento Clientes\\BOB-App\\apps or above\n' +
+    '  resolve as module\n' +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\apps\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\node_modules doesn't exist or is not a directory"
+}
+
+#
+# Fatal process OOM in Re-embedded builtins: set permissions
+#
+
+Error: Can't resolve 'tailwindcss' in 'G:\Desenvolvimento Clientes\BOB-App\apps'
+    [2m[at finishWithoutResolve (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:587:18)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:679:14][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:16:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m {
+  details: "resolve 'tailwindcss' in 'G:\\Desenvolvimento Clientes\\BOB-App\\apps'\n" +
+    '  Parsed request is a module\n' +
+    '  No description file found in G:\\Desenvolvimento Clientes\\BOB-App\\apps or above\n' +
+    '  resolve as module\n' +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\apps\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\node_modules doesn't exist or is not a directory"
+}
+Error: Can't resolve 'tailwindcss' in 'G:\Desenvolvimento Clientes\BOB-App\apps'
+    [2m[at finishWithoutResolve (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:587:18)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:679:14][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:16:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m
+    [2m[at G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\enhanced-resolve\lib\Resolver.js:740:5][0m
+    [2m[at eval (eval at create (G:\Desenvolvimento Clientes\BOB-App\apps\web\node_modules\tapable\lib\HookCodeFactory.js:31:10), <anonymous>:15:1)][0m {
+  details: "resolve 'tailwindcss' in 'G:\\Desenvolvimento Clientes\\BOB-App\\apps'\n" +
+    '  Parsed request is a module\n' +
+    '  No description file found in G:\\Desenvolvimento Clientes\\BOB-App\\apps or above\n' +
+    '  resolve as module\n' +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\apps\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\BOB-App\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\Desenvolvimento Clientes\\node_modules doesn't exist or is not a directory\n" +
+    "    G:\\node_modules doesn't exist or is not a directory"
+}
+
+#
+# Fatal process OOM in Re-embedded builtins: set permissions
+#
+
+
+#
+# Fatal javascript OOM in MemoryChunk allocation failed during deserialization.
+#
+
+
+#
+# Fatal javascript OOM in MemoryChunk allocation failed during deserialization.
+#
+

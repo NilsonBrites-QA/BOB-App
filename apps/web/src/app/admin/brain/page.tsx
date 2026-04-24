@@ -16,6 +16,7 @@ import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
 import { BrainGraph } from "@/components/admin/brain-graph";
+import { resolveBrainSeasonSummary } from "@/lib/admin/brain-season";
 
 export const metadata = {
   title: "Brain Console · BOB",
@@ -116,9 +117,13 @@ export default async function AdminBrainPage() {
   }
 
   // ── Brain Console (admin autenticado) ────────────────────────────────────
-  const currentSeason = new Date().getFullYear();
+  const brainSeason = await resolveBrainSeasonSummary();
 
   return (
-    <BrainGraph initialSeason={currentSeason} />
+    <BrainGraph
+      initialSeason={brainSeason.initialSeason}
+      availableSeasons={brainSeason.availableSeasons}
+      latestSeasonWithData={brainSeason.latestSeasonWithRounds}
+    />
   );
 }

@@ -98,6 +98,7 @@ export type TeamAssetRow = {
 // ─── Imports ──────────────────────────────────────────────────────────────────
 
 import { prisma } from "@/lib/db";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { checkTheSportsDB, recordSync } from "./cache-gate";
 
 // ─── Fetch base (HTTP puro — uso restrito interno) ────────────────────────────
@@ -191,7 +192,7 @@ export async function searchTeam(name: string): Promise<TSDBTeam | null> {
  * Retorna a linha persistida (TeamAssetRow).
  */
 async function persistTeamAsset(t: TSDBTeam): Promise<TeamAssetRow> {
-  return prisma.teamAsset.upsert({
+  const persisted = await prisma.teamAsset.upsert({
     where: { tsdbId: t.idTeam },
     create: {
       tsdbId:      t.idTeam,
@@ -218,6 +219,10 @@ async function persistTeamAsset(t: TSDBTeam): Promise<TeamAssetRow> {
       country:     t.strCountry    ?? null,
     },
   });
+
+  revalidateTag("team-assets", "max");
+
+  return persisted;
 }
 
 /**
@@ -436,6 +441,15 @@ export async function syncAllTeams(): Promise<{
 
 // ─── Mapa de assets para o dashboard ─────────────────────────────────────────
 
+const loadAllTeamAssets = unstable_cache(
+  async () => prisma.teamAsset.findMany(),
+  ["team-assets-map"],
+  {
+    revalidate: 60 * 60 * 12,
+    tags: ["team-assets"],
+  },
+);
+
 /**
  * Retorna Map<nomeLower, TeamAssetRow> com TODOS os assets do banco.
  * Leitura pura de DB — sem nenhuma chamada à API externa.
@@ -445,7 +459,7 @@ export async function syncAllTeams(): Promise<{
  * Também indexa por shortName caso exista.
  */
 export async function getTeamAssetsMap(): Promise<Map<string, TeamAssetRow>> {
-  const rows = await prisma.teamAsset.findMany();
+  const rows = await loadAllTeamAssets();
   const map  = new Map<string, TeamAssetRow>();
 
   for (const row of rows) {

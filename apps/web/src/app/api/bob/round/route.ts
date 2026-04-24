@@ -13,7 +13,7 @@
 
 import { NextResponse }  from "next/server";
 import { fetchRoundMatchInputs } from "@/lib/bob/connectors";
-import { scoreMatch, selectAnchors } from "@/lib/bob/engine";
+import { scoreMatch, selectAnchorsFromScored } from "@/lib/bob/engine";
 import { generateVariations } from "@/lib/bob/engine";
 
 export async function GET(request: Request) {
@@ -58,12 +58,13 @@ export async function GET(request: Request) {
 
     // ── Motor de scoring ─────────────────────────────────────────────────────
     const allScored  = matches.map(scoreMatch);
-    const anchors    = selectAnchors(matches); // selectAnchors recebe MatchInput[]
+    const anchors    = selectAnchorsFromScored(allScored);
     const anchorIds  = new Set(anchors.map((a) => a.id));
     const pool       = allScored.filter((m) => !anchorIds.has(m.id));
 
     // ── Variações ────────────────────────────────────────────────────────────
-    const variations = generateVariations({ anchors, pool });
+    const variationsResult = generateVariations({ anchors, pool });
+    const variations = variationsResult.variations || [];
 
     return NextResponse.json(
       { anchors, variations, allScored, meta },

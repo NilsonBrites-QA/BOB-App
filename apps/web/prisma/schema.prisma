@@ -522,6 +522,158 @@ model TeamAsset {
   @@map("team_assets")
 }
 
+// ─── BOB Bet Analyzer: Criar Aposta ────────────────────────────────────────
+
+/**
+ * Perfis de apostador para o BOB Bet Analyzer.
+ * Define estratégias e ranges de odds para cada perfil.
+ */
+model BetProfile {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug        String   @unique // 'conservador', 'moderado', 'agressivo', 'matematico'
+  name        String
+  description String?
+  minOdd      Decimal  @map("min_odd") @db.Decimal(4, 2)
+  maxOdd      Decimal  @map("max_odd") @db.Decimal(4, 2)
+  riskLevel   String   @map("risk_level") // 'baixo', 'medio', 'alto', 'extremo'
+  strategy    String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  suggestions MarketSuggestion[]
+  createdBets CreatedBet[]
+
+  @@map("bet_profiles")
+}
+
+/**
+ * Análise de partida pelo BOB Bet Analyzer.
+ * Armazena probabilidades calculadas para cada mercado.
+ */
+model MatchAnalysis {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId             String   @map("match_id")
+  season              Int
+  round               Int
+  homeTeam            String   @map("home_team")
+  awayTeam            String   @map("away_team")
+  scheduledAt         DateTime @map("scheduled_at")
+  status              String   @default("pending") // 'pending', 'analyzing', 'completed', 'failed'
+
+  // Probabilidades calculadas
+  homeWinProbability  Decimal? @map("home_win_probability") @db.Decimal(5, 4)
+  drawProbability     Decimal? @map("draw_probability") @db.Decimal(5, 4)
+  awayWinProbability  Decimal? @map("away_win_probability") @db.Decimal(5, 4)
+  bttsYesProbability  Decimal? @map("btts_yes_probability") @db.Decimal(5, 4)
+  over25Probability   Decimal? @map("over_25_probability") @db.Decimal(5, 4)
+
+  // Dados brutos e contexto
+  rawData             Json?    @map("raw_data")
+  analysisFactors     Json?    @map("analysis_factors")
+
+  createdAt           DateTime @default(now()) @map("created_at")
+  analyzedAt          DateTime? @map("analyzed_at")
+
+  suggestions         MarketSuggestion[]
+  createdBets         CreatedBet[]
+
+  @@unique([matchId, season])
+  @@index([season, round])
+  @@index([status])
+  @@map("match_analysis")
+}
+
+/**
+ * Sugestões de apostas por mercado e perfil.
+ * Cada sugestão é uma recomendação específica (ex: "Vitória do Flamengo @ 1.85").
+ */
+model MarketSuggestion {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  matchAnalysisId    String   @map("match_analysis_id") @db.Uuid
+  matchAnalysis     MatchAnalysis @relation(fields: [matchAnalysisId], references: [id], onDelete: Cascade)
+
+  profileId          String   @map("profile_id") @db.Uuid
+  profile            BetProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  market             String   // '1x2', 'btts', 'over_under', 'correct_score', etc
+  selection          String   // 'home', 'draw', 'away', 'yes', 'no', 'over_2.5', etc
+  selectionLabel     String?  @map("selection_label")
+
+  // Odds e probabilidades
+  suggestedOdd       Decimal  @map("suggested_odd") @db.Decimal(6, 3)
+  impliedProbability Decimal  @map("implied_probability") @db.Decimal(5, 4)
+  calculatedProbability Decimal @map("calculated_probability") @db.Decimal(5, 4)
+  expectedValue      Decimal? @map("expected_value") @db.Decimal(5, 4)
+
+  // Qualidade
+  confidenceScore    Int?     @map("confidence_score") // 0-100
+  qualityRating      String?  @map("quality_rating") // 'A', 'B', 'C', 'D'
+
+  // Justificativa da IA
+  aiJustification    String?  @map("ai_justification") @db.Text
+  aiFactors          Json?    @map("ai_factors")
+
+  // Status
+  isRecommended      Boolean  @default(false) @map("is_recommended")
+  isPrimaryPick      Boolean  @default(false) @map("is_primary_pick")
+  status             String   @default("active") // 'active', 'won', 'lost', 'void'
+
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([matchAnalysisId, profileId, market, selection])
+  @@index([matchAnalysisId])
+  @@index([profileId])
+  @@index([isRecommended])
+  @@map("market_suggestions")
+}
+
+/**
+ * Apostas criadas (simples ou combinadas) por perfil.
+ * Representa uma aposta completa pronta para o usuário.
+ */
+model CreatedBet {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  matchAnalysisId     String   @map("match_analysis_id") @db.Uuid
+  matchAnalysis       MatchAnalysis @relation(fields: [matchAnalysisId], references: [id], onDelete: Cascade)
+
+  profileId           String   @map("profile_id") @db.Uuid
+  profile             BetProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  betType             String   @map("bet_type") // 'simples', 'combinada', 'criar_aposta'
+  name                String?
+
+  // Composição
+  suggestionIds       Int[]    @map("suggestion_ids") // IDs das market_suggestions
+
+  // Odds
+  totalOdd            Decimal  @map("total_odd") @db.Decimal(8, 3)
+  targetOdd           Decimal? @map("target_odd") @db.Decimal(6, 3)
+
+  // Análise
+  combinedProbability Decimal? @map("combined_probability") @db.Decimal(5, 4)
+  expectedValue       Decimal? @map("expected_value") @db.Decimal(5, 4)
+  confidenceLevel     Int?     @map("confidence_level") // 0-100
+
+  // Explicação
+  fullJustification   String?  @map("full_justification") @db.Text
+  riskAssessment    String?  @map("risk_assessment") @db.Text
+
+  // Resultado
+  status              String   @default("pending") // 'pending', 'placed', 'won', 'lost', 'void'
+  result              String?
+  profitLoss          Decimal? @map("profit_loss") @db.Decimal(10, 2)
+
+  createdAt           DateTime @default(now()) @map("created_at")
+  resultedAt          DateTime? @map("resulted_at")
+
+  @@index([matchAnalysisId])
+  @@index([profileId])
+  @@map("created_bets")
+}
+
 // ─── Fase 1: Fundação — Log de Sincronização de APIs ─────────────────────────
 
 /**

@@ -83,7 +83,19 @@ export async function POST(request: Request) {
   }
 
   // ── Motor Consultivo — isolado do Motor Oficial (PRD §8) ────────────────────
-  const result = await runConsultiveChat(messages);
+  let result: Awaited<ReturnType<typeof runConsultiveChat>>;
+  try {
+    result = await runConsultiveChat(messages);
+  } catch (engineErr) {
+    console.error("[BOB/chat] Falha no motor consultivo:", engineErr);
+    return NextResponse.json(
+      {
+        error: "O consultor do BOB está temporariamente indisponível. Tente novamente em instantes.",
+        degraded: true,
+      },
+      { status: 503 },
+    );
+  }
 
   // Persistir resposta do BOB (falha silenciosa — resposta já produzida)
   try {
@@ -106,5 +118,4 @@ export async function POST(request: Request) {
     disclaimerInjected: result.disclaimerInjected,
   });
 }
-
 

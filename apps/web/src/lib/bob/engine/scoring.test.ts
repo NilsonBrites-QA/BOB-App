@@ -97,14 +97,14 @@ describe('Motor de Scoring (scoring.ts)', () => {
   });
 
   describe('selectAnchors', () => {
-    it('6. Deve limitar o número máximo de âncoras a 4', () => {
+    it('6. Deve entregar exatamente 4 âncoras quando a rodada tem jogos suficientes', () => {
       const candidates = Array.from({ length: 6 }, (_, i) => ({
         ...baseMatch,
         id: `match${i}`,
       }));
       
       const anchors = selectAnchors(candidates);
-      expect(anchors.length).toBeLessThanOrEqual(4);
+      expect(anchors).toHaveLength(4);
     });
 
     it('7. Deve priorizar os jogos de maior score', () => {
@@ -119,6 +119,28 @@ describe('Motor de Scoring (scoring.ts)', () => {
       
       const anchors = selectAnchors(matches);
       expect(anchors[0].id).toBe('best');
+    });
+
+    it('8. Deve completar 4 âncoras mesmo em rodada com poucos favoritos claros', () => {
+      const hardRound: MatchInput[] = Array.from({ length: 6 }, (_, i) => ({
+        ...baseMatch,
+        id: `hard-${i}`,
+        match: `Mandante ${i} x Visitante ${i}`,
+        homeTeam: `Mandante ${i}`,
+        awayTeam: `Visitante ${i}`,
+        homeOdd: 2.45,
+        drawOdd: 3.05,
+        awayOdd: 2.95,
+        homeOddDropped: false,
+        homeForm: ['D', 'W', 'L', 'D', 'W'],
+        awayForm: ['L', 'D', 'W', 'L', 'D'],
+        homePosition: 6 + i,
+        awayPosition: 10 + i,
+      }));
+
+      const anchors = selectAnchors(hardRound);
+      expect(anchors).toHaveLength(4);
+      expect(anchors.some((anchor) => anchor.isMarginalAnchor)).toBe(true);
     });
   });
 });

@@ -1,34 +1,18 @@
-﻿"use client";
+"use client";
 
-/**
- * BOB â€” Chat Widget Flutuante
- *
- * BotÃ£o fixo no canto inferior direito que expande uma janela de chat.
- * DisponÃ­vel em todas as pÃ¡ginas (inserido no layout root).
- *
- * Features:
- *  - HistÃ³rico carregado do banco de dados (Ãºltimas 50 msgs / 4 dias)
- *  - localStorage como fallback offline apenas
- *  - Markdown renderizado nas respostas do BOB (react-markdown + remark-gfm)
- *  - Timestamps relativos ("hÃ¡ 2h") com tooltip de hora absoluta
- *  - Bolhas: usuÃ¡rio (direita, accent), BOB (esquerda, surface-strong)
- */
-
-import { useState, useRef, useEffect, FormEvent } from "react";
+import { type CSSProperties, type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-// â”€â”€â”€ Tipos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 type Message = {
-  id:        string;
-  role:      "user" | "assistant";
-  content:   string;
-  model?:    string;
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  model?: string;
   createdAt: Date;
 };
 
-// â”€â”€â”€ Constantes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+type HistorySource = "server" | "offline" | "empty" | "error";
 
 const STARTERS = [
   "Quem lidera o Brasileirão?",
@@ -38,33 +22,29 @@ const STARTERS = [
 ];
 
 const STORAGE_KEY = "bob-chat-offline";
-const MAX_STORED   = 20;
-
-// â”€â”€â”€ Helpers de tempo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const MAX_STORED = 20;
 
 function relativeTime(date: Date): string {
   const diff = Date.now() - date.getTime();
-  const mins  = Math.floor(diff / 60_000);
+  const mins = Math.floor(diff / 60_000);
   const hours = Math.floor(diff / 3_600_000);
-  const days  = Math.floor(diff / 86_400_000);
+  const days = Math.floor(diff / 86_400_000);
 
-  if (mins < 1)    return "agora";
-  if (mins < 60)   return `há ${mins}min`;
-  if (hours < 24)  return `há ${hours}h`;
-  if (days === 1)  return "ontem";
+  if (mins < 1) return "agora";
+  if (mins < 60) return `há ${mins}min`;
+  if (hours < 24) return `há ${hours}h`;
+  if (days === 1) return "ontem";
   return `há ${days} dias`;
 }
 
 function absoluteTime(date: Date): string {
   return date.toLocaleString("pt-BR", {
-    day:  "numeric",
+    day: "numeric",
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
   });
 }
-
-// â”€â”€â”€ Helpers de localStorage (fallback offline) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function loadOfflineMessages(): Message[] {
   if (typeof window === "undefined") return [];
@@ -73,83 +53,145 @@ function loadOfflineMessages(): Message[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Array<Omit<Message, "createdAt"> & { createdAt: string }>;
     if (!Array.isArray(parsed)) return [];
-    return parsed.slice(-MAX_STORED).map((m) => ({ ...m, createdAt: new Date(m.createdAt) }));
+    return parsed.slice(-MAX_STORED).map((message) => ({
+      ...message,
+      createdAt: new Date(message.createdAt),
+    }));
   } catch {
     return [];
   }
 }
 
-function saveOfflineMessages(msgs: Message[]) {
+function saveOfflineMessages(messages: Message[]) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(msgs.slice(-MAX_STORED)));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-MAX_STORED)));
   } catch {
-    // Storage indisponÃ­vel
+    // localStorage indisponível.
   }
 }
 
-// â”€â”€â”€ Componente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function historyStatusMeta(source: HistorySource) {
+  if (source === "server") {
+    return {
+      badge: "Histórico online",
+      tone: "border-accent/20 bg-accent/10 text-accent-strong",
+      description: "Conversa sincronizada com o histórico autenticado.",
+    };
+  }
+  if (source === "offline") {
+    return {
+      badge: "Histórico local",
+      tone: "border-signal/25 bg-signal/10 text-signal",
+      description: "O chat abriu com o último histórico salvo neste navegador.",
+    };
+  }
+  if (source === "error") {
+    return {
+      badge: "Consulta instável",
+      tone: "border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-300",
+      description: "A sincronização do consultor falhou neste momento.",
+    };
+  }
+  return {
+    badge: "Pronto para conversar",
+    tone: "border-border bg-background/60 text-muted",
+    description: "Abra uma leitura nova ou use um atalho rápido abaixo.",
+  };
+}
 
 export function ChatWidget() {
-  const [open, setOpen]           = useState(false);
-  const [messages, setMessages]   = useState<Message[]>([]);
-  const [input, setInput]         = useState("");
-  const [loading, setLoading]     = useState(false);
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
   const [histLoading, setHistLoading] = useState(false);
-  const [error, setError]         = useState<string | null>(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historySource, setHistorySource] = useState<HistorySource>("empty");
+  const [error, setError] = useState<string | null>(null);
+  const [lastModel, setLastModel] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef  = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const idCounter = useRef(0);
 
-  // Carregar histÃ³rico do DB ao abrir o chat pela primeira vez
   useEffect(() => {
-    if (!open) return;
-    if (messages.length > 0) return; // jÃ¡ carregou
+    if (!open || historyLoaded) return;
 
     setHistLoading(true);
+    setError(null);
+
     fetch("/api/bob/chat/history")
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json() as Promise<{ messages: Array<{ id: string; role: string; content: string; model?: string; createdAt: string }> }>;
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json() as Promise<{
+          messages: Array<{
+            id: string;
+            role: string;
+            content: string;
+            model?: string;
+            createdAt: string;
+          }>;
+        }>;
       })
-      .then(({ messages: hist }) => {
-        const loaded: Message[] = hist.map((m) => ({
-          id:        m.id,
-          role:      m.role as "user" | "assistant",
-          content:   m.content,
-          model:     m.model,
-          createdAt: new Date(m.createdAt),
+      .then(({ messages: history }) => {
+        const loaded: Message[] = history.map((message) => ({
+          id: message.id,
+          role: message.role as "user" | "assistant",
+          content: message.content,
+          model: message.model,
+          createdAt: new Date(message.createdAt),
         }));
+
         setMessages(loaded);
+        setHistorySource(loaded.length > 0 ? "server" : "empty");
+        setLastModel(loaded.filter((message) => message.role === "assistant").at(-1)?.model ?? null);
       })
       .catch(() => {
-        // Fallback: offline localStorage
         const offline = loadOfflineMessages();
-        if (offline.length > 0) setMessages(offline);
+        if (offline.length > 0) {
+          setMessages(offline);
+          setHistorySource("offline");
+          setLastModel(offline.filter((message) => message.role === "assistant").at(-1)?.model ?? null);
+          return;
+        }
+
+        setHistorySource("error");
+        setError("Não foi possível carregar o histórico do consultor agora.");
       })
-      .finally(() => setHistLoading(false));
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+      .finally(() => {
+        setHistLoading(false);
+        setHistoryLoaded(true);
+      });
+  }, [historyLoaded, open]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, error]);
 
   useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 100);
+    if (!open) return;
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 120);
+    return () => window.clearTimeout(timer);
   }, [open]);
 
   function clearConversation() {
     setMessages([]);
-    try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* noop */ }
+    setError(null);
+    setLastModel(null);
+    setHistorySource("empty");
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // localStorage indisponível.
+    }
   }
 
   async function send(text: string) {
     if (!text.trim() || loading) return;
-    setError(null);
 
     const userMsg: Message = {
-      id:        `local-${++idCounter.current}`,
-      role:      "user",
-      content:   text.trim(),
+      id: `local-${++idCounter.current}`,
+      role: "user",
+      content: text.trim(),
       createdAt: new Date(),
     };
 
@@ -157,61 +199,71 @@ export function ChatWidget() {
     setMessages(history);
     setInput("");
     setLoading(true);
+    setError(null);
 
     try {
-      const res = await fetch("/api/bob/chat", {
-        method:  "POST",
+      const response = await fetch("/api/bob/chat", {
+        method: "POST",
         headers: { "content-type": "application/json" },
-        body:    JSON.stringify({
-          messages: history.map((m) => ({ role: m.role, content: m.content })),
+        body: JSON.stringify({
+          messages: history.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
         }),
       });
 
-      if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error ?? `HTTP ${res.status}`);
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${response.status}`);
       }
 
-      const data = (await res.json()) as { reply: string; model: string };
+      const data = (await response.json()) as { reply: string; model: string };
       const assistantMsg: Message = {
-        id:        `local-${++idCounter.current}`,
-        role:      "assistant",
-        content:   data.reply,
-        model:     data.model,
+        id: `local-${++idCounter.current}`,
+        role: "assistant",
+        content: data.reply,
+        model: data.model,
         createdAt: new Date(),
       };
 
       const updated = [...history, assistantMsg];
       setMessages(updated);
-
-      // Salvar no localStorage como fallback offline
+      setLastModel(data.model);
       saveOfflineMessages(updated);
+      setHistorySource("server");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro desconhecido.");
+      const message = err instanceof Error ? err.message : "O consultor ficou indisponível.";
+      setError(message);
+      saveOfflineMessages(history);
+      if (historySource === "server" || historySource === "empty") {
+        setHistorySource("offline");
+      }
     } finally {
       setLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 50);
+      window.setTimeout(() => inputRef.current?.focus(), 60);
     }
   }
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
     void send(input);
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
       void send(input);
     }
   }
 
+  const status = historyStatusMeta(historySource);
+
   return (
     <>
-      {/* BotÃ£o flutuante */}
       <button
-        onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-2xl transition-transform hover:scale-105 active:scale-95"
+        onClick={() => setOpen((value) => !value)}
+        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-[0_18px_40px_rgba(17,94,67,0.28)] transition-transform hover:scale-105 active:scale-95"
         aria-label={open ? "Fechar chat" : "Abrir chat BOB"}
       >
         {open ? (
@@ -225,122 +277,167 @@ export function ChatWidget() {
         )}
       </button>
 
-      {/* Janela do chat */}
       {open && (
-        <div className="fixed bottom-4 left-4 right-4 z-50 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:bottom-24 sm:left-auto sm:right-6 sm:h-[540px] sm:w-[420px] sm:max-w-[calc(100vw-3rem)]">
+        <div className="fixed bottom-4 left-4 right-4 z-50 flex h-[72vh] flex-col overflow-hidden rounded-[28px] border border-border bg-background shadow-[0_28px_80px_rgba(15,23,42,0.22)] sm:bottom-24 sm:left-auto sm:right-6 sm:h-[620px] sm:w-[430px] sm:max-w-[calc(100vw-3rem)]">
+          <div className="border-b border-border bg-surface-strong px-4 py-4">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
+              <div className="min-w-0 space-y-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-bold text-white shadow-[0_10px_24px_rgba(17,94,67,0.2)]">
+                    B
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-foreground">BOB Consultor</p>
+                      <span
+                        className={[
+                          "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]",
+                          status.tone,
+                        ].join(" ")}
+                      >
+                        {status.badge}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-[11px] text-muted">
+                      {lastModel ? `Modelo recente: ${lastModel}` : "Big Odds Brasileirão · leitura consultiva"}
+                    </p>
+                  </div>
+                </div>
 
-          {/* Header */}
-          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-surface-strong px-4 py-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">
-              B
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <p className="truncate text-sm font-semibold text-foreground">BOB</p>
-                <span className="inline-flex shrink-0 items-center rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
-                  Ao vivo
-                </span>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-[18px] border border-border/80 bg-background/60 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-muted">Estado</p>
+                    <p className="mt-1 text-sm font-semibold">{loading ? "Respondendo" : status.badge}</p>
+                  </div>
+                  <div className="rounded-[18px] border border-border/80 bg-background/60 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-muted">Mensagens</p>
+                    <p className="mt-1 text-sm font-semibold">{messages.length}</p>
+                  </div>
+                </div>
               </div>
-              <p className="truncate text-[11px] text-muted">Big Odds Brasileirão · leitura em tempo real</p>
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
-              {messages.length > 0 && (
+
+              <div className="flex shrink-0 items-start gap-1">
+                {messages.length > 0 && (
+                  <button
+                    onClick={clearConversation}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-background hover:text-foreground"
+                    title="Limpar conversa"
+                    aria-label="Limpar conversa"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path d="M3 4H11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                      <path d="M5.2 4V3.3C5.2 2.75 5.65 2.3 6.2 2.3H7.8C8.35 2.3 8.8 2.75 8.8 3.3V4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                      <path d="M4.2 5.3L4.55 10.55C4.59 11.12 5.07 11.56 5.64 11.56H8.36C8.93 11.56 9.41 11.12 9.45 10.55L9.8 5.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                      <path d="M6 6.4V9.3M8 6.4V9.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                )}
                 <button
-                  onClick={clearConversation}
-                  className="shrink-0 rounded-md px-2 py-1 text-[11px] text-muted hover:bg-surface hover:text-foreground"
-                  title="Limpar conversa"
+                  onClick={() => setOpen(false)}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-background hover:text-foreground"
+                  aria-label="Fechar chat"
                 >
-                  Limpar
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
                 </button>
-              )}
-              <button
-                onClick={() => setOpen(false)}
-                className="shrink-0 rounded-full p-1.5 text-muted hover:bg-surface hover:text-foreground"
-                aria-label="Fechar chat"
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M3 3L11 11M11 3L3 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-              </button>
+              </div>
             </div>
           </div>
 
-          {/* Messages area */}
-          <div className="flex-1 overflow-y-auto px-4 py-3">
+          {(historySource === "offline" || historySource === "error") && (
+            <div
+              className={[
+                "border-b px-4 py-2 text-[11px]",
+                historySource === "error"
+                  ? "border-red-500/20 bg-red-500/8 text-red-600 dark:text-red-300"
+                  : "border-signal/20 bg-signal/8 text-signal",
+              ].join(" ")}
+            >
+              {status.description}
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto px-4 py-4">
             {histLoading && (
-              <p className="text-center text-[11px] text-muted py-4">Carregando histórico…</p>
+              <p className="py-8 text-center text-[11px] text-muted">Carregando histórico do consultor...</p>
             )}
 
             {!histLoading && messages.length === 0 && (
-              <div className="space-y-3">
-                <p className="text-center text-xs text-muted">
-                  Pergunte sobre a rodada, classificação ou as variações.
-                </p>
-                <div className="grid gap-1.5">
-                  {STARTERS.map((s) => (
+              <div className="space-y-4">
+                <div className="panel rounded-[24px] p-4">
+                  <p className="kicker text-[11px] text-muted">Leitura instantânea</p>
+                  <h3 className="mt-2 text-lg font-semibold">Pergunte como se estivesse montando o bilhete agora</h3>
+                  <p className="mt-2 text-sm leading-6 text-muted">
+                    O consultor responde sobre rodada, classificação, cenários e leitura dos confrontos. Use um atalho abaixo ou escreva sua própria pergunta.
+                  </p>
+                </div>
+
+                <div className="grid gap-2">
+                  {STARTERS.map((starter) => (
                     <button
-                      key={s}
-                      onClick={() => void send(s)}
-                      className="rounded-xl border border-border bg-surface-strong px-3 py-2 text-left text-xs text-muted transition-colors hover:bg-accent-soft hover:text-foreground"
+                      key={starter}
+                      onClick={() => void send(starter)}
+                      className="rounded-[18px] border border-border bg-surface-strong px-3 py-3 text-left text-xs text-muted transition hover:border-accent/30 hover:bg-accent/5 hover:text-foreground"
                     >
-                      {s}
+                      {starter}
                     </button>
                   ))}
                 </div>
               </div>
             )}
 
-            {!histLoading && (
+            {!histLoading && messages.length > 0 && (
               <div className="space-y-3">
-                {messages.map((m) => (
+                {messages.map((message) => (
                   <div
-                    key={m.id}
-                    className={m.role === "user" ? "flex flex-col items-end gap-0.5" : "flex flex-col items-start gap-0.5"}
+                    key={message.id}
+                    className={message.role === "user" ? "flex flex-col items-end gap-1" : "flex flex-col items-start gap-1"}
                   >
-                    <div className={m.role === "user" ? "flex justify-end" : "flex items-start gap-2"}>
-                      {m.role === "assistant" && (
-                        <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-white">
+                    <div className={message.role === "user" ? "flex justify-end" : "flex items-start gap-2"}>
+                      {message.role === "assistant" && (
+                        <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-white">
                           B
                         </div>
                       )}
                       <div
                         className={[
-                          "max-w-[80%] rounded-xl px-3 py-2 text-xs leading-relaxed",
-                          m.role === "user"
+                          "max-w-[82%] rounded-[18px] px-3 py-2.5 text-xs leading-relaxed",
+                          message.role === "user"
                             ? "rounded-br-sm bg-accent text-white"
                             : "rounded-bl-sm border border-border bg-surface-strong text-foreground",
                         ].join(" ")}
                       >
-                        {m.role === "assistant" ? (
+                        {message.role === "assistant" ? (
                           <div className="prose prose-xs max-w-none dark:prose-invert prose-p:my-0.5 prose-p:leading-relaxed prose-headings:font-semibold prose-headings:text-foreground prose-strong:text-foreground prose-code:rounded prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-[10px] prose-li:my-0 prose-ul:my-1 prose-ol:my-1">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {m.content}
+                              {message.content}
                             </ReactMarkdown>
                           </div>
                         ) : (
-                          m.content
+                          message.content
                         )}
                       </div>
                     </div>
-                    {/* Timestamp */}
+
                     <span
                       className={[
                         "text-[10px] text-muted",
-                        m.role === "user" ? "pr-1" : "pl-7",
+                        message.role === "user" ? "pr-1" : "pl-8",
                       ].join(" ")}
-                      title={absoluteTime(m.createdAt)}
+                      title={absoluteTime(message.createdAt)}
                     >
-                      {relativeTime(m.createdAt)}
+                      {relativeTime(message.createdAt)}
                     </span>
                   </div>
                 ))}
 
                 {loading && (
                   <div className="flex justify-start">
-                    <div className="mr-2 mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-white">
+                    <div className="mr-2 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-white">
                       B
                     </div>
-                    <div className="rounded-xl rounded-bl-sm border border-border bg-surface-strong px-4 py-3">
+                    <div className="rounded-[18px] rounded-bl-sm border border-border bg-surface-strong px-4 py-3">
                       <div className="flex gap-1">
                         <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted [animation-delay:0ms]" />
                         <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted [animation-delay:150ms]" />
@@ -351,7 +448,7 @@ export function ChatWidget() {
                 )}
 
                 {error && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-400">
+                  <div className="rounded-[18px] border border-red-500/20 bg-red-500/8 px-3 py-2 text-xs text-red-600 dark:text-red-300">
                     {error}
                   </div>
                 )}
@@ -361,33 +458,38 @@ export function ChatWidget() {
             )}
           </div>
 
-          {/* Input */}
-          <div className="border-t border-border bg-surface-strong px-3 py-2.5">
-            <form onSubmit={handleSubmit} className="flex items-end gap-2">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Pergunte ao BOB…"
-                rows={1}
-                disabled={loading}
-                className="flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-xs leading-5 text-foreground placeholder:text-muted/50 focus:border-accent focus:outline-none disabled:opacity-50"
-                style={{ maxHeight: "80px", overflowY: "auto", fieldSizing: "content" } as React.CSSProperties}
-              />
-              <button
-                type="submit"
-                disabled={loading || !input.trim()}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-                aria-label="Enviar"
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                  <path d="M2 8L14 8M14 8L9 3M14 8L9 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
+          <div className="border-t border-border bg-surface-strong px-3 py-3">
+            <form onSubmit={handleSubmit} className="space-y-2">
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Pergunte ao BOB sobre a rodada, odds, âncoras ou cenários..."
+                  rows={1}
+                  disabled={loading}
+                  className="min-h-[42px] flex-1 resize-none rounded-[18px] border border-border bg-background px-3 py-2 text-xs leading-5 text-foreground placeholder:text-muted/50 focus:border-accent focus:outline-none disabled:opacity-50"
+                  style={{ maxHeight: "96px", overflowY: "auto", fieldSizing: "content" } as CSSProperties}
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !input.trim()}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                  aria-label="Enviar"
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <path d="M2 8L14 8M14 8L9 3M14 8L9 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 text-[10px] text-muted">
+                <span>Enter envia · Shift + Enter quebra linha</span>
+                <span>{loading ? "Consultor analisando..." : status.description}</span>
+              </div>
             </form>
           </div>
-
         </div>
       )}
     </>

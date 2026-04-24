@@ -438,7 +438,15 @@ function Legend() {
 
 // ─── Componente Principal ────────────────────────────────────────────────────
 
-export function BrainGraph({ initialSeason }: { initialSeason: number }) {
+export function BrainGraph({
+  initialSeason,
+  availableSeasons,
+  latestSeasonWithData,
+}: {
+  initialSeason: number;
+  availableSeasons: number[];
+  latestSeasonWithData: number | null;
+}) {
   const [season, setSeason] = useState<number>(initialSeason);
   const [roundsLimit, setRoundsLimit] = useState<number>(10);
   const [data, setData] = useState<GraphPayload | null>(null);
@@ -528,6 +536,16 @@ export function BrainGraph({ initialSeason }: { initialSeason: number }) {
   const handleBackgroundClick = useCallback(() => {
     setSelectedNode(null);
   }, []);
+
+  const hasOperationalNodes = Boolean(
+    data &&
+      (data.meta.roundsIncluded > 0 ||
+        data.meta.nodeCounts.round > 0 ||
+        data.meta.nodeCounts.sync > 0 ||
+        data.meta.nodeCounts.pattern > 0 ||
+        data.meta.nodeCounts.simulation > 0 ||
+        data.meta.nodeCounts.memory > 0),
+  );
 
   // ── Canvas: renderer de nó com efeito glow ───────────────────────────────
   const nodeCanvasObject = useCallback(
@@ -626,7 +644,7 @@ export function BrainGraph({ initialSeason }: { initialSeason: number }) {
       />
 
       {/* ── Grafo WebGL ──────────────────────────────────────────────────── */}
-      {!loading && data && (
+      {!loading && data && hasOperationalNodes && (
         <div style={{ position: "absolute", inset: 0, zIndex: 1 }}>
           <ForceGraph2D
             graphData={data}
@@ -655,6 +673,54 @@ export function BrainGraph({ initialSeason }: { initialSeason: number }) {
             d3AlphaDecay={0.018}
             d3VelocityDecay={0.28}
           />
+        </div>
+      )}
+
+      {!loading && data && !hasOperationalNodes && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              background: "rgba(245, 158, 11, 0.08)",
+              border: "1px solid rgba(245, 158, 11, 0.25)",
+              borderRadius: "16px",
+              padding: "1.5rem 1.75rem",
+              color: "#fef3c7",
+              maxWidth: "460px",
+              textAlign: "center",
+              lineHeight: 1.7,
+              boxShadow: "0 20px 80px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: "8px" }}>
+              Sem sinais suficientes para desenhar o grafo do Cérebro
+            </div>
+            <div style={{ color: "#fcd34d", fontSize: "13px" }}>
+              A temporada {season} ainda não possui rodadas, memórias, simulações ou padrões persistidos.
+            </div>
+            <div
+              style={{
+                marginTop: "10px",
+                color: "#fde68a",
+                fontSize: "11px",
+                textTransform: "uppercase",
+                letterSpacing: "0.12em",
+              }}
+            >
+              {latestSeasonWithData
+                ? `Última temporada com dados: ${latestSeasonWithData}`
+                : "Nenhuma temporada com dados foi encontrada neste ambiente"}
+            </div>
+          </div>
         </div>
       )}
 
@@ -754,7 +820,7 @@ export function BrainGraph({ initialSeason }: { initialSeason: number }) {
             style={selectStyle}
             aria-label="Selecionar temporada"
           >
-            {[2024, 2025, 2026].map((y) => (
+            {availableSeasons.map((y) => (
               <option key={y} value={y} style={{ background: "#0f172a" }}>
                 {y}
               </option>

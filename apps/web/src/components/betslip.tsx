@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { TeamIdentity } from "./team-identity";
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -8,7 +9,9 @@ export type BetSelection = {
   id: string; // matchId + market + option
   matchId: string;
   homeTeam: string;
+  homeBadgeUrl?: string | null;
   awayTeam: string;
+  awayBadgeUrl?: string | null;
   market: string;
   marketLabel: string;
   option: string;
@@ -140,9 +143,23 @@ export function BetSlip({ selections, onRemove, onClear }: BetSlipProps) {
               {selections.map((sel) => (
                 <li key={sel.id} className="flex items-start gap-2 rounded-2xl border border-border bg-surface-strong p-3">
                   <div className="flex-1 min-w-0">
-                    <p className="truncate text-xs font-medium text-foreground">
-                      {sel.homeTeam} × {sel.awayTeam}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <TeamIdentity
+                        teamName={sel.homeTeam}
+                        badgeUrl={sel.homeBadgeUrl}
+                        badgeSize={18}
+                        className="min-w-0 flex-1"
+                        nameClassName="text-xs"
+                      />
+                      <span className="shrink-0 text-[10px] uppercase tracking-[0.22em] text-muted">vs</span>
+                      <TeamIdentity
+                        teamName={sel.awayTeam}
+                        badgeUrl={sel.awayBadgeUrl}
+                        badgeSize={18}
+                        className="min-w-0 flex-1 justify-end"
+                        nameClassName="text-right text-xs"
+                      />
+                    </div>
                     <p className="mt-0.5 text-[11px] text-muted">
                       {MARKET_LABELS[sel.market] ?? sel.market} · {sel.optionLabel}
                     </p>

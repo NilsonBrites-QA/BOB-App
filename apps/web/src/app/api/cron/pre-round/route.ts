@@ -17,7 +17,7 @@
 import { NextResponse }        from "next/server";
 import { revalidatePath }      from "next/cache";
 import { fetchRoundMatchInputs, getCurrentRound } from "@/lib/bob/connectors";
-import { scoreMatch, selectAnchors, generateVariations } from "@/lib/bob/engine";
+import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
 import { saveRound }            from "@/lib/bob/persist";
 import { enrichMatchContext }   from "@/lib/bob/ai/cognitive-analyst";
 
@@ -86,10 +86,13 @@ export async function GET(request: Request) {
     }
   }
 
-  const anchors    = selectAnchors(matchInputs);
+  const anchors    = selectAnchorsFromScored(scored);
   const anchorIds  = new Set(anchors.map((a) => a.id));
   const pool       = scored.filter((m) => !anchorIds.has(m.id));
-  const variations = generateVariations({ anchors, pool });
+  const variationsResult = generateVariations({ anchors, pool });
+  
+  // Extrair array de variações do resultado (compatibilidade com beam-search)
+  const variations = variationsResult.variations || [];
 
   // 4. Persistir rascunho (idempotente)
   const { roundDbId } = await saveRound({

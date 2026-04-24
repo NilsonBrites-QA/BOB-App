@@ -97,7 +97,7 @@ type VariationCardProps = {
 
 export function VariationCard({ variation, teamBadges = {} }: VariationCardProps) {
   const risk = RISK_CONFIG[variation.id] ?? RISK_CONFIG.V1!;
-  const [picksOpen, setPicksOpen] = useState(true);
+  const [picksOpen, setPicksOpen] = useState(variation.id === "V1" || variation.id === "V2");
   const premiumCopy = SCENARIO_COPY[variation.id] ?? {
     posture: variation.posture,
     summary: variation.summary,
@@ -107,73 +107,103 @@ export function VariationCard({ variation, teamBadges = {} }: VariationCardProps
   const hasMarginalAnchor = variation.picks.some(
     (p) => p.isAnchor && p.isMarginal
   );
+  const anchorCount = variation.picks.filter((pick) => pick.isAnchor).length;
+  const complementaryCount = variation.picks.length - anchorCount;
 
   return (
-    <article className="panel rounded-3xl p-5">
+    <article className="panel panel-hover relative overflow-hidden rounded-[30px] p-5 sm:p-6">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-white/70 to-transparent dark:from-white/6" />
       {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="kicker text-xs text-muted">{variation.id}</p>
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${risk.badge}`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${risk.dot}`} />
-              {risk.label}
-            </span>
-            {hasMarginalAnchor && (
+      <div className="relative flex flex-col gap-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="kicker text-xs text-muted">{variation.id}</p>
               <span
-                title="Esta variação contém âncora marginal — rodada com poucos favoritos claros"
-                className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${risk.badge}`}
               >
-                ⚠ marginal
+                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${risk.dot}`} />
+                {risk.label}
               </span>
-            )}
+              {hasMarginalAnchor && (
+                <span
+                  title="Esta variação contém âncora marginal e exige leitura mais disciplinada."
+                  className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                >
+                  Leitura sensível
+                </span>
+              )}
+            </div>
+            <h3 className="mt-2 text-[1.45rem] font-semibold leading-snug sm:text-[1.65rem]">
+              {variation.title}
+            </h3>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{premiumCopy.posture}</p>
+            <p className="mt-1 text-sm leading-6 text-muted">{premiumCopy.summary}</p>
           </div>
-          <h3 className="mt-1.5 text-xl font-semibold leading-snug">{variation.title}</h3>
+
+          <div className="shrink-0 rounded-[24px] border border-accent/15 bg-accent/8 px-4 py-3 text-right shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-accent-strong/60">
+              Odd alvo
+            </p>
+            <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-accent-strong">
+              {formatOdd(variation.projectedOdd)}
+            </p>
+            <p className="mt-2 text-[11px] text-muted">Entrada sugerida para este roteiro</p>
+          </div>
         </div>
 
-        {/* Odd em destaque */}
-        <div className="shrink-0 rounded-2xl bg-accent-soft px-4 py-2.5 text-right">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-accent-strong/60">
-            Odd alvo
-          </p>
-          <p className="mt-0.5 text-2xl font-bold tabular-nums leading-none text-accent-strong">
-            {formatOdd(variation.projectedOdd)}
-          </p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-[22px] border border-border/80 bg-background/55 px-4 py-3 backdrop-blur">
+            <p className="kicker text-[11px] text-muted">Composição</p>
+            <p className="mt-2 text-xl font-semibold">{variation.gameCount} jogos</p>
+            <p className="mt-1 text-xs text-muted">Bilhete montado para a rodada atual</p>
+          </div>
+          <div className="rounded-[22px] border border-border/80 bg-background/55 px-4 py-3 backdrop-blur">
+            <p className="kicker text-[11px] text-muted">Base do roteiro</p>
+            <p className="mt-2 text-xl font-semibold">{anchorCount} âncora{anchorCount === 1 ? "" : "s"}</p>
+            <p className="mt-1 text-xs text-muted">
+              {complementaryCount} leitura{complementaryCount === 1 ? "" : "s"} complementar{complementaryCount === 1 ? "" : "es"}
+            </p>
+          </div>
+          <div className="rounded-[22px] border border-border/80 bg-background/55 px-4 py-3 backdrop-blur">
+            <p className="kicker text-[11px] text-muted">Arquitetura</p>
+            <p className="mt-2 text-xl font-semibold">
+              {variation.anchorsTogether ? "Âncoras juntas" : "Âncoras distribuídas"}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              {variation.anchorsTogether
+                ? "Mantém a base principal concentrada."
+                : "Espalha risco para abrir espaço de preço."}
+            </p>
+          </div>
         </div>
-      </div>
 
-      {/* ── Postura + Sumário ── */}
-      <p className="mt-3 text-sm leading-6 text-muted">{premiumCopy.posture}</p>
-      <p className="mt-1 text-sm leading-6 text-muted">{premiumCopy.summary}</p>
-
-      {/* ── Stats row ── */}
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-        <span className="rounded-full border border-border px-2.5 py-1 text-muted">
-          {variation.gameCount} jogos
-        </span>
-        <span
-          className={`rounded-full border px-2.5 py-1 ${
-            variation.anchorsTogether
-              ? "border-accent/25 bg-accent/5 text-accent-strong"
-              : "border-border text-muted"
-          }`}
-        >
-          Âncoras {variation.anchorsTogether ? "preservadas" : "distribuídas"}
-        </span>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-full border border-border px-2.5 py-1 text-muted">
+            Cenário premium da rodada
+          </span>
+          <span
+            className={`rounded-full border px-2.5 py-1 ${
+              variation.anchorsTogether
+                ? "border-accent/25 bg-accent/5 text-accent-strong"
+                : "border-border text-muted"
+            }`}
+          >
+            {variation.anchorsTogether ? "Base concentrada" : "Risco espalhado"}
+          </span>
+        </div>
       </div>
 
       {/* ── Picks (accordion) ── */}
-      <div className="mt-4 overflow-hidden rounded-2xl border border-border">
+      <div className="mt-5 overflow-hidden rounded-[24px] border border-border">
         {/* Linha de toggle */}
         <button
           type="button"
           onClick={() => setPicksOpen((v) => !v)}
-          className="flex w-full items-center justify-between bg-accent/5 px-4 py-2 text-left dark:bg-accent/10"
+          className="flex w-full items-center justify-between bg-accent/5 px-4 py-3 text-left dark:bg-accent/10"
           aria-expanded={picksOpen}
         >
-          <div className="grid flex-1 grid-cols-[1fr_74px_56px] text-[10px] font-semibold uppercase tracking-wider text-muted">
+          <div className="grid flex-1 grid-cols-[1fr_74px_56px] text-[10px] font-semibold uppercase tracking-[0.22em] text-muted">
             <span>Confronto</span>
             <span>Palpite</span>
             <span className="text-right">Odd</span>
@@ -217,12 +247,12 @@ export function VariationCard({ variation, teamBadges = {} }: VariationCardProps
                       <div className="flex flex-wrap gap-1.5">
                         {pick.isAnchor && (
                           <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold leading-none text-white">
-                            Âncora
+                            Seleção-base
                           </span>
                         )}
                         {pick.isAnchor && pick.isMarginal && (
                           <span
-                            title="Âncora marginal — leitura mais sensível da rodada"
+                            title="Âncora marginal, útil quando a rodada oferece poucas bases realmente limpas."
                             className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold leading-none text-amber-700"
                           >
                             Marginal
@@ -240,7 +270,7 @@ export function VariationCard({ variation, teamBadges = {} }: VariationCardProps
                   </span>
 
                   {/* Odd */}
-                  <span className="text-right font-mono text-sm font-semibold tabular-nums">
+                  <span className="text-right font-mono text-sm font-semibold tabular-nums text-foreground">
                     {pick.odd.toFixed(2)}
                   </span>
                 </div>

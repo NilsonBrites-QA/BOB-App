@@ -1,0 +1,15 @@
+
+> web@1.1.0-beta dev
+> next dev --hostname 127.0.0.1 --port 3005
+
+▲ Next.js 16.2.2 (Turbopack)
+- Local:         http://127.0.0.1:3005
+- Network:       http://127.0.0.1:3005
+- Environments: .env.local, .env
+✓ Ready in 3.5s
+Creating turbopack project {
+  dir: 'G:\\Desenvolvimento Clientes\\BOB-App\\apps\\web',
+  testMode: true
+}
+
+○ Compiling /login ...

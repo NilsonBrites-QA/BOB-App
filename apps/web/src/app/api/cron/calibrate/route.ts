@@ -12,8 +12,8 @@
  *   5. Executa Anti-Correlation Discovery (discoverAntiCorrelations)
  *
  * Query params:
- *   season (number, obrigatório) — ex: 2025
- *   round  (number, obrigatório) — ex: 10
+ *   season (number, opcional) — ex: 2025
+ *   round  (number, opcional) — ex: 10
  *
  * Requer: header Authorization: Bearer <CRON_SECRET>
  */
@@ -22,6 +22,8 @@ import { NextResponse }   from "next/server";
 import { backtestRound }  from "@/lib/bob/engine/backtest";
 import { selfCalibrate }  from "@/lib/bob/engine/calibrator";
 import { discoverAntiCorrelations } from "@/lib/bob/engine/anti-correlation";
+import { prisma } from "@/lib/db";
+import { resolveActiveSeasonYear } from "@/lib/bob/season";
 import {
   saveFactorWeightSnapshot,
   getLatestWeights,
@@ -41,19 +43,42 @@ export async function GET(request: Request) {
   const seasonParam = searchParams.get("season");
   const roundParam  = searchParams.get("round");
 
-  if (!seasonParam || !roundParam) {
+  const fallbackSeason = await resolveActiveSeasonYear();
+  const season = seasonParam ? parseInt(seasonParam, 10) : fallbackSeason;
+
+  if (Number.isNaN(season) || season < 2020) {
     return NextResponse.json(
-      { error: "Parâmetros 'season' e 'round' são obrigatórios." },
+      { error: "Temporada inválida." },
       { status: 400 },
     );
   }
 
-  const season = parseInt(seasonParam, 10);
-  const round  = parseInt(roundParam, 10);
+  let round = roundParam ? parseInt(roundParam, 10) : NaN;
 
-  if (isNaN(season) || isNaN(round) || season < 2020 || round < 1 || round > 38) {
+  if (!roundParam) {
+    const latestClosedRound = await prisma.round.findFirst({
+      where: {
+        season: { year: season },
+        status: "CLOSED",
+      },
+      orderBy: { number: "desc" },
+      select: { number: true },
+    });
+
+    if (!latestClosedRound) {
+      return NextResponse.json({
+        ok: false,
+        season,
+        message: "Nenhuma rodada fechada disponível para calibração automática.",
+      });
+    }
+
+    round = latestClosedRound.number;
+  }
+
+  if (Number.isNaN(round) || round < 1 || round > 38) {
     return NextResponse.json(
-      { error: "Parâmetros inválidos." },
+      { error: "Rodada inválida." },
       { status: 400 },
     );
   }

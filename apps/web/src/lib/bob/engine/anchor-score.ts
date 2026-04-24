@@ -514,7 +514,7 @@ export function selectAnchorsV2(
         c.anchorScore > -0.2 // aceita scores levemente negativos no fallback
     );
 
-    anchors = fallbackCandidates.slice(0, 3).map((c) => ({
+    anchors = fallbackCandidates.slice(0, 4).map((c) => ({
       ...c,
       calibrationAlerts: [
         ...c.calibrationAlerts,

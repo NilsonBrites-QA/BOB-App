@@ -79,10 +79,11 @@ export function AnchorCard({ anchor, badgeUrl, awayBadgeUrl }: AnchorCardProps) 
     : "border-border";
 
   return (
-    <div className={`rounded-[20px] border bg-surface-strong p-4 transition ${borderCls}`}>
+    <div className={`panel panel-hover relative overflow-hidden rounded-[24px] p-5 transition ${borderCls}`}>
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/70 to-transparent dark:from-white/6" />
       {/* Preferência do usuário */}
       {pref && (
-        <div className="mb-3 flex items-center justify-between">
+        <div className="relative mb-3 flex items-center justify-between">
           {pref === "accepted" && (
             <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-[10px] font-bold text-accent">
               ✓ SELECIONADA
@@ -103,9 +104,15 @@ export function AnchorCard({ anchor, badgeUrl, awayBadgeUrl }: AnchorCardProps) 
       )}
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-3">
+      <div className="relative flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-start gap-3">
           <div className="min-w-0 flex-1 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-accent/20 bg-accent/8 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-accent-strong">
+                Seleção-base
+              </span>
+              <span className="text-[11px] text-muted">Confiança {anchor.score}/100</span>
+            </div>
             <div className="flex items-center gap-2">
               <TeamIdentity
                 teamName={anchor.homeTeam}
@@ -119,7 +126,7 @@ export function AnchorCard({ anchor, badgeUrl, awayBadgeUrl }: AnchorCardProps) 
                   title="Âncora marginal — value edge não totalmente confirmado"
                   className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700"
                 >
-                  ⚠ marginal
+                  Leitura sensível
                 </span>
               )}
             </div>
@@ -156,18 +163,21 @@ export function AnchorCard({ anchor, badgeUrl, awayBadgeUrl }: AnchorCardProps) 
 
       {/* Reasons */}
       {anchor.reasons.length > 0 && (
-        <ul className="mt-3 space-y-1.5">
-          {anchor.reasons.map((reason) => (
-            <li key={reason} className="flex items-start gap-2 text-xs leading-5 text-muted">
-              <span className="mt-0.75 shrink-0 text-accent text-[10px]">▸</span>
-              <span>{reason}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="mt-4 rounded-[20px] border border-border/80 bg-background/55 p-4 backdrop-blur">
+          <p className="kicker text-[11px] text-muted">Leitura do BOB</p>
+          <ul className="mt-3 space-y-1.5">
+            {anchor.reasons.map((reason) => (
+              <li key={reason} className="flex items-start gap-2 text-xs leading-5 text-muted">
+                <span className="mt-0.75 shrink-0 text-accent text-[10px]">▸</span>
+                <span>{reason}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {/* Buttons: aceitar / rejeitar */}
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-4 flex items-center gap-2">
         <button
           type="button"
           onClick={() => togglePref("accepted")}
@@ -196,7 +206,7 @@ export function AnchorCard({ anchor, badgeUrl, awayBadgeUrl }: AnchorCardProps) 
 
       {/* Factor drawer toggle */}
       {anchor.factorBreakdown && anchor.factorBreakdown.length > 0 && (
-        <div className="mt-3">
+        <div className="mt-4">
           <button
             type="button"
             onClick={() => setDrawerOpen((v) => !v)}

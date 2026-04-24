@@ -1,48 +1,42 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { MatchStatsCard } from "@/components/match-stats-card";
+import { PageHero } from "@/components/page-hero";
 import { SectionCard } from "@/components/section-card";
 import { scoreMatch } from "@/lib/bob/engine/scoring";
 import { getFactorBreakdown } from "@/lib/bob/engine/factor-breakdown";
-import { demoMatches, DEMO_ROUND_LABEL } from "@/lib/bob/demo-matches";
-import { fetchRoundMatchInputs, getCurrentRound } from "@/lib/bob/connectors";
+import { DEMO_ROUND_LABEL } from "@/lib/bob/demo-matches";
 import { getTeamAssetsMap } from "@/lib/bob/connectors/thesportsdb";
+import { describeRoundFallback, loadRoundData } from "@/lib/bob/round-loader";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
 
-// ─── tipos auxiliares ─────────────────────────────────────────────────────────
-
 type SortKey = "score" | "home" | "odd";
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
-function formatOdd(odd: number): string {
-  return odd.toFixed(2);
+function describeIntegration(label: string, status: string) {
+  if (status === "live" || status === "ready") return `${label} pronto`;
+  if (status === "partial") return `${label} parcial`;
+  if (status === "empty") return `${label} vazio`;
+  return `${label} em fallback`;
 }
 
-async function getRoundData(season: number, round: number | null) {
-  if (!process.env.FOOTBALL_DATA_TOKEN) {
-    return { source: "demo" as const, round: null, season: null };
-  }
-  const resolvedRound = round ?? (await getCurrentRound().catch(() => null));
-  if (!resolvedRound) return { source: "demo" as const, round: null, season: null };
-
-  try {
-    const result = await fetchRoundMatchInputs(season, resolvedRound);
-    return { source: "api" as const, ...result };
-  } catch {
-    return { source: "demo" as const, round: null, season: null };
-  }
+function sortLabel(key: SortKey) {
+  if (key === "score") return "Confiança";
+  if (key === "home") return "Mandante";
+  return "Odd";
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+function sortDescription(key: SortKey) {
+  if (key === "score") return "Abre pelos confrontos com leitura mais limpa.";
+  if (key === "home") return "Organiza a rodada por ordem alfabética do mandante.";
+  return "Puxa para o topo os preços mais curtos do mercado.";
+}
 
 export default async function EstatisticasPage({
   searchParams,
 }: {
   searchParams: Promise<{ season?: string; round?: string; sort?: string }>;
 }) {
-  // ── Auth guard ─────────────────────────────────────────────────────────
   const cookieStore = await cookies();
   const supabase = await createClient(cookieStore);
   const {
@@ -53,9 +47,8 @@ export default async function EstatisticasPage({
     redirect("/login");
   }
 
-  // Verificar se o usuário está ativo na whitelist
   const dbUser = await prisma.user.findUnique({
-    where:  { email: user.email!.toLowerCase() },
+    where: { email: user.email!.toLowerCase() },
     select: { active: true },
   }).catch(() => null);
 
@@ -63,176 +56,272 @@ export default async function EstatisticasPage({
     redirect("/login");
   }
 
-  // ── Parâmetros ─────────────────────────────────────────────────────────
-  const params    = await searchParams;
+  const params = await searchParams;
   const paramSeason = params.season ? parseInt(params.season, 10) : new Date().getFullYear();
-  const paramRound  = params.round  ? parseInt(params.round,  10) : null;
-  const sortKey     = (params.sort ?? "score") as SortKey;
+  const paramRound = params.round ? parseInt(params.round, 10) : null;
+  const sortKey = (params.sort ?? "score") as SortKey;
 
-  // ── Dados da rodada ────────────────────────────────────────────────────
-  const roundData = await getRoundData(paramSeason, paramRound);
+  const roundData = await loadRoundData(paramSeason, paramRound);
 
-  let teamBadges: Record<string, string | null> = {};
-  try {
-    const assetsMap = await getTeamAssetsMap();
-    assetsMap.forEach((v, k) => { teamBadges[k] = v.badgeUrl; });
-  } catch {
-    // silently ignore — escudos são opcionais
-  }
+  const assetMap = roundData.source === "api" && roundData.assets.size > 0
+    ? roundData.assets
+    : await getTeamAssetsMap().catch(() => new Map());
 
-  // ── Processar jogos ────────────────────────────────────────────────────
-  const rawMatches =
-    roundData.source === "api" && roundData.matches?.length
-      ? roundData.matches
-      : demoMatches;
-
-  const roundLabel =
-    roundData.source === "api"
-      ? `Rodada ${roundData.meta?.round} · ${roundData.meta?.season}`
-      : DEMO_ROUND_LABEL;
-
-  // Score + breakdown por jogo
-  const scored = rawMatches.map((m) => ({
-    scored:    scoreMatch(m),
-    breakdown: getFactorBreakdown(m),
-  }));
-
-  // Ordenação
-  const sorted = [...scored].sort((a, b) => {
-    if (sortKey === "score") return b.scored.score - a.scored.score;
-    if (sortKey === "odd")   return a.scored.homeOdd - b.scored.homeOdd;
-    return a.scored.homeTeam.localeCompare(b.scored.homeTeam);
+  const teamBadges: Record<string, string | null> = {};
+  assetMap.forEach((value, key) => {
+    teamBadges[key] = value.badgeUrl;
   });
 
-  // Estatísticas resumidas
-  const anchors     = sorted.filter((s) => s.scored.isAnchorCandidate);
-  const avgScore    = Math.round(sorted.reduce((a, s) => a + s.scored.score, 0) / sorted.length);
-  const bestScore   = Math.max(...sorted.map((s) => s.scored.score));
-  const totalGames  = sorted.length;
+  const roundLabel = roundData.source === "api" && roundData.meta
+    ? `Rodada ${roundData.meta.round} · ${roundData.meta.season}`
+    : DEMO_ROUND_LABEL;
 
-  // ── Render ─────────────────────────────────────────────────────────────
+  const scored = roundData.matches.map((match) => ({
+    scored: scoreMatch(match),
+    breakdown: getFactorBreakdown(match),
+  }));
+
+  const sorted = [...scored].sort((left, right) => {
+    if (sortKey === "score") return right.scored.score - left.scored.score;
+    if (sortKey === "odd") return left.scored.homeOdd - right.scored.homeOdd;
+    return left.scored.homeTeam.localeCompare(right.scored.homeTeam);
+  });
+
+  const anchors = sorted.filter((item) => item.scored.isAnchorCandidate);
+  const totalGames = sorted.length;
+  const avgScore = totalGames > 0
+    ? Math.round(sorted.reduce((sum, item) => sum + item.scored.score, 0) / totalGames)
+    : 0;
+  const bestScore = totalGames > 0 ? Math.max(...sorted.map((item) => item.scored.score)) : 0;
+  const lowestHomeOdd = totalGames > 0
+    ? Math.min(...sorted.map((item) => item.scored.homeOdd))
+    : 0;
+
+  const integrationMeta = roundData.source === "api" && roundData.meta ? roundData.meta.integrations : null;
+  const degradedIntegrations = integrationMeta
+    ? [
+        integrationMeta.odds !== "live" ? describeIntegration("odds", integrationMeta.odds) : null,
+        integrationMeta.h2h !== "live" ? describeIntegration("H2H", integrationMeta.h2h) : null,
+        integrationMeta.injuries !== "live" ? describeIntegration("desfalques", integrationMeta.injuries) : null,
+        integrationMeta.assets !== "ready" ? describeIntegration("escudos", integrationMeta.assets) : null,
+        integrationMeta.weather !== "live" ? describeIntegration("clima", integrationMeta.weather) : null,
+      ].filter((value): value is string => Boolean(value))
+    : [];
+
+  const heroChips = [
+    {
+      label: roundData.source === "api" ? "Radar ao vivo" : "Modo demonstrativo",
+      tone: roundData.source === "api" ? ("accent" as const) : ("signal" as const),
+    },
+    {
+      label: `${anchors.length} leitura${anchors.length === 1 ? "" : "s"} base`,
+      tone: "neutral" as const,
+    },
+    integrationMeta
+      ? {
+          label: integrationMeta.odds === "live" ? "Mercado conectado" : "Mercado parcial",
+          tone: integrationMeta.odds === "live" ? ("neutral" as const) : ("signal" as const),
+        }
+      : null,
+    {
+      label: `Ordenação: ${sortLabel(sortKey)}`,
+      tone: "neutral" as const,
+    },
+  ].filter((value): value is NonNullable<typeof value> => Boolean(value));
+
+  const heroMetrics = [
+    { label: "Jogos no radar", value: String(totalGames), note: "confrontos disponíveis nesta leitura" },
+    { label: "Confiança média", value: `${avgScore}`, note: "pulso geral da rodada" },
+    { label: "Melhor leitura", value: `${bestScore}`, note: "maior score entre os jogos" },
+    {
+      label: "Menor odd da casa",
+      value: lowestHomeOdd > 0 ? lowestHomeOdd.toFixed(2) : "-",
+      note: "preço mais curto do mercado mandante",
+    },
+  ];
+
   return (
     <div className="flex flex-1 flex-col gap-8 px-4 py-10 sm:px-6 lg:px-10">
+      <PageHero
+        eyebrow="Brasileirão Série A · mesa analítica da rodada"
+        title={`Estatísticas premium · ${roundLabel}`}
+        description={`${totalGames} confrontos organizados para leitura rápida. O painel cruza mercado, forma e score do BOB para destacar onde a rodada está mais limpa e onde o preço ainda pede cautela.`}
+        chips={heroChips}
+        metrics={heroMetrics}
+        aside={(
+          <div className="space-y-4">
+            <div className="rounded-[24px] border border-border/80 bg-background/55 p-5 backdrop-blur">
+              <p className="kicker text-[11px] text-muted">Filtro editorial</p>
+              <p className="mt-2 text-lg font-semibold">{sortLabel(sortKey)}</p>
+              <p className="mt-2 text-sm leading-6 text-muted">{sortDescription(sortKey)}</p>
+            </div>
 
-      {/* ── Cabeçalho ─────────────────────────────────────────────────── */}
-      <section className="panel rounded-[28px] p-6 sm:p-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="kicker text-xs text-muted">Estatísticas · {roundLabel}</p>
-            <h1 className="mt-2 text-3xl font-semibold leading-tight sm:text-4xl">
-              Raio-X dos confrontos da rodada
-            </h1>
-            <p className="mt-2 text-sm leading-7 text-muted">
-              {totalGames} jogos em leitura · {anchors.length} âncoras em destaque.
-              Abra qualquer confronto para ver a leitura completa do BOB e os pontos de atenção da partida.
-            </p>
-            {/* Navegação entre rodadas */}
             {roundData.source === "api" && roundData.meta && (
-              <div className="mt-4 flex items-center gap-2">
-                {roundData.meta.round > 1 && (
-                  <a
-                    href={`?season=${paramSeason}&round=${roundData.meta.round - 1}&sort=${sortKey}`}
-                    className="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-muted transition hover:border-accent/50 hover:text-foreground"
-                  >
-                    ← Rodada {roundData.meta.round - 1}
-                  </a>
-                )}
-                <span className="rounded-full bg-accent/10 px-4 py-1.5 text-xs font-semibold text-accent">
-                  Rodada {roundData.meta.round}
-                </span>
-                {roundData.meta.round < 38 && (
-                  <a
-                    href={`?season=${paramSeason}&round=${roundData.meta.round + 1}&sort=${sortKey}`}
-                    className="rounded-full border border-border px-4 py-1.5 text-xs font-medium text-muted transition hover:border-accent/50 hover:text-foreground"
-                  >
-                    Rodada {roundData.meta.round + 1} →
-                  </a>
-                )}
+              <div className="rounded-[24px] border border-border/80 bg-background/55 p-5 backdrop-blur">
+                <p className="kicker text-[11px] text-muted">Navegação da rodada</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {roundData.meta.round > 1 && (
+                    <a
+                      href={`?season=${paramSeason}&round=${roundData.meta.round - 1}&sort=${sortKey}`}
+                      className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted transition hover:border-accent/40 hover:text-foreground"
+                    >
+                      Rodada {roundData.meta.round - 1}
+                    </a>
+                  )}
+                  <span className="rounded-full bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent-strong">
+                    Rodada {roundData.meta.round}
+                  </span>
+                  {roundData.meta.round < 38 && (
+                    <a
+                      href={`?season=${paramSeason}&round=${roundData.meta.round + 1}&sort=${sortKey}`}
+                      className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted transition hover:border-accent/40 hover:text-foreground"
+                    >
+                      Rodada {roundData.meta.round + 1}
+                    </a>
+                  )}
+                </div>
               </div>
             )}
           </div>
-          <div className="grid shrink-0 grid-cols-3 gap-3 lg:grid-cols-3">
-            <SectionCard
-              title="Jogos"
-              value={String(totalGames)}
-              description="na rodada"
-            />
-            <SectionCard
-              title="Confiança média"
-              value={String(avgScore)}
-              description="leitura do painel"
-            />
-            <SectionCard
-              title="Âncoras"
-              value={String(anchors.length)}
-              description={`pico: ${bestScore}`}
-            />
+        )}
+        extra={(
+          <div className="flex flex-wrap gap-2">
+            {(["score", "home", "odd"] as SortKey[]).map((key) => {
+              const active = sortKey === key;
+              return (
+                <a
+                  key={key}
+                  href={`?season=${paramSeason}&round=${paramRound ?? ""}&sort=${key}`}
+                  className={[
+                    "rounded-full px-3 py-1.5 text-xs font-medium transition",
+                    active
+                      ? "bg-accent text-white"
+                      : "border border-border bg-background/60 text-muted hover:border-accent/35 hover:text-foreground",
+                  ].join(" ")}
+                >
+                  {sortLabel(key)}
+                </a>
+              );
+            })}
           </div>
-        </div>
+        )}
+      />
+
+      {(roundData.source === "demo" || degradedIntegrations.length > 0) && (
+        <section className="rounded-[24px] border border-signal/25 bg-signal/8 px-5 py-4">
+          <p className="text-sm font-semibold text-signal">
+            {roundData.source === "demo"
+              ? "Estatísticas em modo demonstrativo"
+              : "Estatísticas ao vivo com cobertura parcial"}
+          </p>
+          <p className="mt-1 text-sm leading-6 text-muted">
+            {roundData.source === "demo"
+              ? describeRoundFallback(roundData.fallbackReason)
+              : `As integrações desta rodada chegaram com cobertura parcial: ${degradedIntegrations.join(" · ")}.`}
+          </p>
+        </section>
+      )}
+
+      <section className="grid gap-4 lg:grid-cols-3">
+        <SectionCard
+          title="Leituras-base"
+          value={String(anchors.length)}
+          description="Confrontos com perfil para sustentar a espinha dorsal do bilhete."
+          tone="accent"
+        />
+        <SectionCard
+          title="Teto da rodada"
+          value={bestScore > 0 ? `${bestScore}` : "-"}
+          description="Maior score encontrado no recorte atual da rodada."
+          tone="neutral"
+        />
+        <SectionCard
+          title="Mercado mais curto"
+          value={lowestHomeOdd > 0 ? lowestHomeOdd.toFixed(2) : "-"}
+          description="Preço mínimo entre os mandantes destacados nesta leitura."
+          tone="signal"
+        />
       </section>
 
-      {/* ── Ordenação ─────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted">Ordenar por:</span>
-        {(["score", "home", "odd"] as SortKey[]).map((key) => {
-          const label = key === "score" ? "Confiança" : key === "home" ? "Mandante (A–Z)" : "Odd";
-          const active = sortKey === key;
-          return (
-            <a
-              key={key}
-              href={`?season=${paramSeason}&round=${paramRound ?? ""}&sort=${key}`}
-              className={[
-                "rounded-full px-3 py-1 text-xs font-medium transition",
-                active
-                  ? "bg-accent text-white"
-                  : "border border-border bg-surface-strong text-muted hover:border-accent/50",
-              ].join(" ")}
-            >
-              {label}
-            </a>
-          );
-        })}
-      </div>
-
-      {/* ── Grid de jogos ─────────────────────────────────────────────── */}
-      <section>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {sorted.map(({ scored: s, breakdown: bd }) => (
-            <MatchStatsCard
-              key={s.id}
-              match={s}
-              breakdown={bd}
-              homeBadgeUrl={teamBadges[s.homeTeam] ?? null}
-              awayBadgeUrl={teamBadges[s.awayTeam] ?? null}
-              isAnchor={s.isAnchorCandidate}
-            />
-          ))}
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="kicker text-xs text-muted">Raio-X completo</p>
+            <h2 className="mt-1 text-2xl font-semibold">Confrontos organizados para decisão rápida</h2>
+          </div>
+          <p className="max-w-xl text-sm leading-6 text-muted">
+            Abra qualquer confronto para ver a leitura completa do BOB, o peso dos fatores e o contexto de mercado antes da entrada.
+          </p>
         </div>
+
+        {sorted.length > 0 ? (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {sorted.map(({ scored: match, breakdown }) => (
+              <MatchStatsCard
+                key={match.id}
+                match={match}
+                breakdown={breakdown}
+                homeBadgeUrl={teamBadges[match.homeTeam] ?? null}
+                awayBadgeUrl={teamBadges[match.awayTeam] ?? null}
+                isAnchor={match.isAnchorCandidate}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="panel rounded-[24px] p-5">
+            <p className="text-sm font-semibold">Nenhum confronto foi carregado nesta rodada.</p>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              O painel não recebeu partidas suficientes para montar o raio-X analítico. Revise a rodada selecionada ou aguarde uma nova sincronização.
+            </p>
+          </div>
+        )}
       </section>
 
-      {/* ── Legenda de confiança ───────────────────────────────────────── */}
-      <section className="panel rounded-[20px] p-5">
-        <p className="kicker text-xs text-muted">Faixa de confiança</p>
-        <div className="mt-3 flex flex-wrap gap-6 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-accent" />
-            <span><strong>Alta</strong> — Score ≥ 70. Favorável para analisar como âncora.</span>
+      <section className="panel rounded-[28px] p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="kicker text-xs text-muted">Como ler esta tela</p>
+            <h2 className="mt-1 text-2xl font-semibold">Escala de confiança do BOB</h2>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-signal" />
-            <span><strong>Média</strong> — Score 50–69. Jogo interessante, mas com ressalvas.</span>
+          <p className="max-w-2xl text-sm leading-6 text-muted">
+            A leitura cruza probabilidade implícita, forma recente, contexto de tabela e sinais de mercado para separar o que é base, o que é jogo trabalhável e o que deve ficar fora do centro do bilhete.
+          </p>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          <div className="rounded-[22px] border border-border/80 bg-background/55 p-4 backdrop-blur">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-accent" />
+              <p className="text-sm font-semibold">Alta confiança</p>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Score acima de 70. Faixa em que o confronto pode sustentar a base principal do bilhete.
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-muted/50" />
-            <span><strong>Baixa</strong> — Score abaixo de 50. Evitar como âncora.</span>
+          <div className="rounded-[22px] border border-border/80 bg-background/55 p-4 backdrop-blur">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-signal" />
+              <p className="text-sm font-semibold">Confiança intermediária</p>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Score entre 50 e 69. Existe valor, mas o confronto pede ajuste fino de exposição.
+            </p>
+          </div>
+          <div className="rounded-[22px] border border-border/80 bg-background/55 p-4 backdrop-blur">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-muted/60" />
+              <p className="text-sm font-semibold">Baixa confiança</p>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Score abaixo de 50. O preço pode até chamar atenção, mas a base analítica ainda é frágil.
+            </p>
           </div>
         </div>
-        <p className="mt-4 text-xs text-muted">
-          Probabilidades 1 / X / 2 derivadas das odds de mercado, já normalizadas.
-          A leitura do BOB cruza esse preço com o contexto da rodada para destacar os melhores pontos de entrada.
+
+        <p className="mt-5 text-xs leading-6 text-muted">
+          Probabilidades 1 / X / 2 derivadas das odds de mercado, já normalizadas. A leitura do BOB cruza esse preço com o contexto da rodada para indicar se o jogo serve como base, complemento ou apenas observação.
         </p>
       </section>
-
     </div>
   );
 }

@@ -61,10 +61,11 @@ export function MatchStatsCard({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="group w-full text-left rounded-[20px] border border-border bg-surface-strong p-4 transition hover:border-accent/40 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="group panel panel-hover relative w-full overflow-hidden rounded-[24px] p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-white/70 to-transparent dark:from-white/6" />
         {/* ── Topo: times + âncora badge ─────────────────────────────── */}
-        <div className="flex items-start justify-between gap-3">
+        <div className="relative flex items-start justify-between gap-3">
           <div className="min-w-0 flex flex-1 flex-col gap-1.5">
             <TeamIdentity
               teamName={match.homeTeam}
@@ -89,7 +90,7 @@ export function MatchStatsCard({
           <div className="flex shrink-0 items-center gap-2">
             {isAnchor && (
               <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent">
-                âncora
+                seleção-base
               </span>
             )}
             <span className="font-mono text-sm font-bold tabular-nums text-foreground">
@@ -99,7 +100,7 @@ export function MatchStatsCard({
         </div>
 
         {/* ── Barra de probabilidades ──────────────────────────────────── */}
-        <div className="mt-3 flex h-2 overflow-hidden rounded-full border border-border/40">
+        <div className="mt-4 flex h-2 overflow-hidden rounded-full border border-border/40">
           <div className="bg-accent/80" style={{ width: `${homeP}%` }} />
           <div className="bg-muted/30" style={{ width: `${drawP}%` }} />
           <div className="bg-signal/70" style={{ width: `${awayP}%` }} />
@@ -111,7 +112,7 @@ export function MatchStatsCard({
         </div>
 
         {/* ── Rodapé: previsão + forma + confiança ─────────────────────── */}
-        <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+        <div className="mt-4 flex items-center justify-between gap-2 border-t border-border/60 pt-3">
           <div className="flex items-center gap-3">
             <div className="flex flex-col">
               <span className="text-[10px] uppercase tracking-wider text-muted">Leitura do BOB</span>
@@ -136,6 +137,12 @@ export function MatchStatsCard({
             <span className="text-[10px] uppercase tracking-wider text-muted block">Confiança</span>
             <span className={`text-sm ${conf.cls}`}>{conf.text}</span>
           </div>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between gap-3 border-t border-border/60 pt-3 text-[11px] text-muted">
+          <span>Mercado 1: {match.homeOdd.toFixed(2)}</span>
+          <span>X: {match.drawOdd.toFixed(2)}</span>
+          <span>2: {match.awayOdd.toFixed(2)}</span>
         </div>
       </button>
 

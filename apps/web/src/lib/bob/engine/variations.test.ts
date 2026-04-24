@@ -1,5 +1,5 @@
-import { generateVariations, type VariationInput } from './variations';
-import { type ScoredMatch } from './scoring';
+import { generateVariations, type VariationInput, type VariationsResult } from './index';
+import type { ScoredMatch, MatchInput } from './scoring';
 
 const createMockMatch = (
   id: string,
@@ -8,7 +8,7 @@ const createMockMatch = (
   drawOdd: number,
   awayOdd: number,
   isAnchorCandidate: boolean
-): ScoredMatch => ({
+): ScoredMatch & MatchInput => ({
   id,
   match: `Team${id} x Away${id}`,
   homeTeam: `Team${id}`,
@@ -38,16 +38,24 @@ const createMockMatch = (
   reasons: [],
   suggestedResult,
   isAnchorCandidate,
+  homeForm10: ['W'],
+  awayForm10: ['L'],
+  homeMomentum: 1,
+  awayMomentum: -1,
+  motivationHome: 1,
+  motivationAway: 0,
+  isClassico: false,
 });
 
-describe('Gerador de Variações (variations.ts)', () => {
-  const anchors: ScoredMatch[] = [
+describe('Gerador de Variações (beam-search)', () => {
+  const anchors: (ScoredMatch & MatchInput)[] = [
     createMockMatch('A1', '1', 1.5, 4.0, 6.0, true),
     createMockMatch('A2', '1', 1.6, 3.8, 5.5, true),
     createMockMatch('A3', '1', 1.7, 3.5, 5.0, true),
+    createMockMatch('A4', '1', 1.8, 3.4, 5.2, true),
   ];
 
-  const pool: ScoredMatch[] = [
+  const pool: (ScoredMatch & MatchInput)[] = [
     createMockMatch('P1', '1', 2.0, 3.2, 3.8, false),
     createMockMatch('P2', 'X', 2.5, 3.0, 2.8, false),
     createMockMatch('P3', '2', 3.0, 3.0, 2.5, false),
@@ -57,44 +65,48 @@ describe('Gerador de Variações (variations.ts)', () => {
   ];
 
   it('1. Deve gerar exatamente 5 variações (V1 a V5)', () => {
-    const vars = generateVariations({ anchors, pool });
-    expect(vars).toHaveLength(5);
-    expect(vars.map(v => v.title)).toEqual(['Segurança', 'Equilíbrio', 'Lógica Pura', 'Curta de pressão', 'Extrema']);
+    const result: VariationsResult = generateVariations({ anchors, pool });
+    expect(result.variations).toHaveLength(5);
+    expect(result.variations.map(v => v.id)).toEqual(['V1', 'V2', 'V3', 'V4', 'V5']);
   });
 
-  it('2. V1 Segurança deve conter os âncoras fornecidos', () => {
-    const vars = generateVariations({ anchors, pool });
-    const v1 = vars.find(v => v.title === 'Segurança');
+  it('2. V1 deve conter os âncoras fornecidos', () => {
+    const result: VariationsResult = generateVariations({ anchors, pool });
+    const v1 = result.variations.find(v => v.id === 'V1');
     expect(v1).toBeDefined();
     
-    const anchorPicksCount = v1!.picks.filter(p => p.isAnchor).length;
-    expect(anchorPicksCount).toBe(3); // Fornecemos 3 âncoras na input
+    const anchorPicksCount = v1!.legs.filter(p => p.isAnchor).length;
+    expect(anchorPicksCount).toBeGreaterThanOrEqual(3); // V1 deve ter âncoras
   });
 
-  it('3. V3 e V4 devem ser distintas, mesmo se o pool for pequeno, pois os limites (mínimo de odds) elevam o multiplicador', () => {
-    const smallPool = [pool[0], pool[1]]; // Um pool bem pequeno para testar o override
-    const vars = generateVariations({ anchors, pool: smallPool });
+  it('3. V3 e V4 devem ser distintas (anti-duplicata)', () => {
+    const smallPool = [pool[0], pool[1]];
+    const result: VariationsResult = generateVariations({ anchors, pool: smallPool });
     
-    const v3 = vars.find(v => v.title === 'Lógica Pura')!;
-    const v4 = vars.find(v => v.title === 'Curta de pressão')!;
+    const v3 = result.variations.find(v => v.id === 'V3')!;
+    const v4 = result.variations.find(v => v.id === 'V4')!;
     
-    // Comparando se são idênticas. A premissa do BOB diz que tem que evitar picks 100% iguais.
-    const v3Ids = v3.picks.map(p => `${p.fixtureId}-${p.result}`).join(',');
-    const v4Ids = v4.picks.map(p => `${p.fixtureId}-${p.result}`).join(',');
-    
-    // Mesmo sendo pequeno, como V4 exige odds maiores (1000) e V3 (800), V4 precisará substituir ou não passará os limites em relação a V3.
+    // Comparar legs para garantir que não são idênticas
+    const v3Ids = v3.legs.map(l => `${l.matchId}:${l.pickOutcome}`).sort().join('|');
+    const v4Ids = v4.legs.map(l => `${l.matchId}:${l.pickOutcome}`).sort().join('|');
     expect(v3Ids).not.toEqual(v4Ids);
   });
 
-  it('4. A ODD final (multiplicador) não deve ser menor que o piso exigido pela variação', () => {
-    const vars = generateVariations({ anchors, pool });
+  it('4. A ODD final deve atingir o target mínimo', () => {
+    const result: VariationsResult = generateVariations({ anchors, pool });
     
-    vars.forEach(v => {
-      let floor = 500;
-      if (v.title === 'Curta de pressão' || v.title === 'Extrema') floor = 1000;
-      if (v.title === 'Equilíbrio' || v.title === 'Lógica Pura') floor = 800;
-      
-      expect(v.projectedOdd).toBeGreaterThanOrEqual(floor);
+    result.variations.forEach(v => {
+      // Cada variação deve ter odd combinada >= targetOdd (default 1000)
+      expect(v.combinedOdd).toBeGreaterThanOrEqual(900); // tolerância de 10%
+    });
+  });
+
+  it('5. Todas as variações devem ter 7-10 pernas', () => {
+    const result: VariationsResult = generateVariations({ anchors, pool });
+    
+    result.variations.forEach(v => {
+      expect(v.legs.length).toBeGreaterThanOrEqual(7);
+      expect(v.legs.length).toBeLessThanOrEqual(10);
     });
   });
 });

@@ -234,7 +234,10 @@ export async function GET(request: Request) {
     const anchors    = selectAnchors(matches);
     const anchorIds  = new Set(anchors.map((a) => a.id));
     const pool       = allScored.filter((m) => !anchorIds.has(m.id));
-    const variations = generateVariations({ anchors, pool });
+    const variationsResult = generateVariations({ anchors, pool });
+    
+    // Extrair array de variações do resultado (compatibilidade com beam-search)
+    const variations = variationsResult.variations || [];
 
     // 8. Persistir no banco
     const { roundDbId } = await saveRound({

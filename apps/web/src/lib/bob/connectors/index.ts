@@ -85,25 +85,64 @@ export type FetchRoundResult = {
       finished: boolean;
       injuries: boolean;
     };
+    integrations: {
+      odds: "live" | "partial" | "fallback";
+      h2h: "live" | "partial" | "fallback";
+      injuries: "live" | "fallback";
+      cup: "live" | "fallback";
+      assets: "ready" | "empty";
+      weather: "live" | "fallback";
+    };
   };
 };
+
+type TeamHistory = {
+  all: FDMatch[];
+  home: FDMatch[];
+  away: FDMatch[];
+};
+
+function ensureTeamHistory(
+  map: Map<number, TeamHistory>,
+  teamId: number,
+): TeamHistory {
+  const existing = map.get(teamId);
+  if (existing) return existing;
+  const history: TeamHistory = { all: [], home: [], away: [] };
+  map.set(teamId, history);
+  return history;
+}
+
+function buildTeamHistoryIndex(allFinished: FDMatch[]): Map<number, TeamHistory> {
+  const sorted = [...allFinished]
+    .filter(
+      (match) =>
+        match.status === "FINISHED" &&
+        match.score.fullTime.home !== null &&
+        match.score.fullTime.away !== null,
+    )
+    .sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime());
+
+  const map = new Map<number, TeamHistory>();
+
+  for (const match of sorted) {
+    const homeHistory = ensureTeamHistory(map, match.homeTeam.id);
+    homeHistory.all.push(match);
+    homeHistory.home.push(match);
+
+    const awayHistory = ensureTeamHistory(map, match.awayTeam.id);
+    awayHistory.all.push(match);
+    awayHistory.away.push(match);
+  }
+
+  return map;
+}
 
 // ─── Helpers: Cálculo de Forma ────────────────────────────────────────────────
 
 /** Extrai form (W/D/L) dos últimos N jogos de um time a partir de jogos finalizados */
-function extractFormFromMatches(
-  allFinished: FDMatch[],
-  teamId: number,
-  n: number
-): string[] {
-  return allFinished
-    .filter(
-      (m) =>
-        (m.homeTeam.id === teamId || m.awayTeam.id === teamId) &&
-        m.status === "FINISHED" &&
-        m.score.fullTime.home !== null
-    )
-    .sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())
+function extractFormFromMatches(history: TeamHistory | undefined, teamId: number, n: number): string[] {
+  return (history?.all ?? [])
     .slice(0, n)
     .map((m) => {
       const isHome = m.homeTeam.id === teamId;
@@ -116,15 +155,8 @@ function extractFormFromMatches(
 }
 
 /** Pontos nos últimos N jogos como mandante */
-function extractHomePoints(allFinished: FDMatch[], teamId: number): number {
-  return allFinished
-    .filter(
-      (m) =>
-        m.homeTeam.id === teamId &&
-        m.status === "FINISHED" &&
-        m.score.fullTime.home !== null
-    )
-    .sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())
+function extractHomePoints(history: TeamHistory | undefined): number {
+  return (history?.home ?? [])
     .slice(0, 5)
     .reduce((pts, m) => {
       const h = m.score.fullTime.home!;
@@ -134,15 +166,8 @@ function extractHomePoints(allFinished: FDMatch[], teamId: number): number {
 }
 
 /** Pontos nos últimos N jogos como visitante */
-function extractAwayPoints(allFinished: FDMatch[], teamId: number): number {
-  return allFinished
-    .filter(
-      (m) =>
-        m.awayTeam.id === teamId &&
-        m.status === "FINISHED" &&
-        m.score.fullTime.home !== null
-    )
-    .sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())
+function extractAwayPoints(history: TeamHistory | undefined): number {
+  return (history?.away ?? [])
     .slice(0, 5)
     .reduce((pts, m) => {
       const h = m.score.fullTime.home!;
@@ -153,18 +178,11 @@ function extractAwayPoints(allFinished: FDMatch[], teamId: number): number {
 
 /** Gols marcados/sofridos nos últimos 5 jogos */
 function extractGoals(
-  allFinished: FDMatch[],
+  history: TeamHistory | undefined,
   teamId: number,
   type: "scored" | "conceded"
 ): number {
-  return allFinished
-    .filter(
-      (m) =>
-        (m.homeTeam.id === teamId || m.awayTeam.id === teamId) &&
-        m.status === "FINISHED" &&
-        m.score.fullTime.home !== null
-    )
-    .sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())
+  return (history?.all ?? [])
     .slice(0, 5)
     .reduce((total, m) => {
       const isHome = m.homeTeam.id === teamId;
@@ -209,16 +227,8 @@ function calcPressureZone(
 }
 
 /** Taxa de vitória do mandante em casa nos últimos 10 jogos (Fator 15) */
-function calcStadiumWinRate(allFinished: FDMatch[], teamId: number): number {
-  const homeGames = allFinished
-    .filter(
-      (m) =>
-        m.homeTeam.id === teamId &&
-        m.status === "FINISHED" &&
-        m.score.fullTime.home !== null
-    )
-    .sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())
-    .slice(0, 10);
+function calcStadiumWinRate(history: TeamHistory | undefined): number {
+  const homeGames = (history?.home ?? []).slice(0, 10);
 
   if (homeGames.length === 0) return 0.5; // neutro se sem histórico
   const wins = homeGames.filter((m) => m.score.fullTime.home! > m.score.fullTime.away!).length;
@@ -325,6 +335,14 @@ export async function fetchRoundMatchInputs(
         source: "football-data",
         firstMatchAt: null,
         gatedHits,
+        integrations: {
+          odds: "fallback",
+          h2h: "fallback",
+          injuries: "fallback",
+          cup: "fallback",
+          assets: "empty",
+          weather: "fallback",
+        },
       },
     };
   }
@@ -417,9 +435,11 @@ export async function fetchRoundMatchInputs(
 
   // ── Etapa 3: Normalizar para MatchInput[] ───────────────────────────────
   const allFinished = finishedRes.matches;
+  const historyIndex = buildTeamHistoryIndex(allFinished);
   const standingByTeamId = new Map<number, FDStandingEntry>(
     standings.map((s) => [s.team.id, s])
   );
+  let realOddsCount = 0;
 
   const matches: MatchInput[] = roundMatches.map((m): MatchInput => {
     const homeId = m.homeTeam.id;
@@ -427,15 +447,17 @@ export async function fetchRoundMatchInputs(
     const homeSt = standingByTeamId.get(homeId);
     const awaySt = standingByTeamId.get(awayId);
     const h2h = h2hMap.get(m.id);
+    const homeHistory = historyIndex.get(homeId);
+    const awayHistory = historyIndex.get(awayId);
 
     const homePos = homeSt?.position ?? 10;
     const awayPos = awaySt?.position ?? 10;
 
     // Forma
-    const homeForm = extractFormFromMatches(allFinished, homeId, 5);
-    const awayForm = extractFormFromMatches(allFinished, awayId, 5);
-    const homeForm10 = extractFormFromMatches(allFinished, homeId, 10);
-    const awayForm10 = extractFormFromMatches(allFinished, awayId, 10);
+    const homeForm = extractFormFromMatches(homeHistory, homeId, 5);
+    const awayForm = extractFormFromMatches(awayHistory, awayId, 5);
+    const homeForm10 = extractFormFromMatches(homeHistory, homeId, 10);
+    const awayForm10 = extractFormFromMatches(awayHistory, awayId, 10);
 
     const homeTeamName = m.homeTeam.shortName || m.homeTeam.name;
     const awayTeamName = m.awayTeam.shortName || m.awayTeam.name;
@@ -449,6 +471,7 @@ export async function fetchRoundMatchInputs(
 
     const realOdds = lookupOdds(homeTeamName, awayTeamName, oddsMap);
     if (realOdds) {
+      realOddsCount++;
       homeOdd = realOdds.homeOdd;
       drawOdd = realOdds.drawOdd;
       awayOdd = realOdds.awayOdd;
@@ -484,13 +507,13 @@ export async function fetchRoundMatchInputs(
 
       homeForm,
       awayForm,
-      homeHomePoints: extractHomePoints(allFinished, homeId),
-      awayAwayPoints: extractAwayPoints(allFinished, awayId),
+      homeHomePoints: extractHomePoints(homeHistory),
+      awayAwayPoints: extractAwayPoints(awayHistory),
 
-      homeGoalsScored5: extractGoals(allFinished, homeId, "scored"),
-      homeGoalsConceded5: extractGoals(allFinished, homeId, "conceded"),
-      awayGoalsScored5: extractGoals(allFinished, awayId, "scored"),
-      awayGoalsConceded5: extractGoals(allFinished, awayId, "conceded"),
+      homeGoalsScored5: extractGoals(homeHistory, homeId, "scored"),
+      homeGoalsConceded5: extractGoals(homeHistory, homeId, "conceded"),
+      awayGoalsScored5: extractGoals(awayHistory, awayId, "scored"),
+      awayGoalsConceded5: extractGoals(awayHistory, awayId, "conceded"),
 
       h2hHomeWinRate: h2h ? calcH2HWinRate(h2h, homeId) : 0.4,
 
@@ -534,7 +557,7 @@ export async function fetchRoundMatchInputs(
 
       // F15 — Histórico no estádio: derivado do aproveitamento em casa da temporada
       // Média ponderada: form em casa nos últimos 10 jogos como mandante
-      homeStadiumWinRate: calcStadiumWinRate(allFinished, homeId),
+      homeStadiumWinRate: calcStadiumWinRate(homeHistory),
 
       // Status do jogo (SCHEDULED, TIMED, FINISHED, IN_PLAY etc.)
       status: m.status,
@@ -555,6 +578,24 @@ export async function fetchRoundMatchInputs(
         .filter(Boolean)
         .sort()[0] ?? null,
       gatedHits,
+      integrations: {
+        odds:
+          realOddsCount === 0
+            ? "fallback"
+            : realOddsCount === roundMatches.length
+              ? "live"
+              : "partial",
+        h2h:
+          h2hMap.size === 0
+            ? "fallback"
+            : h2hMap.size === roundMatches.length
+              ? "live"
+              : "partial",
+        injuries: gatedHits.injuries && injuriesMap.size > 0 ? "live" : "fallback",
+        cup: cupMap.size > 0 ? "live" : "fallback",
+        assets: assets.size > 0 ? "ready" : "empty",
+        weather: weatherMap.size > 0 ? "live" : "fallback",
+      },
     },
   };
 }

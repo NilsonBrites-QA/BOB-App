@@ -66,6 +66,10 @@ export type MatchInput = {
   /** A odd do mandante caiu (mercado comprou a vitória)? */
   homeOddDropped: boolean;
 
+  // Fator 0 — Metadados
+  /** Data/hora do jogo (ISO string) */
+  scheduledAt?: string;
+
   // ── Fase 10: campos estendidos (todos opcionais para retrocompatibilidade) ──
 
   // Fator 9 — Momentum / tendência de forma (peso 7)
@@ -163,6 +167,21 @@ const ANCHOR_THRESHOLD = 60;
 
 /** Odd máxima aceitável para o mandante ser âncora (value bet implícito) */
 const MAX_ANCHOR_ODD = 2.20;
+
+function isPrimaryAnchor(
+  match: Pick<ScoredMatch, "score" | "isClassico" | "suggestedResult" | "homeOdd">,
+) {
+  const marketImplied = match.homeOdd > 0 ? 1 / match.homeOdd : 0;
+  const algoProb = match.score / 100;
+
+  return (
+    match.isClassico !== true &&
+    match.score >= ANCHOR_THRESHOLD &&
+    match.suggestedResult === "1" &&
+    match.homeOdd <= MAX_ANCHOR_ODD &&
+    algoProb > marketImplied
+  );
+}
 
 /** Pesos dos 15 fatores (somam 100) — rebalanceado na Fase B */
 const WEIGHTS = {
@@ -470,53 +489,76 @@ export function scoreMatch(input: MatchInput): ScoredMatch {
 
 // ─── Selecionar as 4 âncoras a partir de uma lista de jogos ─────────────────
 
-export function selectAnchors(matches: MatchInput[]): ScoredMatch[] {
-  const scored = matches.map(scoreMatch);
+export function selectAnchorsFromScored(scored: ScoredMatch[]): ScoredMatch[] {
+  const limit = Math.min(4, scored.length);
+  const selected: ScoredMatch[] = [];
+  const selectedIds = new Set<string>();
 
-  // Candidatos primários: passam em TODOS os critérios (incluindo value edge)
-  const primaryCandidates = scored
-    .filter((m) => m.isAnchorCandidate)
-    .sort((a, b) => b.score - a.score);
-
-  if (primaryCandidates.length >= 2) {
-    return primaryCandidates.slice(0, 4);
-  }
-
-  // Fallback: se menos de 2 âncoras primárias, relaxar critérios progressivamente
-  // Nível 1: sem exigência de value edge (mas mantém score ≥ 60 e odd ≤ 2.20)
-  const fallbackL1 = scored
-    .filter(
-      (m) =>
-        !m.isClassico &&
-        m.score >= ANCHOR_THRESHOLD &&
-        m.suggestedResult === "1" &&
-        m.homeOdd <= MAX_ANCHOR_ODD
-    )
-    .sort((a, b) => b.score - a.score);
-
-  if (fallbackL1.length >= 2) {
-    return fallbackL1.slice(0, 4).map((m) => ({
-      ...m,
-      isMarginalAnchor: true,
-      reasons: [
-        ...m.reasons,
-        "⚠️ Value edge não confirmado — odds possivelmente sem arbitragem",
-      ],
-    }));
-  }
-
-  // Nível 2: top-3 por score (score ≥ 55, odd ≤ 2.50) — máxima permissividade
-  // Apenas quando rodada tem muito poucos favoritos claros
-  const fallbackL2 = scored
-    .filter((m) => !m.isClassico && m.score >= 55 && m.homeOdd <= 2.50)
-    .sort((a, b) => b.score - a.score);
-
-  return fallbackL2.slice(0, 3).map((m) => ({
-    ...m,
+  const withMarginalReason = (match: ScoredMatch, warning: string): ScoredMatch => ({
+    ...match,
     isMarginalAnchor: true,
-    reasons: [
-      ...m.reasons,
-      "⚠️ Âncora marginal — rodada com poucos favoritos claros",
-    ],
-  }));
+    reasons: match.reasons.includes(warning) ? match.reasons : [...match.reasons, warning],
+  });
+
+  const appendCandidates = (candidates: ScoredMatch[], warning?: string) => {
+    for (const candidate of candidates) {
+      if (selected.length >= limit || selectedIds.has(candidate.id)) continue;
+      selectedIds.add(candidate.id);
+      selected.push(warning ? withMarginalReason(candidate, warning) : candidate);
+    }
+  };
+
+  const sortByScore = (matches: ScoredMatch[]) => [...matches].sort((a, b) => b.score - a.score);
+
+  appendCandidates(sortByScore(scored.filter((match) => isPrimaryAnchor(match))));
+
+  appendCandidates(
+    sortByScore(
+      scored.filter(
+        (match) =>
+          match.isClassico !== true &&
+          match.score >= ANCHOR_THRESHOLD &&
+          match.suggestedResult === "1" &&
+          match.homeOdd <= MAX_ANCHOR_ODD,
+      ),
+    ),
+    "⚠️ Value edge não confirmado — odds possivelmente sem arbitragem",
+  );
+
+  appendCandidates(
+    sortByScore(
+      scored.filter(
+        (match) =>
+          match.isClassico !== true &&
+          match.score >= 55 &&
+          match.homeOdd <= 2.5,
+      ),
+    ),
+    "⚠️ Âncora marginal — rodada com poucos favoritos claros",
+  );
+
+  appendCandidates(
+    sortByScore(
+      scored.filter(
+        (match) => match.isClassico !== true && match.suggestedResult === "1",
+      ),
+    ),
+    "⚠️ Rodada de baixa previsibilidade — base ampliada para completar as âncoras da leitura",
+  );
+
+  appendCandidates(
+    sortByScore(scored.filter((match) => match.isClassico !== true)),
+    "⚠️ Rodada extrema — leitura expandida para garantir a mesa completa de âncoras",
+  );
+
+  appendCandidates(
+    sortByScore(scored),
+    "⚠️ Todos os confrontos vieram voláteis — âncora preenchida por prioridade relativa da rodada",
+  );
+
+  return selected;
+}
+
+export function selectAnchors(matches: MatchInput[]): ScoredMatch[] {
+  return selectAnchorsFromScored(matches.map(scoreMatch));
 }
