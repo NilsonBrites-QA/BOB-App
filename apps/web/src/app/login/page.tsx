@@ -37,13 +37,14 @@ export default function LoginPage() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email: normalizedEmail,
+      // Permite criar user no Supabase Auth — whitelist e validada em /auth/confirm
       options: {
-        shouldCreateUser: false,
+        shouldCreateUser: true,
       },
     });
 
     if (error) {
-      setError("Nao foi possivel enviar o codigo. Verifique o email, a whitelist e tente novamente em alguns segundos.");
+      setError(`Erro ao enviar codigo: ${error.message}`);
       setLoading(false);
       return false;
     } else {
@@ -83,7 +84,7 @@ export default function LoginPage() {
     });
 
     if (error) {
-      setError("Codigo invalido ou expirado. Solicite um novo codigo e tente novamente.");
+      setError(`Codigo invalido: ${error.message}`);
       setLoading(false);
       return;
     }
