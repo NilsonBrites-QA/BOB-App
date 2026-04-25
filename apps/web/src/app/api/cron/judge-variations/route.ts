@@ -15,7 +15,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
 import { judgeVariations, type VariationSnapshot } from "@/lib/bob/engine/variation-judge";
@@ -106,7 +106,6 @@ export async function GET(req: NextRequest) {
     });
 
     // ── Invalidar cache ─────────────────────────────────────────────────────
-    revalidateTag(`round-data`);
     revalidatePath("/variacoes");
 
     const elapsedMs = Date.now() - startedAt;
