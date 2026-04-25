@@ -37,8 +37,10 @@ export default async function AdminPage() {
   }
 
   const users = await prisma.user.findMany({
-    orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+    // Pendentes (active=false) primeiro, depois ADMINs, depois por data
+    orderBy: [{ active: "asc" }, { role: "asc" }, { createdAt: "desc" }],
   });
+  const pendingUsers = users.filter((u) => !u.active);
 
   const simProgress = await getSimulationProgress().catch(() => null);
 
@@ -263,6 +265,48 @@ export default async function AdminPage() {
           </Link>
         </div>
       </section>
+
+      {/* ── Solicitações pendentes (destaque quando há pendentes) ── */}
+      {pendingUsers.length > 0 && (
+        <section className="panel rounded-3xl border-2 border-amber-500/60 bg-amber-500/5 p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="kicker text-xs font-semibold text-amber-600">⚠ Aguardando aprovação</p>
+              <h2 className="mt-2 text-2xl font-semibold">
+                {pendingUsers.length} solicitaç{pendingUsers.length === 1 ? "ão" : "ões"} de acesso pendente{pendingUsers.length === 1 ? "" : "s"}
+              </h2>
+              <p className="mt-1 text-sm text-muted">
+                Estes emails tentaram fazer login mas ainda não foram autorizados. Aprove para liberar acesso.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 space-y-2">
+            {pendingUsers.map((u) => (
+              <div
+                key={u.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-white/60 px-4 py-3"
+              >
+                <div className="flex flex-col">
+                  <span className="font-mono text-sm font-medium">{u.email}</span>
+                  <span className="text-xs text-muted">
+                    Solicitado em {new Date(u.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
+                  </span>
+                </div>
+                <form action={toggleUserAccess} className="flex gap-2">
+                  <input type="hidden" name="userId" value={u.id} />
+                  <input type="hidden" name="active" value="true" />
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                  >
+                    ✓ Aprovar acesso
+                  </button>
+                </form>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ── Whitelist ─────────────────────────────────────────────── */}
       <section className="panel rounded-3xl p-6">

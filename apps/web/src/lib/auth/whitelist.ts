@@ -28,3 +28,18 @@ export async function isWhitelisted(email: string) {
 
   return rows[0]?.active === true;
 }
+
+/**
+ * Registra um email que tentou autenticar mas não estava whitelisted.
+ * Cria um registro em `users` com active=false e role=VIEWER.
+ * Aparece no painel admin como "solicitação pendente" para o admin aprovar.
+ *
+ * Idempotente: se o email já existe, não faz nada (preserva role/active atuais).
+ */
+export async function registerPendingAccessRequest(email: string) {
+  await prisma.$executeRaw`
+    insert into users (email, role, active)
+    values (${email}, cast('VIEWER' as user_role), false)
+    on conflict (email) do nothing
+  `;
+}

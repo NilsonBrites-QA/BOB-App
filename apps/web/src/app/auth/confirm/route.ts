@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { ensurePrimaryAdminAccess, isWhitelisted } from "@/lib/auth/whitelist";
+import {
+  ensurePrimaryAdminAccess,
+  isWhitelisted,
+  registerPendingAccessRequest,
+} from "@/lib/auth/whitelist";
 import { createAuthRouteClient } from "@/utils/supabase/auth-route";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
@@ -54,8 +58,20 @@ async function finalizeAuthenticatedUser(
   await ensurePrimaryAdminAccess(normalizedEmail);
 
   if (!(await isWhitelisted(normalizedEmail))) {
+    // Registra como solicitação pendente para o admin aprovar depois.
+    // Idempotente: se já existir, não sobrescreve role/active atuais.
+    await registerPendingAccessRequest(normalizedEmail).catch((err) => {
+      console.warn("[auth/confirm] falha ao registrar solicitação pendente:", err);
+    });
+
     authClient.setResponse(
-      buildErrorResponse(origin, "not_authorized", mode, 403, "Este email nao esta liberado no painel Admin."),
+      buildErrorResponse(
+        origin,
+        "pending_approval",
+        mode,
+        403,
+        "Sua solicitação de acesso foi registrada. O administrador do BOB irá liberar em breve.",
+      ),
     );
     await supabase.auth.signOut();
     return authClient.getResponse();
