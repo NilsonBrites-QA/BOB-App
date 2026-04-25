@@ -34,6 +34,7 @@ export type VariationInput = {
 // Tipos compatíveis para exportação (mapeamento de variations.ts → beam-search.ts)
 export type TicketLeg = {
   matchId: string;
+  match: string;
   homeTeam: string;
   awayTeam: string;
   pickOutcome: "Home" | "Draw" | "Away";
@@ -42,6 +43,8 @@ export type TicketLeg = {
   cleanProb: number;
   isAnchor: boolean;
   isMarginal?: boolean;
+  logOdd: number;
+  logProb: number;
 };
 
 export type VariationsResult = {
@@ -107,17 +110,23 @@ export function generateVariations(
     logProbabilityMass: Math.log(probMass || 1e-10),
     legCount: v.picks.length,
     anchorPrimaryCount: v.picks.filter((p) => p.isAnchor).length,
-    legs: v.picks.map((p) => ({
-      matchId: p.fixtureId ?? "",
-      homeTeam: (p.match || "").split(" x ")[0] || p.match || "",
-      awayTeam: (p.match || "").split(" x ")[1] || "",
-      pickOutcome: (p.result === "1" ? "Home" : p.result === "2" ? "Away" : "Draw") as PickOutcome,
-      pickOdd: p.odd,
-      fairOdd: p.odd,
-      cleanProb: 1 / p.odd,
-      isAnchor: p.isAnchor ?? false,
-      isMarginal: (p as any).isMarginal ?? false,
-    })),
+    legs: v.picks.map((p) => {
+      const cleanP = 1 / p.odd;
+      return {
+        matchId: p.fixtureId ?? "",
+        match: p.match || "",
+        homeTeam: (p.match || "").split(" x ")[0] || p.match || "",
+        awayTeam: (p.match || "").split(" x ")[1] || "",
+        pickOutcome: (p.result === "1" ? "Home" : p.result === "2" ? "Away" : "Draw") as PickOutcome,
+        pickOdd: p.odd,
+        fairOdd: p.odd,
+        cleanProb: cleanP,
+        isAnchor: p.isAnchor ?? false,
+        isMarginal: (p as any).isMarginal ?? false,
+        logOdd: Math.log(p.odd),
+        logProb: Math.log(Math.max(cleanP, 1e-10)),
+      };
+    }),
     transparencyNotes: v.picks.filter((p) => (p as any).warning).map((p) => (p as any).warning),
     };
   });
