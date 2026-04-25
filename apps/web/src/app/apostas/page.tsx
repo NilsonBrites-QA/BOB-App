@@ -17,7 +17,8 @@ import { getTeamAssetsMap } from "@/lib/bob/connectors/thesportsdb";
 import { DEMO_ROUND_LABEL } from "@/lib/bob/demo-matches";
 import { ApostasCriarClient, type CriarApostaView } from "./apostas-criar-client";
 
-export const dynamic = "force-dynamic";
+// ISR de 5 min: rodada raramente muda intra-dia
+export const revalidate = 300;
 export const metadata = {
   title: "Criar Apostas · BOB",
   description: "Apostas prontas por jogo da rodada — entregue pelo BOB.",

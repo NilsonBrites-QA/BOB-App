@@ -1,9 +1,11 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { unstable_cache } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
 import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
 import { judgeVariations } from "@/lib/bob/engine/variation-judge";
+import type { ScoredMatch } from "@/lib/bob/engine/scoring";
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
 import { loadRoundData } from "@/lib/bob/round-loader";
 import { getTeamAssetsMap } from "@/lib/bob/connectors/thesportsdb";
@@ -11,7 +13,19 @@ import { DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-
 import { VariacoesClient } from "./variacoes-client";
 import type { VariationView, AnchorView, AuditView, RoundView, VariationLeg } from "./variacoes-client";
 
-export const dynamic = "force-dynamic";
+// ISR de 5 minutos: rodada raramente muda intra-dia
+// Cache LLM por rodada elimina latência de 5-30s do cascade
+export const revalidate = 300;
+
+// Cache do juiz LLM por (season, round) com TTL 1h
+// Variações são determinísticas → análise contextual é estável
+const cachedJudgeVariations = (season: number, round: number) =>
+  unstable_cache(
+    async (snapshots: Parameters<typeof judgeVariations>[0], anchors: ScoredMatch[]) =>
+      judgeVariations(snapshots, anchors),
+    [`variation-judge`, String(season), String(round)],
+    { revalidate: 3600, tags: [`round-${season}-${round}`] },
+  );
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -204,9 +218,12 @@ export default async function VariacoesPage({
       isAnchor: l.isAnchor,
     })),
   }));
-  const judgeResult = await judgeVariations(judgeSnapshots, anchors);
+  // Cache por (season, round) — LLM só é chamada na primeira request de cada rodada
+  const effectiveRound =
+    roundData.source === "api" && roundData.meta ? roundData.meta.round : (round ?? 0);
+  const judgeResult = await cachedJudgeVariations(season, effectiveRound)(judgeSnapshots, anchors);
   const enrichmentMap = new Map(judgeResult.enrichments.map((e) => [e.variationId, e]));
-  console.log(`[BOB/Variacoes] análise por: ${judgeResult.provider}`);
+  console.log(`[BOB/Variacoes] análise por: ${judgeResult.provider} (cache: variation-judge:${season}:${effectiveRound})`);
 
   // Convert variations to view
   const variations: VariationView[] = variationsResult.variations.map((v) => {

@@ -18,6 +18,21 @@ import { callGemini } from "./gemini";
 
 export type LLMProvider = "claude" | "gpt" | "gemini" | "none";
 
+const LLM_TIMEOUT_MS = 6000;
+
+/** Aplica timeout numa promise. Se exceder, retorna null (provider falhou). */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) =>
+      setTimeout(() => {
+        console.warn(`[BOB/LLM] ${label} timeout após ${ms}ms`);
+        resolve(null);
+      }, ms),
+    ),
+  ]);
+}
+
 export type LLMCascadeResult = {
   text: string | null;
   provider: LLMProvider;
@@ -69,22 +84,26 @@ export async function llmCascade(
   prompt: string,
   opts: { jsonMode?: boolean; maxTokens?: number } = {}
 ): Promise<LLMCascadeResult> {
-  // 1. Claude (top tier)
-  const claude = await callClaude(prompt, opts.maxTokens ?? 1500).catch(() => null);
+  // 1. Claude (top tier) — timeout 6s
+  const claude = await withTimeout(
+    callClaude(prompt, opts.maxTokens ?? 1500).catch(() => null),
+    LLM_TIMEOUT_MS,
+    "Claude",
+  );
   if (claude) {
     console.log("[BOB/LLM] Claude OK");
     return { text: claude, provider: "claude" };
   }
 
-  // 2. GPT (barato, rápido)
-  const gpt = await callGPT(prompt, opts);
+  // 2. GPT (barato, rápido) — timeout 6s
+  const gpt = await withTimeout(callGPT(prompt, opts), LLM_TIMEOUT_MS, "GPT");
   if (gpt) {
     console.log("[BOB/LLM] GPT OK");
     return { text: gpt, provider: "gpt" };
   }
 
-  // 3. Gemini (gratuito)
-  const gemini = await callGemini(prompt, opts);
+  // 3. Gemini (gratuito) — timeout 6s
+  const gemini = await withTimeout(callGemini(prompt, opts), LLM_TIMEOUT_MS, "Gemini");
   if (gemini) {
     console.log("[BOB/LLM] Gemini OK");
     return { text: gemini, provider: "gemini" };
