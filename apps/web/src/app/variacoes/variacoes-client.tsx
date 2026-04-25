@@ -67,6 +67,7 @@ export type RoundView = {
   difficulty: "easy" | "balanced" | "hard";
   difficultyLabel: string;
   bobMessage: string;
+  aiProvider?: "claude" | "gpt" | "gemini" | "heuristic" | "none";
 };
 
 type Props = {
@@ -181,6 +182,18 @@ export function VariacoesClient({ round, anchors, variations, audit }: Props) {
           <p className="mt-1 text-sm text-white/85">
             {anchors.length} âncoras · {variations.length} variações · primeiro jogo {round.firstMatch}
           </p>
+          {round.aiProvider && (
+            <p className="mt-1.5 text-[11px] text-white/70">
+              Análise por:{" "}
+              <span className="font-mono font-semibold uppercase tracking-wider">
+                {round.aiProvider === "claude" && "🧠 Claude Sonnet"}
+                {round.aiProvider === "gpt" && "🧠 GPT-4o"}
+                {round.aiProvider === "gemini" && "🧠 Gemini Flash"}
+                {round.aiProvider === "heuristic" && "⚡ Heurística determinística"}
+                {round.aiProvider === "none" && "⚠️ Sem análise"}
+              </span>
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-white/80">
             <span>📊 {round.difficultyLabel}</span>
             <span className="text-white/40">·</span>
