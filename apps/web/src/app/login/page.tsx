@@ -4,30 +4,30 @@ import Image from "next/image";
 import { useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 
-function resolveAppOrigin() {
-  const envOrigin = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (envOrigin) {
-    return envOrigin.replace(/\/$/, "");
-  }
-
-  return window.location.origin;
-}
+type Mode = "login" | "signup";
 
 export default function LoginPage() {
+  const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [sent, setSent] = useState(false);
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const enableGoogleLogin = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_LOGIN === "true";
 
-  async function requestCode() {
+  function switchMode(next: Mode) {
+    setMode(next);
+    setError(null);
+    setNotice(null);
+    setPassword("");
+  }
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (!normalizedEmail) {
-      setError("Informe um email valido para receber o codigo.");
-      return false;
+    if (!normalizedEmail || !password) {
+      setError("Preencha email e senha.");
+      return;
     }
 
     setLoading(true);
@@ -35,248 +35,170 @@ export default function LoginPage() {
     setNotice(null);
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error: authError } = await supabase.auth.signInWithPassword({
       email: normalizedEmail,
-      // Permite criar user no Supabase Auth — whitelist e validada em /auth/confirm
-      options: {
-        shouldCreateUser: true,
-      },
+      password,
     });
 
-    if (error) {
-      setError(`Erro ao enviar codigo: ${error.message}`);
-      setLoading(false);
-      return false;
-    } else {
-      setSent(true);
-      setCode("");
-      setNotice(`Codigo enviado para ${normalizedEmail}.`);
-    }
-
-    setLoading(false);
-    return true;
-  }
-
-  async function handleRequestSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    await requestCode();
-  }
-
-  async function handleVerifySubmit(e: React.FormEvent) {
-    e.preventDefault();
-
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedCode = code.replace(/\s+/g, "").trim();
-
-    if (!normalizedCode) {
-      setError("Digite o codigo recebido por email.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    const supabase = createClient();
-    const { error } = await supabase.auth.verifyOtp({
-      email: normalizedEmail,
-      token: normalizedCode,
-      type: "email",
-    });
-
-    if (error) {
-      setError(`Codigo invalido: ${error.message}`);
+    if (authError) {
+      const msg = authError.message.toLowerCase();
+      if (msg.includes("invalid") || msg.includes("credentials")) {
+        setError("Email ou senha incorretos.");
+      } else if (msg.includes("not confirmed")) {
+        setError("Email ainda não confirmado. Verifique sua caixa de entrada.");
+      } else {
+        setError("Não foi possível entrar. Tente novamente em instantes.");
+      }
       setLoading(false);
       return;
     }
 
+    // Redireciona para /auth/confirm que valida whitelist
     window.location.assign("/auth/confirm?next=/dashboard");
   }
 
-  async function handleGoogleLogin() {
+  async function handleSignup(e: React.FormEvent) {
+    e.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail || !password) {
+      setError("Preencha email e senha.");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("A senha deve ter pelo menos 8 caracteres.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
-    const appOrigin = resolveAppOrigin();
+    setNotice(null);
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${appOrigin}/auth/callback`,
-      },
+    const { error: authError } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
     });
 
-    if (error) {
-      setError("Não foi possível iniciar login Google. Confira a configuração OAuth no Supabase.");
+    if (authError) {
+      const msg = authError.message.toLowerCase();
+      if (msg.includes("already") || msg.includes("registered")) {
+        setError("Este email já está cadastrado. Use a aba 'Entrar'.");
+      } else if (msg.includes("password")) {
+        setError("Senha fraca. Use pelo menos 8 caracteres com letras e números.");
+      } else {
+        setError("Não foi possível criar a conta. Tente novamente em instantes.");
+      }
       setLoading(false);
+      return;
     }
+
+    // Registra como pendente no painel admin
+    await fetch("/api/auth/register-pending", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: normalizedEmail }),
+    }).catch(() => null);
+
+    setNotice(
+      "Conta criada! Seu acesso está aguardando aprovação do administrador. Você poderá entrar assim que for liberado.",
+    );
+    setLoading(false);
   }
 
   return (
     <div className="grid-lines min-h-screen">
-      <div className="mx-auto flex min-h-screen w-full max-w-5xl items-center justify-center px-6 py-12">
-        <div className="grid w-full items-start gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <section className="panel rounded-[30px] p-7 lg:p-8">
-            <div className="flex items-center gap-4">
-              <Image
-                src="/bob-logo.png"
-                alt="BOB"
-                width={64}
-                height={64}
-                priority
-              />
-              <div>
-                <p className="kicker text-xs text-muted">Sistema restrito</p>
-                <h1 className="text-3xl font-bold tracking-tight">Painel BOB</h1>
-              </div>
-            </div>
+      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col items-center justify-center px-6 py-12">
+        {/* Logo + título */}
+        <div className="mb-8 flex flex-col items-center gap-3 text-center">
+          <Image src="/bob-logo.png" alt="BOB" width={56} height={56} priority />
+          <h1 className="text-2xl font-bold tracking-tight">Painel BOB</h1>
+          <p className="text-xs text-muted">Acesso restrito · whitelist do administrador</p>
+        </div>
 
-            <p className="mt-6 text-sm leading-7 text-muted">
-              Ambiente privado para análise da rodada, geração de variações e gestão de desempenho.
-              Apenas contas liberadas pelo administrador conseguem concluir acesso.
-            </p>
-
-            <div className="mt-6 grid gap-3">
-              <div className="rounded-2xl border border-border bg-surface-strong px-4 py-3">
-                <p className="text-xs text-muted">Regra de acesso</p>
-                <p className="mt-1 text-sm font-semibold">Whitelist ativa no painel Admin</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-surface-strong px-4 py-3">
-                <p className="text-xs text-muted">Método</p>
-                <p className="mt-1 text-sm font-semibold">Codigo temporario por e-mail</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-surface-strong px-4 py-3">
-                <p className="text-xs text-muted">Segurança</p>
-                <p className="mt-1 text-sm font-semibold">Codigo unico + sessao curta + whitelist</p>
-              </div>
-            </div>
-          </section>
-
-          <div className="w-full">
-            <div className="mb-5 text-center lg:text-left">
-              <p className="kicker mb-2">Acesso</p>
-              <h2 className="text-2xl font-semibold">Entrar no cockpit</h2>
-            </div>
-
-            {sent ? (
-              <form onSubmit={handleVerifySubmit} className="panel rounded-3xl p-8">
-                <div className="mb-6 flex items-start justify-between gap-4">
-                  <div>
-                    <p className="kicker mb-2">Codigo enviado</p>
-                    <h3 className="text-xl font-semibold">Digite o codigo para entrar</h3>
-                    <p className="mt-2 text-sm leading-7 text-muted">
-                      Use o mesmo email <strong className="text-foreground">{email}</strong> e informe o codigo recebido.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-border bg-surface-strong px-3 py-2 text-xs text-muted">
-                    8 digitos
-                  </div>
-                </div>
-
-                <label className="block">
-                  <span className="mb-2 block text-xs font-medium uppercase tracking-widest text-muted">
-                    Codigo de acesso
-                  </span>
-                  <input
-                    type="text"
-                    required
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    placeholder="Digite o codigo recebido"
-                    className="w-full rounded-xl border border-border bg-surface-strong px-4 py-3 text-center text-lg font-semibold tracking-[0.35em] outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
-                  />
-                </label>
-
-                {notice && (
-                  <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{notice}</p>
-                )}
-
-                {error && (
-                  <p className="mt-3 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="mt-6 w-full rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-                >
-                  {loading ? "Validando..." : "Entrar com codigo"}
-                </button>
-
-                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={() => { void requestCode(); }}
-                    disabled={loading}
-                    className="w-full rounded-xl border border-border px-4 py-3 text-sm font-semibold text-foreground transition hover:border-accent disabled:opacity-50"
-                  >
-                    Reenviar codigo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSent(false);
-                      setCode("");
-                      setNotice(null);
-                      setError(null);
-                    }}
-                    disabled={loading}
-                    className="w-full rounded-xl border border-border px-4 py-3 text-sm font-semibold text-foreground transition hover:border-accent disabled:opacity-50"
-                  >
-                    Trocar email
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <form onSubmit={handleRequestSubmit} className="panel rounded-3xl p-8">
-                <label className="block">
-                  <span className="mb-2 block text-xs font-medium uppercase tracking-widest text-muted">
-                    E-mail corporativo
-                  </span>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="nome@empresa.com"
-                    className="w-full rounded-xl border border-border bg-surface-strong px-4 py-3 text-sm outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
-                  />
-                </label>
-
-                {error && (
-                  <p className="mt-3 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
-                )}
-
-                {notice && (
-                  <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{notice}</p>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="mt-6 w-full rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-                >
-                  {loading ? "Enviando..." : "Enviar codigo de acesso"}
-                </button>
-
-                {enableGoogleLogin && (
-                  <button
-                    type="button"
-                    onClick={handleGoogleLogin}
-                    disabled={loading}
-                    className="mt-3 w-full rounded-xl border border-border px-4 py-3 text-sm font-semibold text-foreground transition hover:border-accent disabled:opacity-50"
-                  >
-                    {loading ? "Redirecionando..." : "Entrar com Google"}
-                  </button>
-                )}
-
-                <p className="mt-4 text-center text-xs text-muted">
-                  Sem liberacao previa no Admin, o acesso sera negado.
-                </p>
-              </form>
-            )}
+        {/* Card único */}
+        <div className="panel w-full rounded-3xl p-7">
+          {/* Tabs */}
+          <div className="mb-6 flex rounded-xl border border-border bg-surface-strong p-1">
+            <button
+              type="button"
+              onClick={() => switchMode("login")}
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                mode === "login" ? "bg-accent text-white" : "text-muted hover:text-foreground"
+              }`}
+            >
+              Entrar
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMode("signup")}
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                mode === "signup" ? "bg-accent text-white" : "text-muted hover:text-foreground"
+              }`}
+            >
+              Criar conta
+            </button>
           </div>
+
+          <form onSubmit={mode === "login" ? handleLogin : handleSignup} className="space-y-4">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-muted">E-mail</span>
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="seu@email.com"
+                className="w-full rounded-xl border border-border bg-surface-strong px-4 py-3 text-sm outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-muted">
+                Senha {mode === "signup" && <span className="opacity-60">(mínimo 8 caracteres)</span>}
+              </span>
+              <input
+                type="password"
+                required
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                minLength={mode === "signup" ? 8 : undefined}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full rounded-xl border border-border bg-surface-strong px-4 py-3 text-sm outline-none transition focus:border-accent focus:ring-1 focus:ring-accent"
+              />
+            </label>
+
+            {error && (
+              <p className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {error}
+              </p>
+            )}
+
+            {notice && (
+              <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                {notice}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+            >
+              {loading
+                ? mode === "login" ? "Entrando…" : "Criando…"
+                : mode === "login" ? "Entrar" : "Criar conta"}
+            </button>
+          </form>
+
+          <p className="mt-5 text-center text-xs text-muted">
+            {mode === "login"
+              ? "Sem conta? Use 'Criar conta' acima."
+              : "Após criar, aguarde aprovação do administrador."}
+          </p>
         </div>
       </div>
     </div>
