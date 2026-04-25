@@ -1,10 +1,9 @@
 import { Suspense } from "react";
-import { VariationCard } from "@/components/variation-card";
+import { VariacoesClient } from "@/app/variacoes/variacoes-client";
 import { NarrativeSection, NarrativeSkeleton } from "@/components/narrative-section";
 import { ReflectionCard, ReflectionCardSkeleton } from "@/components/reflection-card";
 import { GlossarySection } from "@/components/glossary";
 import { AberturaDiariaBanner } from "@/components/abertura-diaria-banner";
-import { AnchorCard } from "@/components/anchor-card";
 import { PageHero } from "@/components/page-hero";
 import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
