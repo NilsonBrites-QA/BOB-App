@@ -4,7 +4,7 @@ import { SectionCard } from "@/components/section-card";
 import { adminControls, featureFlags, integrations, memoryLayers } from "@/lib/bob/mock-data";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
-import { changeUserRole, grantUserAccess, toggleUserAccess } from "./access-actions";
+import { changeUserRole, createUserWithPassword, grantUserAccess, toggleUserAccess } from "./access-actions";
 import { getSimulationProgress } from "@/lib/bob/engine/blind-simulation";
 
 export default async function AdminPage() {
@@ -317,22 +317,60 @@ export default async function AdminPage() {
           </div>
         </div>
 
-        <form action={grantUserAccess} className="mt-5 grid gap-3 rounded-[20px] border border-border bg-surface-strong p-4 sm:grid-cols-[1fr_auto_auto]">
-          <input
-            name="email"
-            type="email"
-            required
-            placeholder="novo.usuario@email.com"
-            className="rounded-xl border border-border bg-transparent px-4 py-2 text-sm"
-          />
-          <select name="role" defaultValue="VIEWER" className="rounded-xl border border-border bg-transparent px-3 py-2 text-sm">
-            <option value="VIEWER">VIEWER</option>
-            <option value="ADMIN">ADMIN</option>
-          </select>
-          <button type="submit" className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white">
-            Liberar acesso
-          </button>
-        </form>
+        {/* Criar usuário com senha (admin define email e senha) */}
+        <div className="mt-5 rounded-[20px] border border-emerald-300 bg-emerald-50 p-4">
+          <p className="text-sm font-semibold text-emerald-900">Criar usuário com senha</p>
+          <p className="mt-1 text-xs text-emerald-800">
+            Define email + senha e libera acesso na hora. O usuário entra direto em <code>/login</code> sem signup.
+          </p>
+          <form action={createUserWithPassword} className="mt-3 grid gap-3 sm:grid-cols-[1.4fr_1fr_auto_auto]">
+            <input
+              name="email"
+              type="email"
+              required
+              placeholder="email@exemplo.com"
+              className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm"
+            />
+            <input
+              name="password"
+              type="text"
+              required
+              minLength={8}
+              placeholder="Senha (mín. 8)"
+              className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-mono"
+            />
+            <select name="role" defaultValue="VIEWER" className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm">
+              <option value="VIEWER">VIEWER</option>
+              <option value="ADMIN">ADMIN</option>
+            </select>
+            <button type="submit" className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
+              Criar e liberar
+            </button>
+          </form>
+        </div>
+
+        {/* Liberar email já existente (sem definir senha) */}
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs text-muted hover:text-foreground">
+            Apenas liberar acesso (usuário já existe no Supabase)
+          </summary>
+          <form action={grantUserAccess} className="mt-2 grid gap-3 rounded-[20px] border border-border bg-surface-strong p-4 sm:grid-cols-[1fr_auto_auto]">
+            <input
+              name="email"
+              type="email"
+              required
+              placeholder="email@exemplo.com"
+              className="rounded-xl border border-border bg-transparent px-4 py-2 text-sm"
+            />
+            <select name="role" defaultValue="VIEWER" className="rounded-xl border border-border bg-transparent px-3 py-2 text-sm">
+              <option value="VIEWER">VIEWER</option>
+              <option value="ADMIN">ADMIN</option>
+            </select>
+            <button type="submit" className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white">
+              Liberar acesso
+            </button>
+          </form>
+        </details>
 
         <div className="mt-5 overflow-hidden rounded-[20px] border border-border">
           <table className="w-full border-collapse text-left text-sm">

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { sendAccessApprovedEmail } from "@/lib/email/send-access-approved";
+import { createAdminClient } from "@/utils/supabase/admin";
 
 function normalizeEmail(raw: string) {
   return raw.trim().toLowerCase();
@@ -55,6 +56,75 @@ export async function grantUserAccess(formData: FormData) {
   });
 
   // Envia notificação apenas para novos ou recém-ativados
+  if (!existing || !existing.active) {
+    notifyAccessApproved(email);
+  }
+
+  revalidatePath("/admin");
+}
+
+/**
+ * Cria um usuário com email + senha via Supabase Admin API e ativa
+ * imediatamente no banco com o role solicitado. Usado pelo painel
+ * admin para liberar acesso sem depender de signup público.
+ *
+ * Requer SUPABASE_SERVICE_ROLE_KEY no ambiente.
+ */
+export async function createUserWithPassword(formData: FormData) {
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+  const password = String(formData.get("password") ?? "");
+  const role = String(formData.get("role") ?? "VIEWER");
+
+  if (!email || !email.includes("@")) {
+    throw new Error("E-mail inválido.");
+  }
+  if (password.length < 8) {
+    throw new Error("Senha deve ter pelo menos 8 caracteres.");
+  }
+  if (role !== "VIEWER" && role !== "ADMIN") {
+    throw new Error("Perfil inválido.");
+  }
+
+  const supabaseAdmin = createAdminClient();
+
+  // 1. Criar usuário no Supabase Auth (email já confirmado, sem confirmação por email)
+  const { error } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+
+  if (error) {
+    // Se já existe no Supabase, tenta apenas atualizar a senha
+    if (error.message.toLowerCase().includes("already")) {
+      const { data: list } = await supabaseAdmin.auth.admin.listUsers();
+      const existing = list.users.find((u) => u.email?.toLowerCase() === email);
+      if (existing) {
+        await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+          password,
+          email_confirm: true,
+        });
+      } else {
+        throw new Error(`Não foi possível criar usuário: ${error.message}`);
+      }
+    } else {
+      throw new Error(`Não foi possível criar usuário: ${error.message}`);
+    }
+  }
+
+  // 2. Garantir registro no banco como ativo + role correto
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { active: true },
+  });
+
+  await prisma.user.upsert({
+    where: { email },
+    create: { email, role, active: true },
+    update: { role, active: true },
+  });
+
+  // 3. Notificar (fire-and-forget) somente novos ou recém-ativados
   if (!existing || !existing.active) {
     notifyAccessApproved(email);
   }

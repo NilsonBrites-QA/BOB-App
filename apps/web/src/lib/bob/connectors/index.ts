@@ -53,6 +53,7 @@ import { getTeamAssetsMap } from "./thesportsdb";
 export type { TeamAssetRow } from "./thesportsdb";
 
 import { getOddsByTournament, lookupOdds, TOURNAMENT_SERIE_A } from "./oddspapi";
+import { getOddsByRoundFromApiFootball } from "./api-football";
 import type { MatchInput } from "@/lib/bob/engine/scoring";
 import { fetchWeatherForRound } from "./weather";
 
@@ -318,8 +319,14 @@ export async function fetchRoundMatchInputs(
       if (r) gatedHits.finished = true;
       return r ?? getFinishedMatches(200);
     }),
-    // OddsPapi: odds reais Pinnacle para o Brasileirão Série A
-    getOddsByTournament(TOURNAMENT_SERIE_A).catch(() => new Map()),
+    // Odds Bet365 via API-Football (fonte primária). Fallback OddsPapi/Pinnacle
+    // se API-Football falhar ou não retornar nenhum jogo.
+    (async () => {
+      const af = await getOddsByRoundFromApiFootball(season, round).catch(() => null);
+      if (af && af.size > 0) return af;
+      console.info("[Odds] Bet365 vazio — caindo pra OddsPapi (Pinnacle)");
+      return getOddsByTournament(TOURNAMENT_SERIE_A).catch(() => new Map());
+    })(),
   ]);
 
   const roundMatches = matchesRes.matches;
@@ -462,9 +469,10 @@ export async function fetchRoundMatchInputs(
     const homeTeamName = m.homeTeam.shortName || m.homeTeam.name;
     const awayTeamName = m.awayTeam.shortName || m.awayTeam.name;
 
-    // ── Odds: OddsPapi (Pinnacle) › fallback sintético ──────────────────
-    // Com odds reais: hasValueEdge funciona corretamente → 2-4 âncoras
-    // Fallback: fórmula baseada na posição (igual ao original)
+    // ── Odds: API-Football (Bet365) › OddsPapi (Pinnacle) › sintético ────
+    // Fonte primária: API-Football bookmaker=8 (Bet365). Bate com a casa
+    // que o usuário aposta. Se falhar, tenta OddsPapi (Pinnacle, sharp).
+    // Último fallback: fórmula baseada na posição (apenas pra não quebrar).
     let homeOdd: number;
     let drawOdd: number;
     let awayOdd: number;

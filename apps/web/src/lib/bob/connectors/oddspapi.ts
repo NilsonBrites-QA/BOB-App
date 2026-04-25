@@ -52,11 +52,11 @@ type OddsFixture = {
   market?: OddsMarket[];
 };
 
-type FixtureOdds = {
+export type FixtureOdds = {
   homeOdd:  number;
   drawOdd:  number;
   awayOdd:  number;
-  source: "oddspapi";
+  source: "oddspapi" | "api-football";
 };
 
 // ─── Odds normalizadas por jogo ───────────────────────────────────────────────
@@ -113,7 +113,7 @@ function parseMarket101(fixture: OddsFixture): FixtureOdds | null {
 
 // ─── Normalizar nome do time para matching ────────────────────────────────────
 
-function normalizeName(name: string): string {
+export function normalizeName(name: string): string {
   return name
     .toLowerCase()
     .normalize("NFD")
@@ -127,7 +127,7 @@ function normalizeName(name: string): string {
  * Constrói uma chave de matching por nomes normalizados.
  * Ex: "Flamengo × Palmeiras" → "flamengo|palmeiras"
  */
-function matchKey(home: string, away: string): string {
+export function matchKey(home: string, away: string): string {
   return `${normalizeName(home)}|${normalizeName(away)}`;
 }
 

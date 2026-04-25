@@ -39,6 +39,8 @@
 
 import { prisma } from "@/lib/db";
 import { checkApiFootball, recordSync, type WindowName } from "./cache-gate";
+import { matchKey } from "./oddspapi";
+import type { OddsMap, FixtureOdds } from "./oddspapi";
 
 import type {
   AFResponse,
@@ -405,4 +407,99 @@ export async function getLineupsGated(
   );
   await _logSyncAF(cacheKey, "T-1h", kickoffAt, result.results);
   return result;
+}
+
+// ─── Odds Bet365 por rodada (fonte primária após bug do OddsPapi v4) ──────────
+
+/**
+ * Extrai 1X2 do bet "Match Winner" do primeiro bookmaker disponível.
+ * Quando chamado com bookmaker=8 na URL, esse é o Bet365.
+ */
+function parseAFOdds1X2(item: AFOddsItem | undefined): {
+  homeOdd: number;
+  drawOdd: number;
+  awayOdd: number;
+} | null {
+  if (!item || !item.bookmakers || item.bookmakers.length === 0) return null;
+
+  const bookmaker = item.bookmakers[0];
+  const matchWinner = bookmaker.bets.find((b) => b.name === "Match Winner");
+  if (!matchWinner) return null;
+
+  const home = parseFloat(
+    matchWinner.values.find((v) => v.value === "Home")?.odd ?? "0",
+  );
+  const draw = parseFloat(
+    matchWinner.values.find((v) => v.value === "Draw")?.odd ?? "0",
+  );
+  const away = parseFloat(
+    matchWinner.values.find((v) => v.value === "Away")?.odd ?? "0",
+  );
+
+  if (home <= 1 || draw <= 1 || away <= 1) return null;
+
+  return { homeOdd: home, drawOdd: draw, awayOdd: away };
+}
+
+/**
+ * Busca odds Bet365 (bookmaker id=8) para todos os jogos de uma rodada do BSA.
+ *
+ * Pipeline:
+ *   1. GET /fixtures?league=71&season=X&round=Regular Season - N  → IDs dos fixtures
+ *   2. Para cada fixture, GET /odds?fixture=ID&bookmaker=8 (paralelo)
+ *   3. Indexa por matchKey(home, away) — mesmo formato do OddsMap do OddsPapi
+ *
+ * Custo: 1 + N requisições por rodada (10 jogos = 11 req). Quota free 100/dia
+ * permite ~9 atualizações por dia. Cache ISR 3h reduz ainda mais.
+ *
+ * Retorna Map vazio em caso de falha — chamador deve cair pra fallback.
+ */
+export async function getOddsByRoundFromApiFootball(
+  season: number,
+  round: number,
+): Promise<OddsMap> {
+  const map: OddsMap = new Map();
+
+  try {
+    // 1. Fixtures da rodada
+    const fixturesRes = await afFetch<AFFixtureItem>(
+      `/fixtures?league=${BSA_LEAGUE}&season=${season}&round=Regular Season - ${round}`,
+      10800,
+    );
+
+    const fixtures = fixturesRes.response;
+    if (fixtures.length === 0) return map;
+
+    // 2. Odds Bet365 em paralelo (Promise.allSettled — falhas individuais não derrubam o resto)
+    const oddsResults = await Promise.allSettled(
+      fixtures.map((f) => getOdds(f.fixture.id)),
+    );
+
+    // 3. Indexar
+    for (let i = 0; i < fixtures.length; i++) {
+      const fx = fixtures[i];
+      const result = oddsResults[i];
+      if (result.status !== "fulfilled") continue;
+
+      const oddsItem = result.value.response[0];
+      const parsed = parseAFOdds1X2(oddsItem);
+      if (!parsed) continue;
+
+      const key = matchKey(fx.teams.home.name, fx.teams.away.name);
+      const entry: FixtureOdds = { ...parsed, source: "api-football" };
+      map.set(key, entry);
+
+      // Indexar também pela versão "shortName" implícita: no football-data
+      // o nome às vezes vem ligeiramente diferente (ex: "Atlético-MG" vs "Atletico Mineiro").
+      // matchKey já normaliza acentos; nada mais a fazer aqui.
+    }
+
+    console.info(
+      `[API-Football/Odds] Bet365 rodada ${round}: ${map.size}/${fixtures.length} jogos com odds`,
+    );
+  } catch (e) {
+    console.warn(`[API-Football/Odds] Falhou para rodada ${round}:`, e);
+  }
+
+  return map;
 }
