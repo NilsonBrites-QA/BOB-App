@@ -57,7 +57,7 @@ export type VariationsResult = {
     legCount: number;
     anchorPrimaryCount: number;
     legs: TicketLeg[];
-    transparencyNotes?: string[];
+    transparencyNotes: string[];
   }>;
 };
 
