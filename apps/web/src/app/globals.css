@@ -5,29 +5,39 @@
 @custom-variant dark (&:where([data-theme="dark"] *));
 
 :root {
-  --background: #f2f0e8;
-  --foreground: #122018;
-  --surface: rgba(255, 255, 255, 0.78);
-  --surface-strong: #fcfaf4;
-  --muted: #5d695f;
-  --accent: #15563d;
-  --accent-strong: #0c3324;
-  --accent-soft: #d2e8dc;
-  --signal: #b88a2f;
-  --border: rgba(18, 32, 24, 0.13);
+  /* Light tokens (mantidos para fallback) */
+  --background: #f4f6f3;
+  --foreground: #0a1410;
+  --surface: #ffffff;
+  --surface-strong: #f9faf8;
+  --surface-elevated: #ffffff;
+  --muted: #5b6863;
+  --accent: #0a6b3e;
+  --accent-strong: #07512f;
+  --accent-soft: #d1ebd9;
+  --signal: #d4a017;
+  --danger: #c8372d;
+  --success: #16a05a;
+  --border: rgba(10, 20, 16, 0.10);
+  --border-strong: rgba(10, 20, 16, 0.18);
 }
 
+/* TEMA DARK — inspirado em Bet365 (verde profundo + cinzas escuros) */
 html[data-theme="dark"] {
-  --background: #0f1512;
-  --foreground: #e7eee9;
-  --surface: rgba(20, 29, 24, 0.84);
-  --surface-strong: #141e18;
-  --muted: #94a89c;
-  --accent: #2e8b63;
-  --accent-strong: #cdf2de;
-  --accent-soft: rgba(46, 139, 99, 0.22);
-  --signal: #d4a651;
-  --border: rgba(214, 234, 223, 0.14);
+  --background: #0a1410;          /* preto-esverdeado profundo (fundo geral) */
+  --foreground: #e8efe9;          /* texto principal alto contraste */
+  --surface: #11201a;             /* cards e seções */
+  --surface-strong: #16291f;      /* superfície elevada (modais, header) */
+  --surface-elevated: #1c3527;    /* hover, items selecionados */
+  --muted: #88a092;               /* texto secundário legível */
+  --accent: #14854f;              /* verde Bet365 vibrante */
+  --accent-strong: #1aa564;       /* verde de hover/destaque */
+  --accent-soft: rgba(20, 133, 79, 0.18);
+  --signal: #f5c842;              /* amarelo/dourado para odds em destaque */
+  --danger: #e85a4f;
+  --success: #1aa564;
+  --border: rgba(232, 239, 233, 0.08);
+  --border-strong: rgba(232, 239, 233, 0.16);
 }
 
 @theme inline {
@@ -54,20 +64,21 @@ html {
 }
 
 body {
-  background:
-    radial-gradient(circle at 8% -4%, rgba(184, 138, 47, 0.18), transparent 22%),
-    radial-gradient(circle at 90% -10%, rgba(21, 86, 61, 0.16), transparent 24%),
-    linear-gradient(180deg, #f6f3ea 0%, #ece7d8 100%);
+  background: linear-gradient(180deg, #f6f7f4 0%, #eceee9 100%);
   color: var(--foreground);
   font-family: var(--font-space-grotesk), sans-serif;
   background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+/* Dark: gradiente Bet365 - verde profundo no topo, preto-verde abaixo */
 html[data-theme="dark"] body {
   background:
-    radial-gradient(circle at 8% -4%, rgba(212, 166, 81, 0.16), transparent 22%),
-    radial-gradient(circle at 90% -10%, rgba(46, 139, 99, 0.2), transparent 24%),
-    linear-gradient(180deg, #0f1512 0%, #0b110e 100%);
+    linear-gradient(180deg, #0f1f17 0%, #0a1410 280px),
+    radial-gradient(ellipse at top, rgba(20, 133, 79, 0.08), transparent 60%);
+  background-color: #0a1410;
+  background-attachment: fixed;
 }
 
 a {
@@ -79,97 +90,189 @@ a {
   background: rgba(29, 92, 65, 0.16);
 }
 
-.panel {
+/* ─────────── COMPONENTES BOB (estilo Bet365) ─────────── */
+
+/* Card sólido — base de TODA a UI */
+.bob-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  box-shadow:
-    0 20px 55px rgba(21, 31, 24, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(12px);
-  transition:
-    transform 180ms ease,
-    box-shadow 180ms ease,
-    border-color 180ms ease;
+  border-radius: 12px;
+  transition: border-color 180ms ease, background 180ms ease;
 }
 
-html[data-theme="dark"] .panel {
-  box-shadow:
-    0 20px 55px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+.bob-card:hover {
+  border-color: var(--border-strong);
 }
 
+/* Card elevado — para destaques */
+.bob-card-elevated {
+  background: var(--surface-strong);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+}
+
+/* Hero da página - barra superior verde Bet365 */
+.bob-hero {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  color: white;
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.bob-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at top right, rgba(255,255,255,0.12), transparent 50%);
+  pointer-events: none;
+}
+
+/* Badge de odd — destacado em verde Bet365 */
+.bob-odd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 6px 10px;
+  font-family: var(--font-plex-mono), monospace;
+  font-weight: 700;
+  font-size: 13px;
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--foreground);
+  transition: all 150ms;
+  cursor: pointer;
+}
+
+.bob-odd:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.bob-odd-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.bob-odd-highlight {
+  color: var(--signal);
+}
+
+/* Botão primário — verde Bet365 */
+.bob-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  background: var(--accent);
+  color: white;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border: none;
+  cursor: pointer;
+  transition: background 150ms;
+}
+
+.bob-btn-primary:hover {
+  background: var(--accent-strong);
+}
+
+.bob-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Botão ghost — transparente */
+.bob-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  color: var(--foreground);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 150ms;
+}
+
+.bob-btn-ghost:hover {
+  background: var(--surface-elevated);
+  border-color: var(--accent);
+}
+
+/* Tab de filtro estilo Bet365 */
+.bob-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 150ms;
+  white-space: nowrap;
+}
+
+.bob-tab:hover {
+  color: var(--foreground);
+}
+
+.bob-tab-active {
+  color: var(--accent-strong);
+  border-bottom-color: var(--accent);
+}
+
+/* Kicker — texto pequeno em maiúsculas */
 .kicker {
   font-family: var(--font-plex-mono), monospace;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
 }
 
-.grid-lines {
-  background-image:
-    linear-gradient(rgba(18, 32, 24, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(18, 32, 24, 0.045) 1px, transparent 1px);
-  background-size: 28px 28px;
+/* Section divider — separador estilo Bet365 */
+.bob-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--surface-strong);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--foreground);
 }
 
-.layout-container {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.08) 40%, transparent 100%);
-}
+/* Risk badges */
+.bob-risk-low { background: rgba(26, 165, 100, 0.15); color: #1aa564; }
+.bob-risk-medium { background: rgba(245, 200, 66, 0.15); color: #d4a017; }
+.bob-risk-high { background: rgba(232, 90, 79, 0.15); color: #e85a4f; }
+.bob-risk-extreme { background: rgba(232, 90, 79, 0.25); color: #e85a4f; }
 
-html[data-theme="dark"] .layout-container {
-  background:
-    linear-gradient(180deg, rgba(46, 139, 99, 0.06) 0%, rgba(46, 139, 99, 0.02) 40%, transparent 100%);
-}
+/* Compatibilidade com componentes legados — alias mínimo */
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.hero-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; position: relative; }
+.layout-container { background: transparent; }
+.grid-lines { background: transparent; }
+.panel-hover:hover { border-color: var(--border-strong); }
 
-.panel-hover:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    0 28px 70px rgba(21, 31, 24, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.48);
-}
-
-html[data-theme="dark"] .panel-hover:hover {
-  box-shadow:
-    0 28px 70px rgba(0, 0, 0, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.hero-panel {
-  position: relative;
-  isolation: isolate;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.04)),
-    var(--surface);
-}
-
-.hero-panel::before {
-  content: "";
-  position: absolute;
-  right: -6rem;
-  top: -5rem;
-  width: 18rem;
-  height: 18rem;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(21, 86, 61, 0.18), transparent 68%);
-  pointer-events: none;
-}
-
-.hero-panel::after {
-  content: "";
-  position: absolute;
-  left: -4rem;
-  bottom: -6rem;
-  width: 16rem;
-  height: 16rem;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(184, 138, 47, 0.14), transparent 70%);
-  pointer-events: none;
-}
-
-html[data-theme="dark"] .hero-panel::before {
-  background: radial-gradient(circle, rgba(46, 139, 99, 0.22), transparent 68%);
-}
-
-html[data-theme="dark"] .hero-panel::after {
-  background: radial-gradient(circle, rgba(212, 166, 81, 0.14), transparent 70%);
-}
+/* Scrollbar customizado */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }

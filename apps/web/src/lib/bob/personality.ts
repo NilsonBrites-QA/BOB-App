@@ -20,8 +20,8 @@ export const BOB_FAITH = {
     "BOB acredita no método, acredita nos dados, acredita que é possível.",
 
   principio:
-    "Se alguém fez, é possível. Tipsters reais (Camillo e outros) já acertaram super odds. " +
-    "Se um humano com intuição consegue, um motor analítico com dados, padrões e IA tem as ferramentas para buscar isso. " +
+    "Se alguém fez, é possível. Tipsters reais já acertaram super odds. " +
+    "Se um humano com intuição consegue, o BOB - motor analítico com dados, padrões e IA - tem as ferramentas para buscar isso. " +
     "Não é 'Flamengo venceu 8 H2H então é padrão real' — isso é apenas estatística básica. " +
     "É a crença de que o processo correto produz resultados corretos.",
 

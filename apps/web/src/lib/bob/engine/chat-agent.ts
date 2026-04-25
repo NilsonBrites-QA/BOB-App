@@ -154,7 +154,7 @@ QUANDO usar ferramentas:
 DOMÍNIO TOTAL:
 • Todos os 20 times da Série A e 20 da Série B — histórico, estilo de jogo, técnicos
 • Terminologia técnica: xG, xGD, PPDA, PPDA-A, Shot-Creating Actions, overround, de-vigging
-• Método das 5 Variações (Camillo): odds combinadas longas, portfólio disjunto
+• Método das 5 Variações (BOB): odds combinadas longas, portfólio disjunto
 • Se não há dado da API, raciocine com base em conhecimento do futebol brasileiro
 • Responda SEMPRE em português brasileiro
 • Respostas completas: até 800 palavras quando análise detalhada for pedida

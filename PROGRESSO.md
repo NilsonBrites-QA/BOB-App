@@ -231,5 +231,82 @@ npx prisma migrate dev --name add_bet_analyzer
 
 ---
 
+## 🚨 MUDANÇAS URGENTES REALIZADAS (24/04/2026)
+
+### ✅ Layout Refatorado - Header Hambúrguer Universal
+**Problema:** Layout anterior estava "tapando a tela" e causando estresse
+**Solução:** 
+- `site-shell.tsx`: Header simplificado com hambúrguer em TODOS os dispositivos
+- `mobile-nav.tsx`: Menu agora é o padrão (removido `md:hidden`)
+- Padding otimizado para mobile-first (`px-3 py-4` em mobile, `lg:px-6` em desktop)
+- Footer minimalista
+
+### ✅ Removido "Método Camillo"
+**Motivo:** Problemas de marca/registro
+**Arquivos alterados:**
+- `src/app/variacoes/page.tsx`: "Método Camillo" → "Método BOB"
+- `src/lib/bob/personality.ts`: Removida referência ao nome
+- `src/lib/bob/engine/chat-agent.ts`: Atualizado prompt
+
+### ✅ Removido Menu "Cérebro"
+**Motivo:** Não funciona, precisa ser replanejado do zero
+**Ação:** Removido de `src/lib/navigation.ts`
+
+---
+
+## 🧠 DOCUMENTAÇÃO: ARQUITETURA DO BOB (Para não perder o raciocínio)
+
+### Lógica Central do BOB:
+
+1. **Análise Universal:**
+   - BOB analisa TODAS as ligas (Série A, B, Copa do Brasil, Libertadores)
+   - Dados de TODAS as rodadas são carregados uma única vez
+   - Cache local ("cérebro") mantém dados para economizar requisições
+
+2. **Estatísticas Profundas (Bet365-like):**
+   - Médias calculadas: últimos 5, 10 jogos
+   - Por tempo: 1º tempo / 2º tempo / Partida completa
+   - Métricas: Cantos, chutes (no alvo/total), gols, posse, etc.
+   - Exemplo: "Bahia - Média 6.2 cantos no 1ºT (últimos 5)"
+
+3. **Independência de Competição:**
+   - Análise da equipe engloba TODAS as competições
+   - Não ignorar ligas secundárias (pode afetar análise da próxima partida)
+   - Exemplo: Flamengo na Libertadores afeta análise do jogo de domingo
+
+4. **5 Variações Big Odds por Rodada:**
+   - Odds reais em tempo real (cache 5-15 minutos)
+   - 4-5 âncoras por variação
+   - Odds combinadas: 1000x a 9000x
+   - Exemplo: 5 bilhetes de R$ 55 = potencial R$ 132.000
+
+5. **Odds em Tempo Real (APIs Gratuitas):**
+   - Cache multi-camada: Memória (1 min) → Database (15 min) → API
+   - Polling adaptativo: 6h (+7 dias) → 15min (<24h)
+   - Fallback rotation: OddsPAPI → RapidAPI → API-Football
+   - APIs disponíveis: ODDS_PAPI_KEY, RAPIDAPI_KEY, API_FOOTBALL_KEY, FOOTBALL_DATA_TOKEN
+
+6. **Opinião do BOB (IA):**
+   - Análise matemática completa
+   - "Fé" no método (Certeza antes de ver resultado)
+   - Personalidade ativa em todas as respostas
+   - Recomendações contextualizadas
+
+---
+
+## 📋 PRÓXIMAS TAREFAS (Prioridade)
+
+### URGENTE:
+1. **Verificar "Criar Apostas"** - Identificar bloqueios (odds reais?)
+2. **Integrar Odds Reais** - Conectar OddsPAPI às variações
+3. **Estatísticas Avançadas** - Página Bet365-like com médias calculadas
+4. **Alavancagem** - Aguardando PRD do usuário
+
+### IMPORTANTE:
+5. **Cérebro (Cache Local)** - Implementar armazenamento de dados do BOB
+6. **Deploy** - Commit + push das últimas alterações
+
+---
+
 **Arquivo de instruções:** `PROXIMOS_PASSOS.md`
 

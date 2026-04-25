@@ -15,6 +15,7 @@ export const APP_NAV_GROUPS: AppNavGroup[] = [
     label: "Leitura",
     items: [
       { href: "/dashboard", label: "Dashboard" },
+      { href: "/variacoes", label: "Variações" },
       { href: "/estatisticas", label: "Estatísticas" },
       { href: "/historico", label: "Histórico" },
     ],
@@ -31,7 +32,8 @@ export const APP_NAV_GROUPS: AppNavGroup[] = [
     id: "ferramentas",
     label: "Ferramentas",
     items: [
-      { href: "/apostas", label: "Apostas" },
+      { href: "/apostas", label: "Criar Apostas" },
+      { href: "/alavancagem", label: "Alavancagem" },
       { href: "/chat", label: "Chat" },
       { href: "/investimento-retorno", label: "I×R" },
     ],
@@ -40,5 +42,4 @@ export const APP_NAV_GROUPS: AppNavGroup[] = [
 
 export const ADMIN_NAV_ITEMS: AppNavItem[] = [
   { href: "/admin", label: "Admin" },
-  { href: "/admin/cerebro", label: "Cérebro" },
 ];

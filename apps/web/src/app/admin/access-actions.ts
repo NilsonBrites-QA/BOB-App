@@ -2,12 +2,26 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
+import { sendAccessApprovedEmail } from "@/lib/email/send-access-approved";
 
 function normalizeEmail(raw: string) {
   return raw.trim().toLowerCase();
 }
 
 const PRIMARY_ADMIN_EMAIL = "nilson.brites@gmail.com";
+
+/** Envia email de boas-vindas em fire-and-forget (não bloqueia se Resend falhar) */
+function notifyAccessApproved(email: string) {
+  sendAccessApprovedEmail({ to: email })
+    .then((result) => {
+      if (!result.ok && !("skipped" in result)) {
+        console.warn(`[admin] Falha ao enviar email de aprovação para ${email}: ${result.error}`);
+      }
+    })
+    .catch((err) => {
+      console.warn(`[admin] Erro inesperado no email de aprovação:`, err);
+    });
+}
 
 export async function grantUserAccess(formData: FormData) {
   const email = normalizeEmail(String(formData.get("email") ?? ""));
@@ -21,6 +35,12 @@ export async function grantUserAccess(formData: FormData) {
     throw new Error("Perfil inválido.");
   }
 
+  // Verifica se já existia ativo (para não enviar email repetido)
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { active: true },
+  });
+
   await prisma.user.upsert({
     where: { email },
     create: {
@@ -33,6 +53,11 @@ export async function grantUserAccess(formData: FormData) {
       active: true,
     },
   });
+
+  // Envia notificação apenas para novos ou recém-ativados
+  if (!existing || !existing.active) {
+    notifyAccessApproved(email);
+  }
 
   revalidatePath("/admin");
 }
@@ -62,6 +87,11 @@ export async function toggleUserAccess(formData: FormData) {
     where: { id: userId },
     data: { active },
   });
+
+  // Quando reativa, dispara notificação
+  if (active && target.email) {
+    notifyAccessApproved(target.email);
+  }
 
   revalidatePath("/admin");
 }
