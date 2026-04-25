@@ -202,8 +202,8 @@ export default async function VariacoesPage({
       fairOdd: leg.fairOdd,
       cleanProb: leg.cleanProb,
       isAnchor: leg.isAnchor,
-      homeBadge: teamBadges[leg.homeTeam] ?? null,
-      awayBadge: teamBadges[leg.awayTeam] ?? null,
+      homeBadge: teamBadges[leg.homeTeam.toLowerCase()] ?? null,
+      awayBadge: teamBadges[leg.awayTeam.toLowerCase()] ?? null,
     }));
 
     const meta = variationTitle(v.id);
@@ -239,8 +239,8 @@ export default async function VariacoesPage({
       confidence: a.score,
       reason: buildAnchorReason(a),
       risks: ((a as { calibrationAlerts?: string[] }).calibrationAlerts ?? []).slice(0, 3),
-      homeBadge: teamBadges[a.homeTeam] ?? null,
-      awayBadge: teamBadges[a.awayTeam] ?? null,
+      homeBadge: teamBadges[a.homeTeam.toLowerCase()] ?? null,
+      awayBadge: teamBadges[a.awayTeam.toLowerCase()] ?? null,
     };
   });
 

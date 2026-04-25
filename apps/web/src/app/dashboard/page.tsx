@@ -270,7 +270,7 @@ export default async function DashboardPage({
                   <div className="min-w-0 space-y-1.5">
                     <TeamIdentity
                       teamName={z.homeTeam}
-                      badgeUrl={teamBadges[z.homeTeam] ?? null}
+                      badgeUrl={teamBadges[z.homeTeam.toLowerCase()] ?? null}
                       badgeSize={22}
                       className="min-w-0"
                       nameClassName="text-sm font-semibold"
@@ -280,7 +280,7 @@ export default async function DashboardPage({
                       <span className="h-px w-3 shrink-0 bg-border/80" />
                       <TeamIdentity
                         teamName={z.awayTeam}
-                        badgeUrl={teamBadges[z.awayTeam] ?? null}
+                        badgeUrl={teamBadges[z.awayTeam.toLowerCase()] ?? null}
                         badgeSize={22}
                         className="min-w-0"
                         nameClassName="text-sm font-medium"

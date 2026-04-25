@@ -261,8 +261,8 @@ export default async function EstatisticasPage({
                 key={match.id}
                 match={match}
                 breakdown={breakdown}
-                homeBadgeUrl={teamBadges[match.homeTeam] ?? null}
-                awayBadgeUrl={teamBadges[match.awayTeam] ?? null}
+                homeBadgeUrl={teamBadges[match.homeTeam.toLowerCase()] ?? null}
+                awayBadgeUrl={teamBadges[match.awayTeam.toLowerCase()] ?? null}
                 isAnchor={match.isAnchorCandidate}
               />
             ))}
