@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import { VariacoesClient } from "@/app/variacoes/variacoes-client";
 import { NarrativeSection, NarrativeSkeleton } from "@/components/narrative-section";
 import { ReflectionCard, ReflectionCardSkeleton } from "@/components/reflection-card";
 import { GlossarySection } from "@/components/glossary";
@@ -229,76 +228,24 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {/* ── Âncoras ── */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="kicker text-xs text-muted">Âncoras da rodada</p>
-            <h2 className="mt-1 text-2xl font-semibold">Base mais forte da sua leitura</h2>
-          </div>
-          {anchors.length > 0 && (
-            <p className="text-xs text-muted">Confiança 0–100</p>
-          )}
-        </div>
-
-        {excludedIds.size > 0 && (
-          <div className="flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
-            <span>
-              {excludedIds.size} jogo{excludedIds.size > 1 ? "s" : ""} excluído{excludedIds.size > 1 ? "s" : ""} — a leitura da rodada foi recalculada.
-            </span>
-            <a href="/dashboard" className="ml-4 font-semibold underline decoration-dotted">
-              Limpar
-            </a>
-          </div>
-        )}
-
-        {anchors.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {anchors.map((anchor) => (
-              <AnchorCard
-                key={anchor.id}
-                anchor={anchor}
-                badgeUrl={teamBadges[anchor.homeTeam] ?? null}
-                awayBadgeUrl={teamBadges[anchor.awayTeam] ?? null}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="panel rounded-[24px] p-5">
-            <p className="text-sm font-semibold">Nenhuma âncora confirmada nesta leitura.</p>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              O BOB não encontrou base suficientemente limpa para fixar favoritos nesta rodada. Use os cenários abaixo como leitura exploratória, não como base rígida.
-            </p>
-          </div>
-        )}
-      </section>
-
-      {/* ── Variações ── */}
-      <section className="space-y-4">
-        <div className="flex items-end justify-between gap-4">
+      {/* ── Variações: CTA que leva à página dedicada ── */}
+      <section className="bob-card p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="kicker text-xs text-muted">Portfólio BOB da rodada</p>
-            <h2 className="mt-1 text-2xl font-semibold">5 cenários para entrar com clareza</h2>
-          </div>
-          <p className="hidden max-w-xs text-right text-sm leading-6 text-muted lg:block">
-            Cada cenário combina proteção, valor e odd alvo para orientar sua entrada na rodada.
-          </p>
-        </div>
-
-        {variations.length > 0 ? (
-          <div className="grid gap-5 xl:grid-cols-2">
-            {variations.map((variation) => (
-              <VariationCard key={variation.id} variation={variation} teamBadges={teamBadges} />
-            ))}
-          </div>
-        ) : (
-          <div className="panel rounded-[24px] p-5">
-            <p className="text-sm font-semibold">Os cenários ainda não ficaram utilizáveis.</p>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              Quando a rodada chega incompleta ou muito degradada, o BOB prefere não empilhar um portfólio artificial. Ajuste a rodada, revise exclusões ou aguarde nova sincronização.
+            <h2 className="mt-1 text-2xl font-semibold">5 cenários Big Odds prontos</h2>
+            <p className="mt-2 text-sm leading-6 text-muted max-w-xl">
+              {anchors.length} âncoras analisadas · {variations.length} variações geradas · odd combinada mínima 900x ·
+              mínimo 5 jogos por cenário. O BOB escolhe e justifica cada pick.
             </p>
           </div>
-        )}
+          <a
+            href="/variacoes"
+            className="bob-btn-primary inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-semibold"
+          >
+            Ver variações completas →
+          </a>
+        </div>
       </section>
 
       {/* ── Oportunidades de Zebra ── */}
