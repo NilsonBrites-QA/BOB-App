@@ -25,6 +25,10 @@ apps/web/build/
 *.tsbuildinfo
 apps/web/next-env.d.ts
 
+# ── Temporarios de commit ────────────────────────────────────────────────────
+.commit-msg.tmp
+.commit-msg-*.tmp
+
 # ── Logs ──────────────────────────────────────────────────────────────────────
 npm-debug.log*
 yarn-debug.log*

@@ -27,7 +27,7 @@ export function AccordionItem({ title, subtitle, badge, defaultOpen = false, chi
       >
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-sm text-foreground truncate">{title}</span>
+            <div className="font-semibold text-sm text-foreground min-w-0 flex-1">{title}</div>
             {badge}
           </div>
           {subtitle && <div className="mt-0.5 text-xs text-muted truncate">{subtitle}</div>}

@@ -321,41 +321,55 @@ export function VariacoesClient({ round, anchors, variations, audit }: Props) {
         )}
       </div>
 
-      {/* Âncoras */}
-      <Accordion>
-        <AccordionItem
-          title={`Âncoras da rodada (${anchors.length})`}
-          subtitle="Base mais forte da leitura — presentes em todas as variações"
-          defaultOpen
-        >
-          <div className="space-y-2">
-            {anchors.map((a) => (
-              <div key={a.matchId} className="rounded-lg bg-[var(--surface-strong)] p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <TeamCrest url={a.homeBadge} name={a.homeTeam} size={20} />
-                  <span className="text-sm font-medium">{a.homeTeam}</span>
+      {/* Âncoras — sanfonas individuais (RN: cada âncora abre sua própria explicação) */}
+      <div className="bob-card overflow-hidden">
+        <div className="bob-section-header">
+          <h2 className="font-semibold text-sm">Âncoras da rodada ({anchors.length})</h2>
+          <span className="text-[10px] text-muted uppercase tracking-wider">Toque para ver detalhes</span>
+        </div>
+        <Accordion>
+          {anchors.map((a) => (
+            <AccordionItem
+              key={a.matchId}
+              title={
+                <div className="flex flex-1 flex-wrap items-center gap-2">
+                  <TeamCrest url={a.homeBadge} name={a.homeTeam} size={18} />
+                  <span className="text-sm font-medium truncate">{a.homeTeam}</span>
                   <span className="text-[10px] text-muted">×</span>
-                  <span className="text-sm font-medium">{a.awayTeam}</span>
-                  <TeamCrest url={a.awayBadge} name={a.awayTeam} size={20} />
-                  <AnchorTypeBadge type={a.type} />
-                  <span className="ml-auto text-xs font-bold text-[var(--accent-strong)]">
-                    {a.pickLabel} · {a.confidence}/100
-                  </span>
+                  <span className="text-sm font-medium truncate">{a.awayTeam}</span>
+                  <TeamCrest url={a.awayBadge} name={a.awayTeam} size={18} />
                 </div>
-                <p className="mt-2 text-xs leading-5 text-muted">{a.reason}</p>
+              }
+              subtitle={`${a.pickLabel} · confiança ${a.confidence}/100`}
+              badge={<AnchorTypeBadge type={a.type} />}
+              defaultOpen={false}
+            >
+              <div className="space-y-3">
+                <div>
+                  <p className="kicker text-xs mb-1">Leitura do BOB</p>
+                  <p className="text-sm leading-6 text-foreground">{a.reason}</p>
+                </div>
                 {a.risks.length > 0 && (
-                  <ul className="mt-2 space-y-0.5">
-                    {a.risks.map((r, i) => (
-                      <li key={i} className="text-[11px] text-[var(--signal)]">⚠ {r}</li>
-                    ))}
-                  </ul>
+                  <div>
+                    <p className="kicker text-xs mb-1 text-[var(--signal)]">Riscos identificados</p>
+                    <ul className="space-y-1 text-sm text-muted">
+                      {a.risks.map((r, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span className="text-[var(--signal)]">⚠</span>
+                          <span>{r}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
-            ))}
-          </div>
-        </AccordionItem>
+            </AccordionItem>
+          ))}
+        </Accordion>
+      </div>
 
-        {/* Auditoria */}
+      {/* Auditoria */}
+      <Accordion>
         <AccordionItem
           title="Auditoria de completude"
           subtitle={audit.passed ? "Todas as validações passaram" : `${audit.alerts.length} alerta(s)`}

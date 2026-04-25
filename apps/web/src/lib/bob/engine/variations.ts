@@ -4,15 +4,21 @@
  * Recebe os 4 âncoras selecionados pelo motor de scoring e um pool de outros
  * jogos da rodada, e gera as 5 variações canônicas do método.
  *
- * V1 Segurança    — 4 âncoras + 4 fills conservadores  (8–9 jogos) | piso 500x
- * V2 Equilíbrio   — 3 âncoras + empates em score médio  (9 jogos)  | piso 800x
- * V3 Lógica Pura  — 4 âncoras + 5 fills todos favoritos (9 jogos)  | piso 800x
- * V4 Curta        — 3 âncoras + fills seletivos limpos   (7 jogos) | piso 1000x
- * V5 Extrema      — 2–3 âncoras + empates e azarões      (10 jogos)| piso 1000x
+ * V1 Segurança    — 4 âncoras + 4 fills conservadores  (8–9 jogos) | piso 900x
+ * V2 Equilíbrio   — 3 âncoras + empates em score médio  (9 jogos)  | piso 900x
+ * V3 Lógica Pura  — 4 âncoras + 5 fills todos favoritos (9 jogos)  | piso 900x
+ * V4 Curta        — 3 âncoras + fills seletivos limpos   (7 jogos) | piso 900x
+ * V5 Extrema      — 2–3 âncoras + empates e azarões      (10 jogos)| piso 900x
+ *
+ * REGRAS DE OURO (Big Odds — RN do Camillo):
+ *   1. Mínimo 5 jogos por variação (sempre)
+ *   2. Odd combinada mínima 900x (sempre)
+ *   3. Sem máximo de odd — quanto maior, melhor desde que coerente
  *
  * Quando a odd projetada fica abaixo do piso, o sistema substitui picks
  * de menor odd por alternativas de maior valor (empate/azarão) até atingir
  * o alvo. Isso mantém os âncoras intactos e eleva o multiplicador.
+ * Se ainda assim não atingir min 5 jogos, adiciona do pool completo.
  *
  * Determinístico: mesmo input, mesma saída. Sem LLM, sem randomização.
  */
@@ -75,49 +81,61 @@ function projectedOdd(picks: VariationPick[]): number {
 // ─── Pisos mínimos de odds por variação ───────────────────────────────────────
 
 const ODD_FLOORS: Record<string, number> = {
-  V1: 500,
-  V2: 800,
-  V3: 800,
-  V4: 1000,
-  V5: 1000,
+  V1: 900,
+  V2: 900,
+  V3: 900,
+  V4: 900,
+  V5: 900,
 };
 
+/** Mínimo absoluto de jogos por variação (RN Big Odds) */
+const MIN_PICKS_PER_VARIATION = 5;
+
 /**
- * Eleva a odd projetada até o piso mínimo substituindo picks de menor odd
- * por suas alternativas de empate/azarão (mantendo âncoras intactos).
+ * Eleva a odd projetada até o piso mínimo E garante mín 5 jogos.
  *
  * Estratégia:
- *   1. Ordena picks não-âncora pela odd crescente (menores primeiro)
- *   2. Substitui pelo empate (drawOdd) — geralmente 2x a 4x maior
- *   3. Se ainda não atingiu o piso, substitui pelo azarão (awayOdd)
- *   4. Como último recurso, adiciona mais picks do pool disponível
+ *   1. Substitui fills (menor odd primeiro) por empates
+ *   2. Substitui empates por azarões se ainda abaixo do piso
+ *   3. Adiciona jogos do pool até bater piso de odd
+ *   4. NOVO — Adiciona jogos do pool até bater piso de quantidade (5)
+ *
+ * Âncoras nunca são modificadas. Quando o pool fica curto, usa
+ * fallback agressivo (qualquer jogo não-usado, independente de score).
  */
 function boostToFloor(
   picks: VariationPick[],
   floor: number,
   allMatches: ScoredMatch[],
+  minPicks: number = MIN_PICKS_PER_VARIATION,
 ): VariationPick[] {
-  let current = projectedOdd(picks);
-  if (current >= floor) return picks;
-
   const result = [...picks];
   const usedIds = new Set(result.map((p) => p.fixtureId));
 
-  // Fase 1: substituir fills por empates (não tocar âncoras)
-  const fillIndices = result
-    .map((p, i) => ({ p, i }))
-    .filter(({ p }) => !p.isAnchor)
-    .sort((a, b) => a.p.odd - b.p.odd); // menores odds primeiro
+  const recomputeUsed = () => {
+    usedIds.clear();
+    for (const p of result) usedIds.add(p.fixtureId);
+  };
 
-  for (const { i } of fillIndices) {
-    if (current >= floor) break;
-    const match = allMatches.find((m) => m.id === result[i]!.fixtureId);
-    if (!match) continue;
-    const drawOdd = match.drawOdd;
-    if (drawOdd > result[i]!.odd) {
-      const oldOdd = result[i]!.odd;
-      result[i] = { ...result[i]!, result: "X", odd: drawOdd };
-      current = Math.round((current / oldOdd) * drawOdd);
+  let current = projectedOdd(result);
+
+  // Fase 1: substituir fills por empates (não tocar âncoras)
+  if (current < floor) {
+    const fillIndices = result
+      .map((p, i) => ({ p, i }))
+      .filter(({ p }) => !p.isAnchor)
+      .sort((a, b) => a.p.odd - b.p.odd);
+
+    for (const { i } of fillIndices) {
+      if (current >= floor) break;
+      const match = allMatches.find((m) => m.id === result[i]!.fixtureId);
+      if (!match) continue;
+      const drawOdd = match.drawOdd;
+      if (drawOdd > result[i]!.odd) {
+        const oldOdd = result[i]!.odd;
+        result[i] = { ...result[i]!, result: "X", odd: drawOdd };
+        current = Math.round((current / oldOdd) * drawOdd);
+      }
     }
   }
 
@@ -138,16 +156,51 @@ function boostToFloor(
     }
   }
 
-  // Fase 3: adicionar mais jogos do pool se ainda não bateu o piso
+  // Fase 3: adicionar mais jogos do pool até bater piso de ODD
   if (current < floor) {
     const available = allMatches
       .filter((m) => !usedIds.has(m.id))
-      .sort((a, b) => b.drawOdd - a.drawOdd); // maior draw odd primeiro
+      .sort((a, b) => b.drawOdd - a.drawOdd);
 
     for (const m of available) {
       if (current >= floor) break;
       result.push({ fixtureId: m.id, match: m.match, result: "X", odd: m.drawOdd });
+      usedIds.add(m.id);
       current = Math.round(current * m.drawOdd);
+    }
+  }
+
+  // Fase 4 (NOVO): garantir min 5 jogos, INDEPENDENTE de odd
+  // Se filtros (fills/draws/upsets) retornaram listas curtas, completa daqui.
+  if (result.length < minPicks) {
+    recomputeUsed();
+    // Pool fallback: qualquer jogo não-usado, ordenado pelo melhor result sugerido
+    // Prioriza vitórias do mandante (mais previsíveis) → empates → azarões
+    const candidates = allMatches
+      .filter((m) => !usedIds.has(m.id))
+      .sort((a, b) => b.score - a.score);
+
+    for (const m of candidates) {
+      if (result.length >= minPicks) break;
+      // Escolhe o resultado de menor odd entre 1/X/2 (mais provável)
+      const candidateOdds: Array<{ result: "1" | "X" | "2"; odd: number }> = (
+        [
+          { result: "1" as const, odd: m.homeOdd },
+          { result: "X" as const, odd: m.drawOdd },
+          { result: "2" as const, odd: m.awayOdd },
+        ]
+      ).filter((c) => c.odd > 1);
+      candidateOdds.sort((a, b) => a.odd - b.odd);
+      const best = candidateOdds[0];
+      if (!best) continue;
+      result.push({
+        fixtureId: m.id,
+        match: m.match,
+        result: best.result,
+        odd: best.odd,
+      });
+      current = Math.round(current * best.odd);
+      usedIds.add(m.id);
     }
   }
 
