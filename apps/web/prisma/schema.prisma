@@ -470,6 +470,34 @@ model BobSuggestion {
   @@map("bob_suggestions")
 }
 
+/**
+ * Análise LLM pré-computada das variações de uma rodada.
+ *
+ * Pré-computado via cron (1x/hora) → leitura O(1) no SSR.
+ * Elimina latência de LLM no caminho do usuário.
+ *
+ * Campo `payload` (JSON) contém:
+ *   - enrichments: Array<{ variationId, bobNarrative, keyInsight, riskAlerts, confidence }>
+ *   - replacements (opcional): Array<{ variationId, fromMatchId, toMatchId, reason }>
+ *
+ * provider: "claude" | "gpt" | "gemini" | "heuristic"
+ */
+model VariationJudgement {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  season    Int
+  round     Int
+  payload   Json
+  provider  String
+  tokensIn  Int?     @map("tokens_in")
+  tokensOut Int?     @map("tokens_out")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([season, round])
+  @@index([season, round])
+  @@map("variation_judgements")
+}
+
 enum BettorProfile {
   CONSERVADOR
   MODERADO

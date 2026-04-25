@@ -254,6 +254,13 @@ export default async function AdminPage() {
             <span className="text-sm font-semibold">Cérebro observável</span>
             <span className="text-xs text-muted leading-6">Telemetria viva do BOB com conexões reais, memória e modo cognitivo.</span>
           </Link>
+          <Link
+            href="/admin/llm"
+            className="flex flex-col gap-1 rounded-[20px] border border-border bg-surface-strong px-5 py-4 transition hover:border-accent"
+          >
+            <span className="text-sm font-semibold">🧠 Análise LLM das variações</span>
+            <span className="text-xs text-muted leading-6">Status, kill switch e botão para recalcular sob demanda. Controla custo de tokens.</span>
+          </Link>
         </div>
       </section>
 

@@ -3,7 +3,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
 import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
-import { judgeVariations } from "@/lib/bob/engine/variation-judge";
+import type {
+  VariationEnrichment,
+  VariationReplacement,
+  JudgeResult,
+} from "@/lib/bob/engine/variation-judge";
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
 import { loadRoundData } from "@/lib/bob/round-loader";
 import { getTeamAssetsMap } from "@/lib/bob/connectors/thesportsdb";
@@ -11,9 +15,38 @@ import { DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-
 import { VariacoesClient } from "./variacoes-client";
 import type { VariationView, AnchorView, AuditView, RoundView, VariationLeg } from "./variacoes-client";
 
-// ISR de 5 min: cache da página inteira (incluindo análise LLM).
-// loadRoundData também tem cache de 5 min — navegações entre menus = cache hit.
+// ISR de 5 min: leitura do DB é instantânea (~30ms).
+// LLM NUNCA roda no SSR — análise vem pré-computada do cron /api/cron/judge-variations.
 export const revalidate = 300;
+
+// Heurística mínima de fallback (se cron nunca rodou para a rodada).
+function quickHeuristicEnrichment(
+  variation: { id: "V1" | "V2" | "V3" | "V4" | "V5"; combinedOdd: number; legCount: number; anchorPrimaryCount: number },
+): VariationEnrichment {
+  const titles: Record<typeof variation.id, string> = {
+    V1: "linha de segurança máxima — base de favoritos",
+    V2: "equilíbrio entre proteção e prêmio",
+    V3: "leitura lógica pura do motor",
+    V4: "pressão curta com viés de valor",
+    V5: "extrema — caça odd alta",
+  };
+  const conf: VariationEnrichment["confidence"] =
+    variation.combinedOdd < 1500 && variation.anchorPrimaryCount >= 3
+      ? "alta"
+      : variation.combinedOdd < 3000
+        ? "média"
+        : "baixa";
+  return {
+    variationId: variation.id,
+    bobNarrative: `${variation.id}: ${titles[variation.id]}. Odd ${variation.combinedOdd.toFixed(0)}x em ${variation.legCount} jogos.`,
+    keyInsight:
+      variation.anchorPrimaryCount > 0
+        ? `${variation.anchorPrimaryCount} âncora(s) sustentam o bilhete`
+        : `Bilhete sem âncoras — leitura puramente quantitativa`,
+    riskAlerts: [],
+    confidence: conf,
+  };
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -193,23 +226,48 @@ export default async function VariacoesPage({
   const pool = allScored.filter((m) => !anchorIds.has(m.id));
   const variationsResult = generateVariations({ anchors, pool });
 
-  // ── Camada cognitiva (LLM cascade) ──
-  // Claude → GPT → Gemini → heurística determinística (nunca falha)
-  const judgeSnapshots = variationsResult.variations.map((v) => ({
-    id: v.id,
-    combinedOdd: v.combinedOdd,
-    legCount: v.legCount,
-    legs: v.legs.map((l) => ({
-      match: l.match,
-      pickOutcome: l.pickOutcome,
-      pickOdd: l.pickOdd,
-      isAnchor: l.isAnchor,
-    })),
-  }));
-  // LLM cascade roda 1x e o resultado vai pro ISR da página por 5 min
-  const judgeResult = await judgeVariations(judgeSnapshots, anchors);
-  const enrichmentMap = new Map(judgeResult.enrichments.map((e) => [e.variationId, e]));
-  console.log(`[BOB/Variacoes] análise por: ${judgeResult.provider}`);
+  // ── Camada cognitiva: LER do DB (pré-computado pelo cron) ──
+  // LLM NUNCA roda no SSR. O cron /api/cron/judge-variations popula a tabela.
+  const effectiveRound =
+    roundData.source === "api" && roundData.meta ? roundData.meta.round : (round ?? 0);
+
+  const judgement = await prisma.variationJudgement
+    .findUnique({ where: { season_round: { season, round: effectiveRound } } })
+    .catch(() => null);
+
+  let enrichments: VariationEnrichment[];
+  let replacements: VariationReplacement[] = [];
+  let aiProvider: JudgeResult["provider"] = "heuristic";
+
+  if (judgement) {
+    const payload = judgement.payload as unknown as {
+      enrichments: VariationEnrichment[];
+      replacements?: VariationReplacement[];
+    };
+    enrichments = payload.enrichments;
+    replacements = payload.replacements ?? [];
+    aiProvider = judgement.provider as JudgeResult["provider"];
+    console.log(
+      `[BOB/Variacoes] análise pré-computada: ${aiProvider} (${replacements.filter((r) => r.approved).length}/${replacements.length} subs aprovadas)`,
+    );
+  } else {
+    // Fallback instantâneo (sem LLM, sem latência)
+    enrichments = variationsResult.variations.map((v) =>
+      quickHeuristicEnrichment({
+        id: v.id,
+        combinedOdd: v.combinedOdd,
+        legCount: v.legCount,
+        anchorPrimaryCount: v.anchorPrimaryCount,
+      }),
+    );
+    console.log(
+      `[BOB/Variacoes] sem análise pré-computada — usando heurística rápida. Rode /api/cron/judge-variations.`,
+    );
+  }
+
+  const enrichmentMap = new Map(enrichments.map((e) => [e.variationId, e]));
+  const approvedReplacementsByVariation = new Map<string, VariationReplacement>();
+  replacements.filter((r) => r.approved).forEach((r) => approvedReplacementsByVariation.set(r.variationId, r));
 
   // Convert variations to view
   const variations: VariationView[] = variationsResult.variations.map((v) => {
@@ -300,7 +358,7 @@ export default async function VariacoesPage({
     difficulty: difficulty.difficulty,
     difficultyLabel,
     bobMessage: difficulty.bobMessage,
-    aiProvider: judgeResult.provider,
+    aiProvider,
   };
 
   return (

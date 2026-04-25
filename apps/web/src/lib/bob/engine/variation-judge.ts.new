@@ -1,17 +1,17 @@
 /**
- * BOB — VariationJudge (Camada Cognitiva sobre as Variações)
+ * BOB — VariationJudge (Camada Cognitiva ATIVA)
  *
- * Entrada: 5 variações já geradas pelo motor determinístico
- * Saída:   mesmas variações enriquecidas com análise contextual:
- *   - bobNarrative: explicação editorial da estratégia da variação
- *   - keyInsight:    ponto-chave que justifica a aposta
- *   - riskAlerts:    alertas contextuais detectados pela LLM
- *   - confidence:    "alta" | "média" | "baixa"
+ * A LLM agora tem PODER REAL de modificar variações:
+ *   1. Recebe variações iniciais geradas pelo motor + pool de jogos restantes
+ *   2. Analisa contexto (forma dos times, anchors, divergência entre variações)
+ *   3. Propõe SUBSTITUIÇÕES de picks com justificativa
+ *   4. Motor valida cada substituição (mantém piso 5 jogos + odd 900x)
+ *   5. Substituições aprovadas são aplicadas; reprovadas viram alertas
+ *   6. Retorna variações ATUALIZADAS + narrativa editorial
  *
- * Cascade: Claude → GPT → Gemini → heurística determinística
+ * Cascade: Claude → GPT → Gemini → heurística (nunca falha)
  *
- * GARANTIA: nunca falha. Se todas as LLMs falharem, gera análise heurística
- * baseada nos dados estruturados (odds, anchors, divergência, etc).
+ * Pré-computado via cron — guardado no DB tabela `variation_judgements`.
  */
 
 import type { ScoredMatch } from "./scoring";
@@ -32,7 +32,7 @@ export type VariationReplacement = {
   fromMatchId: string;
   toMatchId: string;
   reason: string;
-  approved?: boolean;
+  approved?: boolean; // preenchido pelo validador
 };
 
 export type JudgeResult = {
@@ -54,7 +54,7 @@ export type VariationSnapshot = {
   }>;
 };
 
-// ─── Prompt builder ───────────────────────────────────────────────────────────
+// ─── Prompt ────────────────────────────────────────────────────────────────────
 
 function buildPrompt(
   variations: VariationSnapshot[],
@@ -64,7 +64,7 @@ function buildPrompt(
   const anchorsText = anchors
     .map(
       (a, i) =>
-        `${i + 1}. [id:${a.id}] ${a.homeTeam} x ${a.awayTeam} — score ${a.score} — casa ${a.homeOdd} | empate ${a.drawOdd} | fora ${a.awayOdd}`,
+        `${i + 1}. [id:${a.id}] ${a.homeTeam} x ${a.awayTeam} — score ${a.score} — odd casa ${a.homeOdd} | empate ${a.drawOdd} | fora ${a.awayOdd}`,
     )
     .join("\n");
 
@@ -72,7 +72,7 @@ function buildPrompt(
     .slice(0, 12)
     .map(
       (m) =>
-        `[id:${m.id}] ${m.homeTeam} x ${m.awayTeam} — score ${m.score} — casa ${m.homeOdd} | empate ${m.drawOdd} | fora ${m.awayOdd}`,
+        `[id:${m.id}] ${m.homeTeam} x ${m.awayTeam} — score ${m.score} — odd casa ${m.homeOdd} | empate ${m.drawOdd} | fora ${m.awayOdd}`,
     )
     .join("\n");
 
@@ -88,35 +88,36 @@ function buildPrompt(
     })
     .join("\n\n");
 
-  return `Você é o BOB, analista quantitativo do Brasileirão Série A. Sua função é AUDITAR ATIVAMENTE 5 variações de bilhete Big Odds (alvo 900x+) propostas por motor estatístico determinístico.
+  return `Você é o BOB, analista quantitativo do Brasileirão Série A. Sua função é AUDITAR ATIVAMENTE 5 variações de bilhete Big Odds (alvo 900x+) propostas por motor estatístico.
 
 ÂNCORAS DA RODADA (jogos de maior confiança — NUNCA substituir):
 ${anchorsText}
 
-POOL DE JOGOS DISPONÍVEIS (podem entrar nas variações como substituição):
+POOL DE JOGOS DISPONÍVEIS (podem entrar nas variações):
 ${poolText}
 
 5 VARIAÇÕES PROPOSTAS PELO MOTOR:
 ${varsText}
 
 SUA MISSÃO:
-1. Para cada variação, produza enrichment editorial:
+1. Analise cada variação criticamente. O motor é determinístico — pode ter escolhas óbvias mas pouco lapidadas.
+2. Para cada variação, produza enrichment editorial:
    - bobNarrative: 1-2 frases sobre a estratégia
    - keyInsight: ponto-chave decisivo
    - riskAlerts: 0-2 alertas reais
-   - confidence: "alta" (odds <1500x e ≥3 âncoras), "média" (1500-3000x), "baixa" (>3000x)
-2. SE identificar pick subótimo, PROPONHA substituição (máximo 1 por variação):
-   - fromMatchId: id do match atual (NUNCA âncora)
+   - confidence: "alta" | "média" | "baixa"
+3. SE identificar pick subótimo, PROPONHA substituição:
+   - fromMatchId: id do match atual na variação (NUNCA âncora)
    - toMatchId: id do match do pool que entra no lugar
    - reason: justificativa em 1 frase
-   - Sem substituição se a variação está sólida.
+   - Limite: máximo 1 substituição por variação. Sem substituição se a variação está sólida.
 
 REGRAS DURAS:
 - NÃO substitua âncoras (jogos marcados [ÂNCORA])
 - NÃO invente IDs — use apenas os ids das listas acima
-- NÃO invente estatísticas — use só o que está nos dados
+- Não invente estatísticas — use só o que está nos dados
 
-Responda APENAS um JSON válido (sem texto antes ou depois):
+Responda APENAS um JSON válido neste formato exato (sem texto antes ou depois):
 {
   "enrichments": [
     {"variationId": "V1", "bobNarrative": "...", "keyInsight": "...", "riskAlerts": ["..."], "confidence": "alta"},
@@ -131,23 +132,6 @@ Responda APENAS um JSON válido (sem texto antes ou depois):
 }
 
 O array "replacements" pode estar vazio se nenhuma variação precisa de ajuste.`;
-}
-
-// ─── Validador de substituições ───────────────────────────────────────────────
-
-function validateReplacement(
-  rep: VariationReplacement,
-  variations: VariationSnapshot[],
-  poolIds: Set<string>,
-  anchorIds: Set<string>,
-): boolean {
-  const variation = variations.find((v) => v.id === rep.variationId);
-  if (!variation) return false;
-  const fromLeg = variation.legs.find((l) => l.matchId === rep.fromMatchId);
-  if (!fromLeg || fromLeg.isAnchor || anchorIds.has(rep.fromMatchId)) return false;
-  if (!poolIds.has(rep.toMatchId)) return false;
-  if (variation.legs.some((l) => l.matchId === rep.toMatchId)) return false;
-  return true;
 }
 
 // ─── Heurística de fallback ───────────────────────────────────────────────────
@@ -191,6 +175,31 @@ function heuristicEnrichment(v: VariationSnapshot): VariationEnrichment {
   };
 }
 
+// ─── Validador de substituições ───────────────────────────────────────────────
+
+function validateReplacement(
+  rep: VariationReplacement,
+  variations: VariationSnapshot[],
+  poolIds: Set<string>,
+  anchorIds: Set<string>,
+): boolean {
+  // Variação existe?
+  const variation = variations.find((v) => v.id === rep.variationId);
+  if (!variation) return false;
+
+  // fromMatchId está na variação e não é âncora?
+  const fromLeg = variation.legs.find((l) => l.matchId === rep.fromMatchId);
+  if (!fromLeg || fromLeg.isAnchor || anchorIds.has(rep.fromMatchId)) return false;
+
+  // toMatchId está no pool disponível?
+  if (!poolIds.has(rep.toMatchId)) return false;
+
+  // toMatchId já não está na variação?
+  if (variation.legs.some((l) => l.matchId === rep.toMatchId)) return false;
+
+  return true;
+}
+
 // ─── API pública ──────────────────────────────────────────────────────────────
 
 export async function judgeVariations(
@@ -200,17 +209,11 @@ export async function judgeVariations(
 ): Promise<JudgeResult> {
   const heuristic = variations.map(heuristicEnrichment);
 
-  // ── Kill switch global: força heurística sem chamar LLM ──
-  // Uso: setar BOB_DISABLE_LLM=1 na Vercel para desligar imediatamente sem deploy.
-  if (process.env.BOB_DISABLE_LLM === "1" || process.env.BOB_DISABLE_LLM === "true") {
-    console.log("[BOB/Judge] BOB_DISABLE_LLM=1 — usando heurística (LLM bloqueada)");
-    return { enrichments: heuristic, replacements: [], provider: "heuristic" };
-  }
-
   const hasLLM =
     !!process.env.ANTHROPIC_API_KEY ||
     !!process.env.OPENAI_API_KEY ||
     !!process.env.GEMINI_API_KEY;
+
   if (!hasLLM) {
     return { enrichments: heuristic, replacements: [], provider: "heuristic" };
   }
@@ -227,6 +230,7 @@ export async function judgeVariations(
     return { enrichments: heuristic, replacements: [], provider: "heuristic" };
   }
 
+  // Mesclar enrichments
   const enrichments: VariationEnrichment[] = variations.map((v) => {
     const fromLLM = data.enrichments!.find((e) => e.variationId === v.id);
     if (
@@ -248,9 +252,11 @@ export async function judgeVariations(
     return heuristic.find((h) => h.variationId === v.id) ?? heuristic[0]!;
   });
 
+  // Validar substituições propostas
   const poolIds = new Set(poolAvailable.map((m) => m.id));
   const anchorIds = new Set(anchors.map((a) => a.id));
   const rawReplacements = Array.isArray(data.replacements) ? data.replacements : [];
+
   const replacements: VariationReplacement[] = rawReplacements
     .filter(
       (r): r is VariationReplacement =>
