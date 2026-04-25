@@ -48,7 +48,9 @@ export type VariationsResult = {
   variations: Array<{
     id: "V1" | "V2" | "V3" | "V4" | "V5";
     combinedOdd: number;
+    logCombinedOdd: number;
     probabilityMass: number;
+    logProbabilityMass: number;
     legCount: number;
     anchorPrimaryCount: number;
     legs: TicketLeg[];
@@ -94,10 +96,15 @@ export function generateVariations(
   const coreResult = generateVariationsCore({ anchors, pool });
   
   // Converter para formato VariationsResult (compatível com beam-search)
-  const variations: VariationsResult["variations"] = coreResult.map((v) => ({
+  const variations: VariationsResult["variations"] = coreResult.map((v) => {
+    const probMass = v.picks.reduce((acc, p) => acc * (1 / p.odd), 1);
+    const logCombinedOdd = Math.log(v.projectedOdd);
+    return {
     id: v.id as "V1" | "V2" | "V3" | "V4" | "V5",
     combinedOdd: v.projectedOdd,
-    probabilityMass: v.picks.reduce((acc, p) => acc * (1 / p.odd), 1), // prob implícita
+    logCombinedOdd,
+    probabilityMass: probMass,
+    logProbabilityMass: Math.log(probMass || 1e-10),
     legCount: v.picks.length,
     anchorPrimaryCount: v.picks.filter((p) => p.isAnchor).length,
     legs: v.picks.map((p) => ({
@@ -112,7 +119,8 @@ export function generateVariations(
       isMarginal: (p as any).isMarginal ?? false,
     })),
     transparencyNotes: v.picks.filter((p) => (p as any).warning).map((p) => (p as any).warning),
-  }));
+    };
+  });
   
   return { variations };
 }
