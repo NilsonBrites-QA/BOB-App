@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
 import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
+import { judgeVariations } from "@/lib/bob/engine/variation-judge";
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
 import { loadRoundData } from "@/lib/bob/round-loader";
 import { getTeamAssetsMap } from "@/lib/bob/connectors/thesportsdb";
@@ -190,6 +191,23 @@ export default async function VariacoesPage({
   const pool = allScored.filter((m) => !anchorIds.has(m.id));
   const variationsResult = generateVariations({ anchors, pool });
 
+  // ── Camada cognitiva (LLM cascade) ──
+  // Claude → GPT → Gemini → heurística determinística (nunca falha)
+  const judgeSnapshots = variationsResult.variations.map((v) => ({
+    id: v.id,
+    combinedOdd: v.combinedOdd,
+    legCount: v.legCount,
+    legs: v.legs.map((l) => ({
+      match: l.match,
+      pickOutcome: l.pickOutcome,
+      pickOdd: l.pickOdd,
+      isAnchor: l.isAnchor,
+    })),
+  }));
+  const judgeResult = await judgeVariations(judgeSnapshots, anchors);
+  const enrichmentMap = new Map(judgeResult.enrichments.map((e) => [e.variationId, e]));
+  console.log(`[BOB/Variacoes] análise por: ${judgeResult.provider}`);
+
   // Convert variations to view
   const variations: VariationView[] = variationsResult.variations.map((v) => {
     const legs: VariationLeg[] = v.legs.map((leg) => ({
@@ -221,8 +239,16 @@ export default async function VariacoesPage({
       detailedJustification: "",
       alerts: v.transparencyNotes ?? [],
     };
-    view.shortJustification = buildShortJustification(view, anchors.length);
-    view.detailedJustification = buildDetailedJustification(view);
+    // Enriquecer com análise LLM (ou heurística fallback)
+    const enrichment = enrichmentMap.get(v.id);
+    if (enrichment) {
+      view.shortJustification = enrichment.keyInsight;
+      view.detailedJustification = enrichment.bobNarrative;
+      view.alerts = [...(v.transparencyNotes ?? []), ...enrichment.riskAlerts];
+    } else {
+      view.shortJustification = buildShortJustification(view, anchors.length);
+      view.detailedJustification = buildDetailedJustification(view);
+    }
     return view;
   });
 
