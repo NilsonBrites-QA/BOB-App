@@ -47,6 +47,9 @@ import {
   getSerieBStandings,
 } from "@/lib/bob/connectors/football-data";
 import { getCurrentRound } from "@/lib/bob/connectors";
+import { loadRoundData } from "@/lib/bob/round-loader";
+import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
+import { prisma } from "@/lib/db";
 
 // ─── Tipos Públicos ───────────────────────────────────────────────────────────
 
@@ -99,14 +102,15 @@ Encorajador, direto e sereno. Fortalece a coragem e a disciplina.
 Transforma a ansiedade do usuário em planos e processos matemáticos.
 </identidade>
 
-<isolamento_motor_oficial>
-⚠ MÓDULO CONSULTIVO — ISOLAÇÃO TOTAL DO MOTOR OFICIAL (PRD §8):
-- Palpites e análises aqui NÃO compõem as 5 Variações oficiais
+<integracao_motor_oficial>
+✓ MÓDULO CONSULTIVO COM ACESSO LEITURA AO MOTOR OFICIAL:
+- Palpites adicionais aqui NÃO compõem novas variações oficiais (você não recalcula nada)
+- Você PODE LER as variações oficiais já calculadas via tool getOfficialVariations
+- Você PODE comentar, explicar e analisar as 5 variações entregues pelo motor
 - Você PODE analisar Série C, Copa do Brasil, Libertadores e mercados personalizados
-- NUNCA mencione que está recalculando âncoras ou gerando variações — este é o espaço livre
-- Se o usuário perguntar, diga: "Este é o módulo consultivo. As variações oficiais são
-  calculadas pelo motor autônomo a cada rodada, separadamente."
-</isolamento_motor_oficial>
+- Quando o usuário pedir "as variações da rodada", "as âncoras", "o bilhete BOB", USE getOfficialVariations
+- NUNCA invente nomes de times com placeholders [Time A], [Time B] — sempre use a tool
+</integracao_motor_oficial>
 
 <diretrizes_linguagem>
 DIRETRIZ DE LINGUAGEM (PRD §10):
@@ -142,11 +146,14 @@ busque-os primeiro e responda com base neles.
 • getMatchesByMatchday: jogos de uma rodada específica (requer: matchday = número da rodada)
 • getFinishedMatches: resultados recentes para análise de forma (opcional: limit = máx de jogos)
 • getCurrentMatchday: número da rodada em andamento ou mais recente
+• getOfficialVariations: as 4 ÂNCORAS + 5 VARIAÇÕES OFICIAIS do BOB para a rodada (com odds, picks e análise LLM)
 
 QUANDO usar ferramentas:
 • Pergunta sobre tabela/classificação → getStandings
 • Pergunta sobre rodada específica/próximos jogos → getCurrentMatchday + getMatchesByMatchday
 • Pergunta sobre forma de um time → getFinishedMatches
+• Pergunta sobre "âncoras", "variações", "bilhete BOB", "Big Odds", "V1-V5" → getOfficialVariations
+  (esta tool é OBRIGATÓRIA para responder com dados reais, NUNCA invente picks ou nomes de times)
 • Nunca chame a mesma ferramenta mais de 1x por conversa
 </ferramentas>
 
@@ -234,6 +241,26 @@ const CLAUDE_TOOLS: ClaudeTool[] = [
       "Use como primeiro passo quando o usuário perguntar sobre 'a rodada atual' ou 'próximos jogos' " +
       "sem especificar o número da rodada.",
     input_schema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "getOfficialVariations",
+    description:
+      "Retorna as variações OFICIAIS do BOB para uma rodada do Brasileirão Série A: " +
+      "as 4 âncoras selecionadas pelo motor + 5 variações (V1-V5) com seus picks, odds e " +
+      "análise LLM (se disponível). USE esta tool sempre que o usuário pedir 'variações', " +
+      "'âncoras', 'bilhete BOB', 'V1', 'V5', 'Big Odds' ou similar. Os dados retornados são " +
+      "REAIS e DETERMINÍSTICOS, gerados pelo motor BOB. Nunca invente picks.",
+    input_schema: {
+      type: "object",
+      properties: {
+        matchday: {
+          type: "number",
+          description:
+            "Número da rodada (1-38). Opcional — se omitido, usa a rodada atual.",
+        },
+      },
+      required: [],
+    },
   },
 ];
 
@@ -365,6 +392,74 @@ async function executeTool(
         if (round === null)
           return "[Rodada atual: indeterminada — período de entressafra ou sem acesso à API.]";
         return `RODADA ATUAL: ${round}`;
+      }
+
+      case "getOfficialVariations": {
+        const matchday =
+          typeof input.matchday === "number" ? input.matchday : Number(input.matchday);
+        const requestedRound = Number.isFinite(matchday) ? matchday : null;
+        const season = new Date().getFullYear();
+
+        const roundData = await loadRoundData(season, requestedRound);
+        if (roundData.matches.length === 0) {
+          return `[getOfficialVariations: nenhuma partida encontrada para a rodada ${requestedRound ?? "atual"}.]`;
+        }
+
+        const effectiveRound =
+          roundData.source === "api" && roundData.meta
+            ? roundData.meta.round
+            : (requestedRound ?? 0);
+
+        // Roda motor (determinístico, mesma saída do /variacoes)
+        const allScored = roundData.matches.map(scoreMatch);
+        const anchors = selectAnchorsFromScored(allScored);
+        const anchorIds = new Set(anchors.map((a) => a.id));
+        const pool = allScored.filter((m) => !anchorIds.has(m.id));
+        const variationsResult = generateVariations({ anchors, pool });
+
+        // Lê análise LLM pré-computada (se houver)
+        const judgement = await prisma.variationJudgement
+          .findUnique({ where: { season_round: { season, round: effectiveRound } } })
+          .catch(() => null);
+
+        type Enrich = { variationId: string; bobNarrative: string; keyInsight: string; confidence: string };
+        const enrichments: Enrich[] = judgement
+          ? ((judgement.payload as unknown as { enrichments?: Enrich[] })?.enrichments ?? [])
+          : [];
+        const enrichmentMap = new Map(enrichments.map((e) => [e.variationId, e]));
+
+        const lines: string[] = [
+          `MOTOR BOB — RODADA ${effectiveRound} (${roundData.source === "api" ? "DADOS REAIS" : "DEMO"})`,
+          `Origem da análise: ${judgement ? `LLM ${judgement.provider}` : "motor determinístico (sem LLM cache)"}`,
+          ``,
+          `=== 4 ÂNCORAS (jogos de maior confiança) ===`,
+        ];
+        anchors.forEach((a, i) => {
+          lines.push(
+            `${i + 1}. ${a.homeTeam} x ${a.awayTeam} — score ${a.score} — ${a.suggestedResult === "1" ? a.homeTeam : a.suggestedResult === "2" ? a.awayTeam : "Empate"} @${(a.suggestedResult === "1" ? a.homeOdd : a.suggestedResult === "2" ? a.awayOdd : a.drawOdd).toFixed(2)}`,
+          );
+        });
+
+        lines.push(``, `=== 5 VARIAÇÕES OFICIAIS ===`);
+        for (const v of variationsResult.variations) {
+          const e = enrichmentMap.get(v.id);
+          lines.push(``, `${v.id} | odd combinada ${v.combinedOdd.toFixed(0)}× | ${v.legCount} jogos`);
+          if (e) {
+            lines.push(`  Análise LLM: ${e.bobNarrative}`);
+            lines.push(`  Insight: ${e.keyInsight} (confiança ${e.confidence})`);
+          }
+          v.legs.forEach((leg, i) => {
+            const label =
+              leg.pickOutcome === "Home"
+                ? leg.homeTeam
+                : leg.pickOutcome === "Away"
+                  ? leg.awayTeam
+                  : "Empate";
+            lines.push(`    ${i + 1}. ${leg.match}: ${label} @${leg.pickOdd.toFixed(2)}${leg.isAnchor ? " [âncora]" : ""}`);
+          });
+        }
+
+        return lines.join("\n");
       }
 
       default:

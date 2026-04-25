@@ -78,7 +78,24 @@ function projectedOdd(picks: VariationPick[]): number {
   return Math.round(picks.reduce((acc, p) => acc * p.odd, 1));
 }
 
-// ─── Pisos mínimos de odds por variação ───────────────────────────────────────
+/**
+ * Remove picks duplicados (mesmo fixtureId) preservando a PRIMEIRA ocorrência.
+ * Crítico: dois picks no mesmo jogo geram bilhete matematicamente impossível
+ * (ex: empate + vitória do visitante simultaneamente).
+ */
+function dedupeByFixtureId(picks: VariationPick[]): VariationPick[] {
+  const seen = new Set<string>();
+  const out: VariationPick[] = [];
+  for (const p of picks) {
+    const key = p.fixtureId ?? p.match; // fallback: nome do confronto
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+  }
+  return out;
+}
+
+// ─── Pisos mínimos / tetos máximos de odds por variação ────────────────────────
 
 const ODD_FLOORS: Record<string, number> = {
   V1: 900,
@@ -86,6 +103,19 @@ const ODD_FLOORS: Record<string, number> = {
   V3: 900,
   V4: 900,
   V5: 900,
+};
+
+/**
+ * Teto sugerido por variação. Quando o produto cumulativo passa do teto,
+ * paramos de adicionar legs no boostToFloor (fase 3 e 4).
+ * Mantém análise sensata em vez de explodir para 18000x+.
+ */
+const ODD_CEILINGS: Record<string, number> = {
+  V1: 2200,
+  V2: 2500,
+  V3: 2800,
+  V4: 3000,
+  V5: 3500,
 };
 
 /** Mínimo absoluto de jogos por variação (RN Big Odds) */
@@ -108,13 +138,15 @@ function boostToFloor(
   floor: number,
   allMatches: ScoredMatch[],
   minPicks: number = MIN_PICKS_PER_VARIATION,
+  ceiling: number = Infinity,
 ): VariationPick[] {
-  const result = [...picks];
-  const usedIds = new Set(result.map((p) => p.fixtureId));
+  // Dedup primeiro: nunca aceitar dois picks do mesmo jogo
+  const result = dedupeByFixtureId(picks);
+  const usedIds = new Set(result.map((p) => p.fixtureId ?? p.match));
 
   const recomputeUsed = () => {
     usedIds.clear();
-    for (const p of result) usedIds.add(p.fixtureId);
+    for (const p of result) usedIds.add(p.fixtureId ?? p.match);
   };
 
   let current = projectedOdd(result);
@@ -157,6 +189,7 @@ function boostToFloor(
   }
 
   // Fase 3: adicionar mais jogos do pool até bater piso de ODD
+  // Para imediatamente quando passa do teto sugerido — evita 18000x absurdo.
   if (current < floor) {
     const available = allMatches
       .filter((m) => !usedIds.has(m.id))
@@ -164,9 +197,30 @@ function boostToFloor(
 
     for (const m of available) {
       if (current >= floor) break;
+      const projected = current * m.drawOdd;
+      // Se adicionar este leg ultrapassa MUITO o teto, evita
+      if (projected > ceiling * 1.3 && current >= floor * 0.85) break;
       result.push({ fixtureId: m.id, match: m.match, result: "X", odd: m.drawOdd });
       usedIds.add(m.id);
-      current = Math.round(current * m.drawOdd);
+      current = Math.round(projected);
+    }
+  }
+
+  // Fase 3b: trim — se já estouramos o teto e temos folga (>=5 jogos +1 fora dos âncoras),
+  // remove o leg não-âncora de menor "valor marginal" até reaproximar do teto.
+  if (current > ceiling && result.length > minPicks) {
+    while (current > ceiling && result.length > minPicks) {
+      // Encontra leg não-âncora cuja remoção mais aproxima do teto sem cair abaixo do floor
+      const removable = result
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => !p.isAnchor)
+        .sort((a, b) => b.p.odd - a.p.odd); // maior odd primeiro = maior impacto na redução
+      if (removable.length === 0) break;
+      const candidate = removable[0]!;
+      const after = Math.round(current / candidate.p.odd);
+      if (after < floor) break; // não dá pra remover sem violar piso
+      result.splice(candidate.i, 1);
+      current = after;
     }
   }
 
@@ -323,7 +377,13 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     ...anchors.map(toAnchorPick),
     ...fills.slice(0, 4).map(toWinPick),
   ];
-  const v1Picks = boostToFloor(v1PicksRaw, ODD_FLOORS.V1!, allMatches);
+  const v1Picks = boostToFloor(
+    dedupeByFixtureId(v1PicksRaw),
+    ODD_FLOORS.V1!,
+    allMatches,
+    MIN_PICKS_PER_VARIATION,
+    ODD_CEILINGS.V1!,
+  );
 
   const v1: Variation = {
     id: "V1",
@@ -343,7 +403,13 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     ...draws.slice(0, 3).map(toDrawPick),
     ...fills.slice(0, 3).map(toWinPick),
   ].slice(0, 9);
-  const v2Picks = boostToFloor(v2PicksRaw, ODD_FLOORS.V2!, allMatches);
+  const v2Picks = boostToFloor(
+    dedupeByFixtureId(v2PicksRaw),
+    ODD_FLOORS.V2!,
+    allMatches,
+    MIN_PICKS_PER_VARIATION,
+    ODD_CEILINGS.V2!,
+  );
 
   const v2: Variation = {
     id: "V2",
@@ -367,7 +433,13 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     ...anchors.map(toAnchorPick),
     ...v3FillPicks,
   ].slice(0, 9);
-  const v3Picks = boostToFloor(v3PicksRaw, ODD_FLOORS.V3!, allMatches);
+  const v3Picks = boostToFloor(
+    dedupeByFixtureId(v3PicksRaw),
+    ODD_FLOORS.V3!,
+    allMatches,
+    MIN_PICKS_PER_VARIATION,
+    ODD_CEILINGS.V3!,
+  );
 
   const v3: Variation = {
     id: "V3",
@@ -396,7 +468,13 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     ...anchors.slice(0, 3).map(toAnchorPick),
     ...v4FillPicks,
   ].slice(0, 7);
-  const v4PicksRawBoosted = boostToFloor(v4PicksRaw, ODD_FLOORS.V4!, allMatches);
+  const v4PicksRawBoosted = boostToFloor(
+    dedupeByFixtureId(v4PicksRaw),
+    ODD_FLOORS.V4!,
+    allMatches,
+    MIN_PICKS_PER_VARIATION,
+    ODD_CEILINGS.V4!,
+  );
   // Garantir divergência: se V3 e V4 ainda têm sobreposição > 70%, forçar substituição
   const v4Picks = enforceDivergence(v3Picks, v4PicksRawBoosted, [...clean, ...reserve]);
 
@@ -421,7 +499,13 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     ...v5DrawPicks,
     ...v5UpsetPicks,
   ].slice(0, 10);
-  const v5Picks = boostToFloor(v5PicksRaw, ODD_FLOORS.V5!, allMatches);
+  const v5Picks = boostToFloor(
+    dedupeByFixtureId(v5PicksRaw),
+    ODD_FLOORS.V5!,
+    allMatches,
+    MIN_PICKS_PER_VARIATION,
+    ODD_CEILINGS.V5!,
+  );
 
   const v5: Variation = {
     id: "V5",
