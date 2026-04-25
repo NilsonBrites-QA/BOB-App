@@ -83,12 +83,17 @@ export default function LoginPage() {
 
     if (authError) {
       const msg = authError.message.toLowerCase();
-      if (msg.includes("already") || msg.includes("registered")) {
+      const status = (authError as { status?: number }).status;
+      if (status === 429 || msg.includes("rate") || msg.includes("too many")) {
+        setError(
+          "Muitas tentativas em pouco tempo. Aguarde ~30 minutos antes de tentar novamente, ou use outro email.",
+        );
+      } else if (msg.includes("already") || msg.includes("registered")) {
         setError("Este email já está cadastrado. Use a aba 'Entrar'.");
       } else if (msg.includes("password")) {
         setError("Senha fraca. Use pelo menos 8 caracteres com letras e números.");
       } else {
-        setError("Não foi possível criar a conta. Tente novamente em instantes.");
+        setError(`Não foi possível criar a conta: ${authError.message}`);
       }
       setLoading(false);
       return;
