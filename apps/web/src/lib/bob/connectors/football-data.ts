@@ -247,12 +247,30 @@ export async function getH2H(matchId: number, limit = 10): Promise<FDH2HResponse
 }
 
 /**
- * Rodada (matchday) atual.
+ * Rodada (matchday) atual segundo o ponteiro do football-data.
+ *
+ * ⚠️ Não confie cegamente neste valor — ele pode avançar uma rodada quando jogos
+ * são adiados/remarcados. Para detectar a próxima rodada com jogos ABERTOS use
+ * `detectNextOpenRound()` em `./index.ts`. Mantido para compat e como fallback.
+ *
  * Cache: 1h
  */
 export async function getCurrentMatchday(): Promise<number> {
   const data = await fdFetch<FDStandingsResponse>("/competitions/BSA/standings", 3600);
   return data.season.currentMatchday;
+}
+
+/**
+ * Todos os jogos AINDA NÃO ENCERRADOS (status ≠ FINISHED).
+ * Útil para detectar a próxima rodada real com jogos abertos.
+ *
+ * Cache: 1h (precisa atualizar conforme jogos terminam)
+ */
+export async function getScheduledMatches(limit = 200): Promise<FDMatchesResponse> {
+  return fdFetch<FDMatchesResponse>(
+    `/competitions/BSA/matches?status=SCHEDULED,TIMED,IN_PLAY,PAUSED,POSTPONED&limit=${limit}`,
+    3600,
+  );
 }
 
 /**

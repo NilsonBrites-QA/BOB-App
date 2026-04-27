@@ -609,16 +609,60 @@ export async function fetchRoundMatchInputs(
 }
 
 /**
- * Detecta a rodada (matchday) atual do Brasileirão.
- * Usa football-data.org como fonte primária.
+ * Detecta a PRÓXIMA RODADA com jogos ABERTOS no Brasileirão.
+ *
+ * Cause-raiz que motivou esta função: o ponteiro `season.currentMatchday` do
+ * football-data.org avança um número quando a rodada anterior é declarada
+ * encerrada — mesmo que existam jogos remarcados/adiados pendentes.
+ *
+ * Estratégia:
+ *   1. Lê todos os matches com status ≠ FINISHED (SCHEDULED/TIMED/IN_PLAY/POSTPONED)
+ *   2. Retorna o MENOR `matchday` entre eles
+ *   3. Compara com `getCurrentMatchday()` e loga `[BOB/Drift]` se divergir
+ *   4. Em caso de erro completo, cai pro ponteiro antigo
  */
 export async function getCurrentRound(): Promise<number | null> {
   try {
-    return await getCurrentMatchday();
+    const [openRound, pointer] = await Promise.allSettled([
+      _detectNextOpenRound(),
+      getCurrentMatchday(),
+    ]);
+
+    const detected =
+      openRound.status === "fulfilled" ? openRound.value : null;
+    const fdPointer =
+      pointer.status === "fulfilled" ? pointer.value : null;
+
+    // Drift detection: log mas não bloqueia
+    if (detected !== null && fdPointer !== null && detected !== fdPointer) {
+      console.warn(
+        `[BOB/Drift] Rodada divergente: detectada=${detected} (jogos abertos) vs ponteiro=${fdPointer} (football-data). Usando detectada.`,
+      );
+    }
+
+    if (detected !== null) return detected;
+    if (fdPointer !== null) return fdPointer;
+    return null;
   } catch {
     return null;
   }
 }
+
+/**
+ * Implementação interna: lê jogos não-encerrados e retorna o menor matchday.
+ * Exportada como `detectNextOpenRound` para uso em diagnósticos.
+ */
+async function _detectNextOpenRound(): Promise<number | null> {
+  const { getScheduledMatches } = await import("./football-data");
+  const res = await getScheduledMatches(200);
+  const matchdays = res.matches
+    .filter((m) => m.status !== "FINISHED" && m.matchday > 0)
+    .map((m) => m.matchday);
+  if (matchdays.length === 0) return null;
+  return Math.min(...matchdays);
+}
+
+export { _detectNextOpenRound as detectNextOpenRound };
 
 // ─── Re-exports seguros pelo Orquestrador ─────────────────────────────────────
 //
