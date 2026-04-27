@@ -78,7 +78,7 @@ model Round {
   memoryEvents MemoryEvent[]
   result       RoundResult?
   previous     Round?        @relation("RoundVersion", fields: [previousRoundId], references: [id], onDelete: SetNull)
-  successor    Round?        @relation("RoundVersion")
+  successors   Round[]       @relation("RoundVersion")
 
   @@index([seasonId, number])
   @@map("rounds")
