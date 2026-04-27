@@ -112,10 +112,15 @@ export async function GET(request: Request) {
   // 3. Verificar se a rodada já existe no banco (idempotência)
   const existingSeason = await prisma.season.findUnique({ where: { year: season } });
   if (existingSeason) {
-    const existingRound = await prisma.round.findUnique({
+    // Versionamento (011): seasonId+number não é mais UNIQUE — múltiplas
+    // versões podem coexistir. Pegamos a versão ATIVA (não-SUPERSEDED).
+    const existingRound = await prisma.round.findFirst({
       where: {
-        seasonId_number: { seasonId: existingSeason.id, number: round },
+        seasonId: existingSeason.id,
+        number: round,
+        status: { not: "SUPERSEDED" },
       },
+      orderBy: { version: "desc" },
       select: { id: true, status: true },
     });
     if (existingRound) {
