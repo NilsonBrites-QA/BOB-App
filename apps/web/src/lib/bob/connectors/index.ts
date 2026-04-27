@@ -655,11 +655,22 @@ export async function getCurrentRound(): Promise<number | null> {
 async function _detectNextOpenRound(): Promise<number | null> {
   const { getScheduledMatches } = await import("./football-data");
   const res = await getScheduledMatches(200);
-  const matchdays = res.matches
-    .filter((m) => m.status !== "FINISHED" && m.matchday > 0)
-    .map((m) => m.matchday);
-  if (matchdays.length === 0) return null;
-  return Math.min(...matchdays);
+
+  // Janela de tolerância: 24h pra trás (jogos hoje/ontem que ainda não fecharam)
+  // Isso evita pegar POSTPONED antigos de meses atrás como "rodada atual".
+  const cutoffMs = Date.now() - 24 * 60 * 60 * 1000;
+
+  const candidates = res.matches.filter((m) => {
+    if (m.matchday <= 0) return false;
+    if (m.status === "FINISHED") return false;
+    // Só consideramos jogos cuja data ainda está no futuro (ou no passado recente)
+    const t = m.utcDate ? Date.parse(m.utcDate) : NaN;
+    if (Number.isNaN(t)) return false;
+    return t >= cutoffMs;
+  });
+
+  if (candidates.length === 0) return null;
+  return Math.min(...candidates.map((m) => m.matchday));
 }
 
 export { _detectNextOpenRound as detectNextOpenRound };
