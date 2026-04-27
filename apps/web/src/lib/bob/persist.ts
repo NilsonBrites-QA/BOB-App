@@ -122,25 +122,49 @@ export async function saveRound(input: SaveRoundInput): Promise<SaveRoundResult>
     update: {},
   });
 
-  // Buscar ou criar rodada
-  const existingRound = await prisma.round.findUnique({
-    where: { seasonId_number: { seasonId: season.id, number: input.round } },
-    select: { id: true },
+  // Buscar rodada ATIVA (não-SUPERSEDED) com mesmo season+number.
+  // Após a migration de versionamento, múltiplas versões podem coexistir
+  // (a antiga marcada SUPERSEDED quando o admin clica "Regenerar").
+  // Cast `as any` é transitório — sumirá quando o Prisma generate roda no build.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const roundDelegate = prisma.round as any;
+
+  const existingRound = await roundDelegate.findFirst({
+    where: {
+      seasonId: season.id,
+      number:   input.round,
+      status:   { not: "SUPERSEDED" },
+    },
+    select: { id: true, version: true, status: true },
+    orderBy: { version: "desc" },
   });
 
   if (existingRound) {
-    // Rodada já persistida — retorna o ID sem sobrescrever
+    // Rodada já persistida — não sobrescreve.
+    // Para regenerar use `regenerateRound()` que cria nova versão e marca a antiga como SUPERSEDED.
     return { roundDbId: existingRound.id };
   }
 
+  // Determinar versão: se já existe SUPERSEDED, soma +1
+  const lastVersion = await roundDelegate.findFirst({
+    where:    { seasonId: season.id, number: input.round },
+    orderBy:  { version: "desc" },
+    select:   { id: true, version: true },
+  });
+  const nextVersion = (lastVersion?.version ?? 0) + 1;
+
   // Criação transacional: round + anchors + variations + picks
   const roundDb = await prisma.$transaction(async (tx) => {
-    const round = await tx.round.create({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const txRound = tx.round as any;
+    const round = await txRound.create({
       data: {
-        seasonId: season.id,
-        number:   input.round,
-        status:   "READY",
-        notes:    input.source === "demo" ? "Gerado com dados de demonstração" : undefined,
+        seasonId:        season.id,
+        number:          input.round,
+        status:          "READY",
+        version:         nextVersion,
+        previousRoundId: lastVersion?.id ?? null,
+        notes:           input.source === "demo" ? "Gerado com dados de demonstração" : undefined,
       },
     });
 
@@ -318,4 +342,119 @@ export async function getPerformanceMetrics(season: number) {
       totalStaked: Number(r.totalStaked),
     })),
   };
+}
+
+// ─── Versionamento e congelamento (introduzido em 011_round_versioning) ───────
+//
+// As funções abaixo usam campos novos do model Round (status SUPERSEDED, version,
+// previousRoundId, frozenAt, supersededAt). Antes do `prisma generate` ser
+// executado em um ambiente onde a migration 011 já foi aplicada, o tipo TS gerado
+// não contém esses campos. Os casts `as never` / `as RoundDelegateExt` abaixo são
+// transitórios e desaparecem no build do Vercel (que sempre regenera).
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+const roundExt = prisma.round as any;
+
+/**
+ * Carrega a rodada ATIVA (não-SUPERSEDED) com tudo necessário para renderizar
+ * a página /variacoes a partir do banco — variações, picks, âncoras, judgement.
+ *
+ * Retorna `null` se nenhuma versão da rodada foi salva ainda.
+ *
+ * Use isto em `/variacoes/page.tsx` em vez de gerar variações on-the-fly.
+ */
+export async function loadDeliveredRound(season: number, round: number) {
+  return roundExt.findFirst({
+    where: {
+      season: { year: season },
+      number: round,
+      status: { not: "SUPERSEDED" },
+    },
+    orderBy: { version: "desc" },
+    include: {
+      season:  { select: { year: true } },
+      anchors: { orderBy: { rank: "asc" } },
+      variations: {
+        orderBy: { code: "asc" },
+        include: {
+          picks: { orderBy: { position: "asc" } },
+        },
+      },
+      result: true,
+    },
+  });
+}
+
+/**
+ * Marca uma rodada como DELIVERED + frozenAt = now.
+ * A partir desse momento as variações são imutáveis até que o admin regenere.
+ */
+export async function freezeRound(roundDbId: string): Promise<void> {
+  await roundExt.update({
+    where: { id: roundDbId },
+    data: {
+      status:      "DELIVERED",
+      frozenAt:    new Date(),
+      deliveredAt: new Date(),
+    },
+  });
+}
+
+/**
+ * Marca a versão atual como SUPERSEDED (não destrutivo — preserva histórico).
+ *
+ * Uso típico: o admin clica em "Regenerar variações" → este método marca a
+ * rodada atual como SUPERSEDED, e o próximo `saveRound()` cria uma nova versão
+ * com `version = previous.version + 1` e `previousRoundId = previous.id`.
+ *
+ * Retorna o ID da rodada substituída (ou null se não havia rodada ativa).
+ */
+export async function supersedeActiveRound(
+  season: number,
+  round: number,
+): Promise<{ supersededId: string | null }> {
+  const active = await roundExt.findFirst({
+    where: {
+      season: { year: season },
+      number: round,
+      status: { not: "SUPERSEDED" },
+    },
+    orderBy: { version: "desc" },
+    select: { id: true },
+  });
+
+  if (!active) return { supersededId: null };
+
+  await roundExt.update({
+    where: { id: active.id },
+    data: {
+      status:       "SUPERSEDED",
+      supersededAt: new Date(),
+    },
+  });
+
+  return { supersededId: active.id };
+}
+
+/**
+ * Lista versões substituídas (histórico de regenerações) de uma rodada.
+ * Útil para mostrar no /historico um indicador "v1 → v2 (regenerada por admin)".
+ */
+export async function listRoundVersions(season: number, round: number) {
+  return roundExt.findMany({
+    where: {
+      season: { year: season },
+      number: round,
+    },
+    orderBy: { version: "asc" },
+    select: {
+      id: true,
+      version: true,
+      status: true,
+      frozenAt: true,
+      deliveredAt: true,
+      supersededAt: true,
+      createdAt: true,
+    },
+  });
 }

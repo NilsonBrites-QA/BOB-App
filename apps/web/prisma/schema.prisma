@@ -52,32 +52,44 @@ model Season {
 // ─── Rodada ──────────────────────────────────────────────────────────────────
 
 model Round {
-  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  seasonId     String      @map("season_id") @db.Uuid
-  number       Int
-  status       RoundStatus @default(DRAFT)
-  firstMatchAt DateTime?   @map("first_match_at")
-  cutoffAt     DateTime?   @map("cutoff_at") // calculado: firstMatchAt - 1h
-  deliveredAt  DateTime?   @map("delivered_at")
-  notes        String?
-  createdAt    DateTime    @default(now()) @map("created_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  seasonId        String      @map("season_id") @db.Uuid
+  number          Int
+  status          RoundStatus @default(DRAFT)
+  firstMatchAt    DateTime?   @map("first_match_at")
+  cutoffAt        DateTime?   @map("cutoff_at") // calculado: firstMatchAt - 1h
+  deliveredAt     DateTime?   @map("delivered_at")
+  /// Timestamp em que a rodada foi congelada (DELIVERED). Após isso, picks/variations
+  /// não podem ser modificados sem o admin clicar "Regenerar" (que cria nova versão).
+  frozenAt        DateTime?   @map("frozen_at")
+  /// Versão incremental da rodada. Cada regeneração pelo admin cria nova versão
+  /// e marca a anterior como SUPERSEDED. Versão 1 é a entrega original.
+  version         Int         @default(1)
+  /// FK para a versão anterior desta rodada (quando foi regenerada).
+  previousRoundId String?     @map("previous_round_id") @db.Uuid
+  supersededAt    DateTime?   @map("superseded_at")
+  notes           String?
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
 
   season       Season        @relation(fields: [seasonId], references: [id])
   anchors      Anchor[]
   variations   Variation[]
   memoryEvents MemoryEvent[]
   result       RoundResult?
+  previous     Round?        @relation("RoundVersion", fields: [previousRoundId], references: [id], onDelete: SetNull)
+  successor    Round?        @relation("RoundVersion")
 
-  @@unique([seasonId, number])
+  @@index([seasonId, number])
   @@map("rounds")
 }
 
 enum RoundStatus {
-  DRAFT     // em construção
-  READY     // pronto para entrega
-  DELIVERED // entregue ao usuário
-  CLOSED    // resultado registrado
+  DRAFT      // em construção
+  READY      // pronto para entrega
+  DELIVERED  // entregue ao usuário (CONGELADA — variações imutáveis)
+  SUPERSEDED // substituída por nova versão (admin clicou "Regenerar")
+  CLOSED     // resultado registrado
 
   @@map("round_status")
 }

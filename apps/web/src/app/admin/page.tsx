@@ -6,6 +6,8 @@ import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
 import { changeUserRole, createUserWithPassword, grantUserAccess, toggleUserAccess } from "./access-actions";
 import { getSimulationProgress } from "@/lib/bob/engine/blind-simulation";
+import { RoundControlPanel } from "./round-control-panel";
+import { getCurrentRound } from "@/lib/bob/connectors";
 
 export default async function AdminPage() {
   const cookieStore = await cookies();
@@ -44,6 +46,38 @@ export default async function AdminPage() {
 
   const simProgress = await getSimulationProgress().catch(() => null);
 
+  // ── Dados do painel de controle de rodadas (Fase A1) ──────────────────────
+  const detectedSeason = new Date().getFullYear();
+  const detectedRound = await getCurrentRound().catch(() => null);
+
+  // Últimas rodadas no DB (todas versões — incluindo SUPERSEDED — para auditoria)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recentRoundsRaw = await (prisma.round as any).findMany({
+    take: 12,
+    orderBy: [{ number: "desc" }, { version: "desc" }],
+    select: {
+      number: true,
+      status: true,
+      version: true,
+      frozenAt: true,
+      season: { select: { year: true } },
+    },
+  }).catch(() => []);
+
+  const recentRounds = (recentRoundsRaw as Array<{
+    number: number;
+    status: string;
+    version: number;
+    frozenAt: Date | null;
+    season: { year: number };
+  }>).map((r) => ({
+    number: r.number,
+    season: r.season.year,
+    status: r.status,
+    version: r.version,
+    frozenAt: r.frozenAt ? r.frozenAt.toISOString() : null,
+  }));
+
   return (
     <div className="flex flex-1 flex-col gap-8 px-4 py-10 sm:px-6 lg:px-10">
       <section className="panel rounded-[28px] p-8">
@@ -76,6 +110,25 @@ export default async function AdminPage() {
             ))}
           </div>
         </div>
+      </section>
+
+      {/* ── Controle de rodadas (Fase A1: congelar / regenerar) ───────── */}
+      <section className="panel rounded-[28px] p-6">
+        <div className="mb-5">
+          <p className="kicker text-xs text-muted">Governança das rodadas</p>
+          <h2 className="mt-1 text-2xl font-semibold">Aprovar, congelar e regenerar variações</h2>
+          <p className="mt-2 text-sm leading-7 text-muted">
+            Variações são <strong>geradas uma única vez</strong> e <strong>congeladas</strong> ao serem
+            aprovadas. A partir do clique em &quot;Aprovar e entregar&quot;, toda visita a /variacoes verá
+            exatamente o mesmo conteúdo até você clicar em &quot;Regenerar&quot; (que cria nova versão e
+            preserva a antiga no histórico). Isto resolve a sensação de instabilidade.
+          </p>
+        </div>
+        <RoundControlPanel
+          detectedRound={detectedRound}
+          detectedSeason={detectedSeason}
+          recent={recentRounds}
+        />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[1fr_1fr]">

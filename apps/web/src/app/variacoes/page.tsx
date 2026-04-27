@@ -10,7 +10,8 @@ import type {
 } from "@/lib/bob/engine/variation-judge";
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
 import { loadRoundData } from "@/lib/bob/round-loader";
-import { getTeamAssetsMap } from "@/lib/bob/connectors/thesportsdb";
+import { loadDeliveredRound } from "@/lib/bob/persist";
+import { getTeamAssetsMap, findTeamAsset } from "@/lib/bob/connectors/thesportsdb";
 import { DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
 import { VariacoesClient } from "./variacoes-client";
 import type { VariationView, AnchorView, AuditView, RoundView, VariationLeg } from "./variacoes-client";
@@ -187,6 +188,169 @@ function buildDetailedJustification(v: VariationView): string {
   return lines.join("\n\n");
 }
 
+// ─── Renderização DB-first (Fase A1) ─────────────────────────────────────────
+//
+// Quando uma rodada está DELIVERED no banco, montamos a view diretamente do DB.
+// Isso garante que TODA visita à página mostre exatamente as mesmas variações,
+// até o admin clicar em "Regenerar" (o que cria nova versão e marca a antiga como
+// SUPERSEDED).
+
+// Tipos das rows do DB usadas pelo renderFromDb. Manuais porque loadDeliveredRound
+// retorna `any` enquanto o Prisma client não foi regenerado pós-migration 011.
+type DbPick = {
+  id: string;
+  fixtureId: string | null;
+  match: string;
+  result: string;
+  odd: number;
+  isAnchor: boolean;
+  position: number;
+};
+type DbVariation = {
+  id: string;
+  code: string;
+  title: string;
+  posture: string;
+  projectedOdd: number;
+  gameCount: number;
+  summary: string;
+  picks: DbPick[];
+};
+type DbAnchor = {
+  id: string;
+  team: string;
+  opponent: string;
+  score: number;
+  reasons: unknown;
+  rank: number;
+};
+type DbRound = {
+  id: string;
+  number: number;
+  status: string;
+  firstMatchAt: Date | null;
+  variations: DbVariation[];
+  anchors: DbAnchor[];
+};
+type AssetMapType = Awaited<ReturnType<typeof getTeamAssetsMap>>;
+
+function pickResultToOutcome(r: string): "Home" | "Draw" | "Away" {
+  if (r === "HOME") return "Home";
+  if (r === "AWAY") return "Away";
+  return "Draw";
+}
+
+function splitMatch(s: string): { home: string; away: string } {
+  // formato canônico: "Flamengo x Palmeiras" (também aceita "×")
+  const parts = s.split(/\s+[x×]\s+/i);
+  return { home: parts[0]?.trim() ?? "", away: parts[1]?.trim() ?? "" };
+}
+
+function renderFromDb(args: {
+  season: number;
+  dbRound: DbRound;
+  assetMap: AssetMapType;
+}) {
+  const { season, dbRound, assetMap } = args;
+
+  // Variações
+  const variations: VariationView[] = dbRound.variations.map((v) => {
+    const legs: VariationLeg[] = v.picks.map((p) => {
+      const { home, away } = splitMatch(p.match);
+      const outcome = pickResultToOutcome(p.result);
+      return {
+        matchId:    p.fixtureId ?? `db-${p.id}`,
+        homeTeam:   home,
+        awayTeam:   away,
+        pickOutcome: outcome,
+        pickLabel:  pickLabel(outcome, home, away),
+        pickOdd:    p.odd,
+        fairOdd:    p.odd, // sem snapshot — usa o próprio odd
+        cleanProb:  p.odd > 0 ? 1 / p.odd : 0,
+        isAnchor:   p.isAnchor,
+        homeBadge:  findTeamAsset(home, assetMap)?.badgeUrl ?? null,
+        awayBadge:  findTeamAsset(away, assetMap)?.badgeUrl ?? null,
+      };
+    });
+
+    const anchorPrimaryCount = legs.filter((l) => l.isAnchor).length;
+    const code = (v.code as "V1" | "V2" | "V3" | "V4" | "V5") ?? "V3";
+    const meta = variationTitle(code);
+    const combinedOdd = v.projectedOdd;
+    const probabilityMass = combinedOdd > 0 ? 1 / combinedOdd : 0;
+
+    const view: VariationView = {
+      id:                  code,
+      title:               meta.title,
+      intention:           meta.intention,
+      combinedOdd,
+      probabilityMass,
+      legCount:            legs.length,
+      anchorPrimaryCount,
+      riskLevel:           classifyRisk(combinedOdd, anchorPrimaryCount),
+      legs,
+      shortJustification:  v.summary || `${legs.length} jogos · odd ${combinedOdd.toFixed(2)}×`,
+      detailedJustification: v.summary || meta.intention,
+      alerts:              [],
+    };
+    return view;
+  });
+
+  // Âncoras
+  const anchorsView: AnchorView[] = dbRound.anchors.map((a) => {
+    const matchKeyHome = a.team;
+    const matchKeyAway = a.opponent;
+    return {
+      matchId:    `anchor-${a.id}`,
+      homeTeam:   matchKeyHome,
+      awayTeam:   matchKeyAway,
+      pick:       "Home" as const,
+      pickLabel:  matchKeyHome,
+      type:       a.score >= 50 ? "STRONG" : a.score >= 20 ? "ACCEPTABLE" : "CONDITIONAL",
+      confidence: a.score,
+      reason:     Array.isArray(a.reasons) && a.reasons.length > 0
+        ? String((a.reasons as unknown[])[0])
+        : `${matchKeyHome} oferece o melhor equilíbrio da rodada`,
+      risks:      [],
+      homeBadge:  findTeamAsset(matchKeyHome, assetMap)?.badgeUrl ?? null,
+      awayBadge:  findTeamAsset(matchKeyAway, assetMap)?.badgeUrl ?? null,
+    };
+  });
+
+  // Audit
+  const audit = buildAudit(variations);
+
+  // Round info
+  const firstMatchAt = dbRound.firstMatchAt
+    ? dbRound.firstMatchAt.toISOString()
+    : null;
+  const { label: firstMatch, cutoff } = formatFirstMatch(firstMatchAt);
+
+  const roundView: RoundView = {
+    label:         `Rodada ${dbRound.number} · ${season}`,
+    source:        "api",
+    firstMatch,
+    cutoff,
+    totalMatches:  variations[0]?.legCount ?? 0,
+    difficulty:    "balanced",
+    difficultyLabel: "Rodada congelada — variações imutáveis",
+    bobMessage:
+      `Variações entregues e congeladas (versão ${
+        (dbRound as { version?: number }).version ?? 1
+      }). Para regerar, peça ao admin.`,
+    aiProvider:    "heuristic",
+  };
+
+  return (
+    <VariacoesClient
+      round={roundView}
+      anchors={anchorsView}
+      variations={variations}
+      audit={audit}
+    />
+  );
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default async function VariacoesPage({
@@ -216,8 +380,27 @@ export default async function VariacoesPage({
       ? roundData.assets
       : await getTeamAssetsMap().catch(() => new Map());
 
-  const teamBadges: Record<string, string | null> = {};
-  assetMap.forEach((value, key) => { teamBadges[key] = value.badgeUrl; });
+  // teamBadges não é mais um lookup direto — usamos findTeamAsset() abaixo
+  // para matching robusto (acentos, sufixos, parciais).
+
+  // ── DB-FIRST: variações congeladas (Fase A1) ──────────────────────────────
+  // Se a rodada já foi DELIVERED (admin clicou "Aprovar e entregar" ou cron rodou),
+  // lemos as variações salvas — IMUTÁVEIS — em vez de recalcular a cada visita.
+  // Isto resolve a sensação de "as variações ficam mudando sozinhas".
+  const effectiveRoundForDb =
+    roundData.source === "api" && roundData.meta ? roundData.meta.round : (round ?? 0);
+  const dbRound = effectiveRoundForDb > 0
+    ? await loadDeliveredRound(season, effectiveRoundForDb).catch(() => null)
+    : null;
+
+  if (dbRound && dbRound.status === "DELIVERED" && dbRound.variations.length > 0) {
+    return renderFromDb({
+      season,
+      dbRound: dbRound as DbRound,
+      assetMap,
+    });
+  }
+  // ── Fim do branch DB-first ────────────────────────────────────────────────
 
   // Run engine
   const allScored = roundData.matches.map(scoreMatch);
@@ -281,8 +464,8 @@ export default async function VariacoesPage({
       fairOdd: leg.fairOdd,
       cleanProb: leg.cleanProb,
       isAnchor: leg.isAnchor,
-      homeBadge: teamBadges[leg.homeTeam.toLowerCase()] ?? null,
-      awayBadge: teamBadges[leg.awayTeam.toLowerCase()] ?? null,
+      homeBadge: findTeamAsset(leg.homeTeam, assetMap)?.badgeUrl ?? null,
+      awayBadge: findTeamAsset(leg.awayTeam, assetMap)?.badgeUrl ?? null,
     }));
 
     const meta = variationTitle(v.id);
@@ -326,8 +509,8 @@ export default async function VariacoesPage({
       confidence: a.score,
       reason: buildAnchorReason(a),
       risks: ((a as { calibrationAlerts?: string[] }).calibrationAlerts ?? []).slice(0, 3),
-      homeBadge: teamBadges[a.homeTeam.toLowerCase()] ?? null,
-      awayBadge: teamBadges[a.awayTeam.toLowerCase()] ?? null,
+      homeBadge: findTeamAsset(a.homeTeam, assetMap)?.badgeUrl ?? null,
+      awayBadge: findTeamAsset(a.awayTeam, assetMap)?.badgeUrl ?? null,
     };
   });
 

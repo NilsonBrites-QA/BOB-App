@@ -6,7 +6,7 @@ import { SectionCard } from "@/components/section-card";
 import { scoreMatch } from "@/lib/bob/engine/scoring";
 import { getFactorBreakdown } from "@/lib/bob/engine/factor-breakdown";
 import { DEMO_ROUND_LABEL } from "@/lib/bob/demo-matches";
-import { getTeamAssetsMap } from "@/lib/bob/connectors/thesportsdb";
+import { getTeamAssetsMap, findTeamAsset } from "@/lib/bob/connectors/thesportsdb";
 import { describeRoundFallback, loadRoundData } from "@/lib/bob/round-loader";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
@@ -67,10 +67,7 @@ export default async function EstatisticasPage({
     ? roundData.assets
     : await getTeamAssetsMap().catch(() => new Map());
 
-  const teamBadges: Record<string, string | null> = {};
-  assetMap.forEach((value, key) => {
-    teamBadges[key] = value.badgeUrl;
-  });
+  // Lookup robusto via findTeamAsset (lida com acentos, sufixos, parciais)
 
   const roundLabel = roundData.source === "api" && roundData.meta
     ? `Rodada ${roundData.meta.round} · ${roundData.meta.season}`
@@ -261,8 +258,8 @@ export default async function EstatisticasPage({
                 key={match.id}
                 match={match}
                 breakdown={breakdown}
-                homeBadgeUrl={teamBadges[match.homeTeam.toLowerCase()] ?? null}
-                awayBadgeUrl={teamBadges[match.awayTeam.toLowerCase()] ?? null}
+                homeBadgeUrl={findTeamAsset(match.homeTeam, assetMap)?.badgeUrl ?? null}
+                awayBadgeUrl={findTeamAsset(match.awayTeam, assetMap)?.badgeUrl ?? null}
                 isAnchor={match.isAnchorCandidate}
               />
             ))}

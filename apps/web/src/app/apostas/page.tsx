@@ -13,7 +13,7 @@ import { prisma } from "@/lib/db";
 import { scoreMatch } from "@/lib/bob/engine";
 import { buildCriarApostasForRound } from "@/lib/bob/engine/criar-apostas";
 import { loadRoundData } from "@/lib/bob/round-loader";
-import { getTeamAssetsMap } from "@/lib/bob/connectors/thesportsdb";
+import { getTeamAssetsMap, findTeamAsset } from "@/lib/bob/connectors/thesportsdb";
 import { DEMO_ROUND_LABEL } from "@/lib/bob/demo-matches";
 import { ApostasCriarClient, type CriarApostaView } from "./apostas-criar-client";
 
@@ -51,8 +51,7 @@ export default async function ApostasPage({
       ? roundData.assets
       : await getTeamAssetsMap().catch(() => new Map());
 
-  const teamBadges: Record<string, string | null> = {};
-  assetMap.forEach((value, key) => { teamBadges[key] = value.badgeUrl; });
+  // Lookup robusto via findTeamAsset
 
   const allScored = roundData.matches.map(scoreMatch);
   const apostasRaw = buildCriarApostasForRound(allScored);
@@ -61,8 +60,8 @@ export default async function ApostasPage({
     matchId: a.matchId,
     homeTeam: a.homeTeam,
     awayTeam: a.awayTeam,
-    homeBadge: teamBadges[a.homeTeam.toLowerCase()] ?? null,
-    awayBadge: teamBadges[a.awayTeam.toLowerCase()] ?? null,
+    homeBadge: findTeamAsset(a.homeTeam, assetMap)?.badgeUrl ?? null,
+    awayBadge: findTeamAsset(a.awayTeam, assetMap)?.badgeUrl ?? null,
     competition: a.competition,
     profile: a.profile,
     picks: a.picks,

@@ -8,7 +8,7 @@ import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/b
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
 import { detectZebras, type ZebraOpportunity } from "@/lib/bob/engine/zebra-detector";
 import { demoMatches, DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
-import { getTeamAssetsMap } from "@/lib/bob/connectors/thesportsdb";
+import { getTeamAssetsMap, findTeamAsset } from "@/lib/bob/connectors/thesportsdb";
 import { BOB_COPY } from "@/lib/bob/personality";
 import { TeamIdentity } from "@/components/team-identity";
 import { describeRoundFallback, loadRoundData } from "@/lib/bob/round-loader";
@@ -99,8 +99,7 @@ export default async function DashboardPage({
     ? roundData.assets
     : await getTeamAssetsMap().catch(() => new Map());
 
-  const teamBadges: Record<string, string | null> = {};
-  assetMap.forEach((value, key) => { teamBadges[key] = value.badgeUrl; });
+  // Lookup robusto via findTeamAsset (lida com acentos, sufixos, parciais)
 
   const filteredMatches = roundData.matches.filter((match) => !excludedIds.has(match.id));
   const allScored = filteredMatches.map(scoreMatch);
@@ -270,7 +269,7 @@ export default async function DashboardPage({
                   <div className="min-w-0 space-y-1.5">
                     <TeamIdentity
                       teamName={z.homeTeam}
-                      badgeUrl={teamBadges[z.homeTeam.toLowerCase()] ?? null}
+                      badgeUrl={findTeamAsset(z.homeTeam, assetMap)?.badgeUrl ?? null}
                       badgeSize={22}
                       className="min-w-0"
                       nameClassName="text-sm font-semibold"
@@ -280,7 +279,7 @@ export default async function DashboardPage({
                       <span className="h-px w-3 shrink-0 bg-border/80" />
                       <TeamIdentity
                         teamName={z.awayTeam}
-                        badgeUrl={teamBadges[z.awayTeam.toLowerCase()] ?? null}
+                        badgeUrl={findTeamAsset(z.awayTeam, assetMap)?.badgeUrl ?? null}
                         badgeSize={22}
                         className="min-w-0"
                         nameClassName="text-sm font-medium"

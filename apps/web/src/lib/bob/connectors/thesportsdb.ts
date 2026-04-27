@@ -463,11 +463,74 @@ export async function getTeamAssetsMap(): Promise<Map<string, TeamAssetRow>> {
   const map  = new Map<string, TeamAssetRow>();
 
   for (const row of rows) {
+    // Mantém keys lowercase (compat com código antigo)
     map.set(row.name.toLowerCase(), row);
     if (row.shortName) {
       map.set(row.shortName.toLowerCase(), row);
     }
+    // Adiciona keys normalizadas (acentos removidos, sufixos FC/SC/etc removidos)
+    const normName = normalizeTeamName(row.name);
+    if (normName) map.set(normName, row);
+    if (row.shortName) {
+      const normShort = normalizeTeamName(row.shortName);
+      if (normShort) map.set(normShort, row);
+    }
   }
 
   return map;
+}
+
+/**
+ * Normaliza nome de time pra matching robusto cross-source.
+ * Estratégia: lowercase + remove acentos + remove sufixos comuns (FC, SC, EC…).
+ *
+ * Resolve casos como:
+ *   "Atlético-MG"   → "atletico mg"
+ *   "Flamengo FC"   → "flamengo"
+ *   "Atletico Mineiro" → "atletico mineiro"
+ */
+export function normalizeTeamName(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/-/g, " ")
+    .replace(/\s+(fc|sc|ec|ca|se|cr|ac|af)\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Busca o asset (escudo, etc) de um time aplicando múltiplas estratégias.
+ * Use isso em qualquer página em vez de `assetMap.get(name.toLowerCase())`.
+ *
+ * Tenta:
+ *   1. Lookup direto (lowercase) — compat com código existente
+ *   2. Lookup normalizado (sem acentos, sem sufixos)
+ *   3. Lookup parcial: alguma chave do map é prefixo/contém o nome normalizado
+ */
+export function findTeamAsset(
+  name: string,
+  map: Map<string, TeamAssetRow>,
+): TeamAssetRow | null {
+  if (!name) return null;
+
+  const lower = name.toLowerCase();
+  const direct = map.get(lower);
+  if (direct) return direct;
+
+  const norm = normalizeTeamName(name);
+  if (!norm) return null;
+
+  const normHit = map.get(norm);
+  if (normHit) return normHit;
+
+  // Busca parcial: nome contido em alguma key, ou key contida no nome
+  for (const [key, row] of map) {
+    if (key === norm) return row;
+    if (norm.length >= 4 && (key.includes(norm) || norm.includes(key))) {
+      return row;
+    }
+  }
+  return null;
 }
