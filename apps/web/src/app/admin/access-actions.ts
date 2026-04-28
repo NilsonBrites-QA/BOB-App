@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import { sendAccessApprovedEmail } from "@/lib/email/send-access-approved";
+import { sendPasswordResetByAdminEmail } from "@/lib/email/send-password-reset-by-admin";
+import { sendPasswordRecoveryLinkEmail } from "@/lib/email/send-password-recovery-link";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { createClient } from "@/utils/supabase/server";
 import { isPrimaryAdmin } from "@/lib/auth/config";
@@ -252,6 +254,11 @@ export async function adminResetUserPassword(formData: FormData) {
     throw new Error(pwdCheck.reason);
   }
 
+  // Captura quem executou o reset (apenas o email — vai no email de notificação).
+  const cookieStore = await cookies();
+  const supabase = await createClient(cookieStore);
+  const { data: { user: caller } } = await supabase.auth.getUser();
+
   const target = await prisma.user.findUnique({
     where: { id: userId },
     select: { email: true },
@@ -299,6 +306,23 @@ export async function adminResetUserPassword(formData: FormData) {
     where: { id: userId },
     data: { mustChangePassword: true },
   });
+
+  // 3. Enviar email com a senha temporária (fire-and-forget, não bloqueia UI).
+  // Inclui o email do admin que executou o reset — útil para auditoria pelo destinatário.
+  const adminEmail = caller?.email;
+  sendPasswordResetByAdminEmail({
+    to: target.email,
+    temporaryPassword: newPassword,
+    adminEmail,
+  })
+    .then((result) => {
+      if (!result.ok && !("skipped" in result)) {
+        console.warn(`[admin] Falha ao enviar email de reset para ${target.email}: ${result.error}`);
+      }
+    })
+    .catch((err) => {
+      console.warn("[admin] Erro inesperado no email de reset:", err);
+    });
 
   revalidatePath("/admin");
 }
@@ -390,13 +414,29 @@ export async function requestPasswordReset(formData: FormData) {
 
   const supabaseAdmin = createAdminClient();
   // Link de recovery: leva pro /auth/confirm que então redireciona pra /conta/senha
-  const { error } = await supabaseAdmin.auth.admin.generateLink({
+  const { data, error } = await supabaseAdmin.auth.admin.generateLink({
     type: "recovery",
     email,
   });
 
-  if (error) {
-    console.warn(`[auth] Falha ao gerar link de recovery para ${email}:`, error.message);
+  if (error || !data?.properties?.action_link) {
+    console.warn(`[auth] Falha ao gerar link de recovery para ${email}:`, error?.message);
     // Não propaga o erro — retorna ok pra UI por motivo de segurança
+    return;
   }
+
+  // Envia o email com nosso template customizado (não usa o template padrão do Supabase).
+  // Fire-and-forget: falhas só vão pro log do servidor.
+  sendPasswordRecoveryLinkEmail({
+    to: email,
+    recoveryLink: data.properties.action_link,
+  })
+    .then((result) => {
+      if (!result.ok && !("skipped" in result)) {
+        console.warn(`[auth] Falha ao enviar email de recovery para ${email}: ${result.error}`);
+      }
+    })
+    .catch((err) => {
+      console.warn("[auth] Erro inesperado no email de recovery:", err);
+    });
 }
