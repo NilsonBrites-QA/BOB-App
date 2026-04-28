@@ -16,15 +16,22 @@ datasource db {
 // ─── Usuários (whitelist) ────────────────────────────────────────────────────
 
 model User {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email            String   @unique
-  name             String?
-  role             UserRole @default(VIEWER)
-  active           Boolean  @default(true)
-  pushSubscription String?  @map("push_subscription") // JSON serializado
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email               String    @unique
+  name                String?
+  role                UserRole  @default(VIEWER)
+  active              Boolean   @default(true)
+  pushSubscription    String?   @map("push_subscription") // JSON serializado
+  /// Quando true, força o usuário a definir nova senha no próximo login.
+  /// Setado em true por admin ao resetar a senha de outro usuário.
+  mustChangePassword  Boolean   @default(false) @map("must_change_password")
+  /// Timestamp do último login bem-sucedido (sincronizado em /auth/confirm).
+  /// Permite UI mostrar "Nunca logou" / "ativo há X dias".
+  lastSignInAt        DateTime? @map("last_sign_in_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
+  @@index([lastSignInAt(sort: Desc)])
   @@map("users")
 }
 

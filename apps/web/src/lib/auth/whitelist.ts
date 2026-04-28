@@ -1,15 +1,21 @@
 import { prisma } from "@/lib/db";
+import { isPrimaryAdmin } from "@/lib/auth/config";
 
-const PRIMARY_ADMIN_EMAIL = "nilson.brites@gmail.com";
-
+/**
+ * Garante que admins primários (definidos em lib/auth/config.ts) tenham
+ * sempre role=ADMIN e active=true. Idempotente. Chamada em /auth/confirm
+ * a cada login do usuário primário, então nunca há risco de "perder admin".
+ */
 export async function ensurePrimaryAdminAccess(email: string) {
-  if (email !== PRIMARY_ADMIN_EMAIL) {
+  if (!isPrimaryAdmin(email)) {
     return;
   }
 
+  const normalized = email.trim().toLowerCase();
+
   await prisma.$executeRaw`
     insert into users (email, role, active)
-    values (${PRIMARY_ADMIN_EMAIL}, cast('ADMIN' as user_role), true)
+    values (${normalized}, cast('ADMIN' as user_role), true)
     on conflict (email)
     do update set
       role = cast('ADMIN' as user_role),
@@ -22,7 +28,7 @@ export async function isWhitelisted(email: string) {
   const rows = await prisma.$queryRaw<Array<{ active: boolean }>>`
     select active
     from users
-    where email = ${email}
+    where email = ${email.trim().toLowerCase()}
     limit 1
   `;
 
@@ -39,7 +45,24 @@ export async function isWhitelisted(email: string) {
 export async function registerPendingAccessRequest(email: string) {
   await prisma.$executeRaw`
     insert into users (email, role, active)
-    values (${email}, cast('VIEWER' as user_role), false)
+    values (${email.trim().toLowerCase()}, cast('VIEWER' as user_role), false)
     on conflict (email) do nothing
   `;
+}
+
+/**
+ * Atualiza o timestamp de último login. Chamado em /auth/confirm após
+ * autenticação bem-sucedida. Não-bloqueante: falha silenciosa não atrapalha
+ * o login (apenas perde a métrica daquele acesso).
+ */
+export async function recordSuccessfulLogin(email: string) {
+  try {
+    await prisma.$executeRaw`
+      update users
+      set last_sign_in_at = now()
+      where email = ${email.trim().toLowerCase()}
+    `;
+  } catch (err) {
+    console.warn("[auth] Falha ao registrar last_sign_in_at:", err);
+  }
 }
