@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { ensurePrimaryAdminAccess, isWhitelisted } from "@/lib/auth/whitelist";
+import { ensurePrimaryAdminAccess, isWhitelisted, recordSuccessfulLogin } from "@/lib/auth/whitelist";
 import { createAuthRouteClient } from "@/utils/supabase/auth-route";
-
-const PRIMARY_ADMIN_EMAIL = "nilson.brites@gmail.com";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -50,6 +48,8 @@ export async function GET(request: Request) {
     await supabase.auth.signOut();
     return authClient.getResponse();
   }
+
+  await recordSuccessfulLogin(normalizedEmail);
 
   return authClient.getResponse();
 }

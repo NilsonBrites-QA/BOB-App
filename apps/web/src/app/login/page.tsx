@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 
@@ -99,9 +100,17 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-5 text-center text-xs text-muted">
-            Acesso liberado pelo administrador. Não tem conta? Solicite ao admin.
-          </p>
+          <div className="mt-5 flex flex-col items-center gap-2 text-center">
+            <Link
+              href="/auth/recover"
+              className="text-xs font-medium text-accent-strong hover:underline"
+            >
+              Esqueci minha senha
+            </Link>
+            <p className="text-xs text-muted">
+              Acesso liberado pelo administrador. Não tem conta? Solicite ao admin.
+            </p>
+          </div>
         </div>
       </div>
     </div>

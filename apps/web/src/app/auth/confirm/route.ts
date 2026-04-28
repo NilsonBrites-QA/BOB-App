@@ -2,12 +2,11 @@ import { NextResponse } from "next/server";
 import {
   ensurePrimaryAdminAccess,
   isWhitelisted,
+  recordSuccessfulLogin,
   registerPendingAccessRequest,
 } from "@/lib/auth/whitelist";
 import { createAuthRouteClient } from "@/utils/supabase/auth-route";
 import type { EmailOtpType } from "@supabase/supabase-js";
-
-const PRIMARY_ADMIN_EMAIL = "nilson.brites@gmail.com";
 
 type ResponseMode = "redirect" | "json";
 
@@ -74,6 +73,25 @@ async function finalizeAuthenticatedUser(
       ),
     );
     await supabase.auth.signOut();
+    return authClient.getResponse();
+  }
+
+  // Registra último login (não-bloqueante) e checa se senha precisa ser trocada.
+  await recordSuccessfulLogin(normalizedEmail);
+
+  // Gating: se admin marcou must_change_password, força redirect para /conta/senha.
+  // Em modo JSON (POST do login), retornamos um next especial para o client redirecionar.
+  const { prisma } = await import("@/lib/db");
+  const dbUser = await prisma.user
+    .findUnique({
+      where: { email: normalizedEmail },
+      select: { mustChangePassword: true },
+    })
+    .catch(() => null);
+
+  if (dbUser?.mustChangePassword) {
+    const forcePath = "/conta/senha?forced=1";
+    authClient.setResponse(buildSuccessResponse(origin, forcePath, mode));
     return authClient.getResponse();
   }
 

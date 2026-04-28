@@ -1,9 +1,11 @@
 const ERROR_MAP: Record<string, { titulo: string; detalhe: string }> = {
-  missing_code:    { titulo: "Link inválido ou expirado",       detalhe: "O link de acesso não é mais válido. Solicite um novo para continuar." },
-  exchange_failed: { titulo: "Falha na validação do link",      detalhe: "Não foi possível completar a autenticação. Tente novamente com um link fresco." },
-  no_email:        { titulo: "E-mail não identificado",         detalhe: "Não conseguimos ler o e-mail associado a esse acesso. Contate o administrador." },
-  not_authorized:  { titulo: "Acesso não autorizado",           detalhe: "Este e-mail não está na lista de acesso. Solicite autorização ao administrador." },
-  pending_approval: { titulo: "Solicitação de acesso enviada",   detalhe: "Seu pedido de acesso foi registrado e está aguardando aprovação do administrador. Você receberá um email assim que for liberado." },
+  missing_code:     { titulo: "Link inválido ou expirado",     detalhe: "O link de acesso não é mais válido. Solicite um novo para continuar." },
+  exchange_failed:  { titulo: "Falha na validação do link",    detalhe: "Não foi possível completar a autenticação. Tente novamente com um link fresco." },
+  no_email:         { titulo: "E-mail não identificado",       detalhe: "Não conseguimos ler o e-mail associado a esse acesso. Contate o administrador." },
+  not_authorized:   { titulo: "Acesso não autorizado",         detalhe: "Este e-mail não está na lista de acesso. Solicite autorização ao administrador." },
+  pending_approval: { titulo: "Solicitação de acesso enviada", detalhe: "Seu pedido de acesso foi registrado e está aguardando aprovação do administrador. Você receberá um email assim que for liberado." },
+  inactive:         { titulo: "Conta bloqueada",                detalhe: "Sua conta foi desativada. Contate o administrador para reativar." },
+  session_expired:  { titulo: "Sessão expirada",                detalhe: "Sua sessão expirou por inatividade. Faça login novamente para continuar." },
 };
 
 const DEFAULT = {
