@@ -1,0 +1,227 @@
+"use client";
+
+/**
+ * Componente de ações inline por linha de usuário no /admin.
+ *
+ * Encapsula:
+ *   - Botão "Resetar senha" → modal com input de senha temporária
+ *   - Botão "Deletar" → confirmação dupla
+ *
+ * Server actions são passadas como props pra preservar progressive
+ * enhancement (formulários funcionam mesmo sem JS).
+ */
+
+import { useState, useTransition } from "react";
+
+type Props = {
+  userId: string;
+  userEmail: string;
+  isPrimary: boolean;
+  resetAction: (formData: FormData) => Promise<void>;
+  deleteAction: (formData: FormData) => Promise<void>;
+};
+
+export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, deleteAction }: Props) {
+  const [showReset, setShowReset] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function generateRandomPassword() {
+    const chars = "abcdefghjkmnpqrstuvwxyz23456789";
+    let out = "";
+    for (let i = 0; i < 12; i++) {
+      out += chars[Math.floor(Math.random() * chars.length)];
+    }
+    setNewPassword(out);
+  }
+
+  async function handleReset(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const fd = new FormData();
+    fd.set("userId", userId);
+    fd.set("newPassword", newPassword);
+    startTransition(async () => {
+      try {
+        await resetAction(fd);
+        setShowReset(false);
+        setNewPassword("");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Falha ao resetar.");
+      }
+    });
+  }
+
+  async function handleDelete(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (deleteConfirm !== userEmail) {
+      setError(`Digite o email completo (${userEmail}) para confirmar.`);
+      return;
+    }
+    const fd = new FormData();
+    fd.set("userId", userId);
+    startTransition(async () => {
+      try {
+        await deleteAction(fd);
+        setShowDelete(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Falha ao deletar.");
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={() => { setShowReset(true); setError(null); }}
+        disabled={isPrimary || pending}
+        className="rounded-lg border border-amber-400 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-40"
+        title={isPrimary ? "Admin principal não pode ser resetado por outro admin" : "Resetar senha"}
+      >
+        🔑 Reset
+      </button>
+
+      <button
+        type="button"
+        onClick={() => { setShowDelete(true); setError(null); }}
+        disabled={isPrimary || pending}
+        className="rounded-lg border border-red-400 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
+        title={isPrimary ? "Admin principal não pode ser deletado" : "Deletar usuário"}
+      >
+        🗑 Deletar
+      </button>
+
+      {/* Modal RESET */}
+      {showReset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <form
+            onSubmit={handleReset}
+            className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <div>
+              <h3 className="text-lg font-semibold">Resetar senha</h3>
+              <p className="mt-1 text-xs text-muted">
+                <strong>{userEmail}</strong> será forçado a trocar essa senha no próximo login.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-muted">Senha temporária</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  required
+                  minLength={10}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Mínimo 10 chars (1 letra + 1 número)"
+                  className="flex-1 rounded-lg border border-border bg-white px-3 py-2 font-mono text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={generateRandomPassword}
+                  className="rounded-lg border border-border px-3 py-2 text-xs hover:bg-surface-strong"
+                  title="Gerar senha aleatória"
+                >
+                  ⚙ Gerar
+                </button>
+              </div>
+              <p className="text-[11px] text-muted">
+                Comunique a senha ao usuário fora do app (mensagem, telefone, etc).
+              </p>
+            </div>
+
+            {error && (
+              <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {error}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowReset(false)}
+                disabled={pending}
+                className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-surface-strong"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={pending || newPassword.length < 10}
+                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                {pending ? "Resetando…" : "Resetar senha"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal DELETE */}
+      {showDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <form
+            onSubmit={handleDelete}
+            className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <div>
+              <h3 className="text-lg font-semibold text-red-700">⚠ Deletar usuário</h3>
+              <p className="mt-1 text-xs text-muted">
+                Operação <strong>irreversível</strong>. Remove de Supabase Auth + banco do app.
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm">
+              <p className="text-red-900">Será deletado:</p>
+              <p className="mt-1 font-mono text-xs">{userEmail}</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-muted">
+                Para confirmar, digite o email completo:
+              </label>
+              <input
+                type="text"
+                required
+                value={deleteConfirm}
+                onChange={(e) => setDeleteConfirm(e.target.value)}
+                placeholder={userEmail}
+                className="w-full rounded-lg border border-border bg-white px-3 py-2 font-mono text-sm"
+              />
+            </div>
+
+            {error && (
+              <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {error}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => { setShowDelete(false); setDeleteConfirm(""); }}
+                disabled={pending}
+                className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-surface-strong"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={pending || deleteConfirm !== userEmail}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {pending ? "Deletando…" : "Deletar permanentemente"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}

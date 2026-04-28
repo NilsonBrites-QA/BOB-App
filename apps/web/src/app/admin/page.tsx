@@ -4,7 +4,17 @@ import { SectionCard } from "@/components/section-card";
 import { adminControls, featureFlags, integrations, memoryLayers } from "@/lib/bob/mock-data";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
-import { changeUserRole, createUserWithPassword, grantUserAccess, toggleUserAccess } from "./access-actions";
+import {
+  adminDeleteUser,
+  adminResetUserPassword,
+  changeUserRole,
+  createUserWithPassword,
+  grantUserAccess,
+  toggleUserAccess,
+} from "./access-actions";
+import { UserActionsRow } from "./user-actions-row";
+import { isPrimaryAdmin } from "@/lib/auth/config";
+import { PASSWORD_POLICY_HINT } from "@/lib/auth/password";
 import { getSimulationProgress } from "@/lib/bob/engine/blind-simulation";
 import { RoundControlPanel } from "./round-control-panel";
 import { getCurrentRound } from "@/lib/bob/connectors";
@@ -388,8 +398,8 @@ export default async function AdminPage() {
               name="password"
               type="text"
               required
-              minLength={8}
-              placeholder="Senha (mín. 8)"
+              minLength={10}
+              placeholder={PASSWORD_POLICY_HINT}
               className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-mono"
             />
             <select name="role" defaultValue="VIEWER" className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm">
@@ -432,15 +442,39 @@ export default async function AdminPage() {
                 <th className="px-4 py-3 font-medium">E-mail</th>
                 <th className="px-4 py-3 font-medium">Perfil</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Último login</th>
                 <th className="px-4 py-3 font-medium">Ações</th>
               </tr>
             </thead>
             <tbody>
               {users.map((u) => {
-                const isPrimary = u.email.toLowerCase() === "nilson.brites@gmail.com";
+                const isPrimary = isPrimaryAdmin(u.email);
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const userExt = u as any;
+                const lastSignIn = userExt.lastSignInAt as Date | null | undefined;
+                const mustChange = Boolean(userExt.mustChangePassword);
+                const lastSignInLabel = !u.active
+                  ? "—"
+                  : lastSignIn
+                  ? new Date(lastSignIn).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
+                  : "Nunca logou";
                 return (
                   <tr key={u.id} className="border-t border-border/70 align-top">
-                    <td className="px-4 py-3 font-medium">{u.email}</td>
+                    <td className="px-4 py-3 font-medium">
+                      <div className="flex flex-col">
+                        <span>{u.email}</span>
+                        {isPrimary && (
+                          <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent-strong">
+                            Admin principal
+                          </span>
+                        )}
+                        {mustChange && (
+                          <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
+                            ⚠ Deve trocar senha
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <form action={changeUserRole} className="flex items-center gap-2">
                         <input type="hidden" name="userId" value={u.id} />
@@ -463,27 +497,37 @@ export default async function AdminPage() {
                       </form>
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={[
-                          "rounded-full px-2 py-1 text-xs font-semibold",
-                          u.active ? "bg-accent/15 text-accent-strong" : "bg-red-100 text-red-700",
-                        ].join(" ")}
-                      >
-                        {u.active ? "Ativo" : "Bloqueado"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <form action={toggleUserAccess}>
-                        <input type="hidden" name="userId" value={u.id} />
-                        <input type="hidden" name="active" value={String(!u.active)} />
-                        <button
-                          type="submit"
-                          disabled={isPrimary}
-                          className="rounded-lg border border-border px-2 py-1 text-xs text-muted disabled:opacity-50"
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={[
+                            "rounded-full px-2 py-1 text-xs font-semibold",
+                            u.active ? "bg-accent/15 text-accent-strong" : "bg-red-100 text-red-700",
+                          ].join(" ")}
                         >
-                          {u.active ? "Bloquear" : "Liberar"}
-                        </button>
-                      </form>
+                          {u.active ? "Ativo" : "Bloqueado"}
+                        </span>
+                        <form action={toggleUserAccess}>
+                          <input type="hidden" name="userId" value={u.id} />
+                          <input type="hidden" name="active" value={String(!u.active)} />
+                          <button
+                            type="submit"
+                            disabled={isPrimary}
+                            className="rounded-lg border border-border px-2 py-1 text-[10px] text-muted disabled:opacity-50"
+                          >
+                            {u.active ? "Bloquear" : "Liberar"}
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted whitespace-nowrap">{lastSignInLabel}</td>
+                    <td className="px-4 py-3">
+                      <UserActionsRow
+                        userId={u.id}
+                        userEmail={u.email}
+                        isPrimary={isPrimary}
+                        resetAction={adminResetUserPassword}
+                        deleteAction={adminDeleteUser}
+                      />
                     </td>
                   </tr>
                 );
