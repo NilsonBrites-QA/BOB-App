@@ -220,10 +220,10 @@ export default async function ClassificacaoPage() {
           <section className="space-y-4 lg:hidden">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <p className="kicker text-xs text-muted">Leitura responsiva</p>
-                <h2 className="mt-1 text-2xl font-semibold">Tabela em cards para mobile</h2>
+                <p className="kicker text-xs text-muted text-left">Leitura responsiva</p>
+                <h2 className="mt-1 text-2xl font-semibold text-left">Tabela em cards para mobile</h2>
               </div>
-              <p className="max-w-lg text-sm leading-6 text-muted">
+              <p className="max-w-lg text-sm leading-6 text-muted text-left">
                 Em telas menores, a classificação vira cards para preservar leitura, escudos e zonas sem esmagar a informação.
               </p>
             </div>
@@ -305,10 +305,10 @@ export default async function ClassificacaoPage() {
           <section className="hidden lg:block">
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div>
-                <p className="kicker text-xs text-muted">Mesa completa</p>
-                <h2 className="mt-1 text-2xl font-semibold">Tabela detalhada para leitura ampla</h2>
+                <p className="kicker text-xs text-muted text-left">Mesa completa</p>
+                <h2 className="mt-1 text-2xl font-semibold text-left">Tabela detalhada para leitura ampla</h2>
               </div>
-              <p className="max-w-xl text-sm leading-6 text-muted">
+              <p className="max-w-xl text-sm leading-6 text-muted text-left">
                 A visão desktop preserva a profundidade da tabela e adiciona contexto competitivo sem comprometer legibilidade.
               </p>
             </div>
@@ -414,7 +414,7 @@ export default async function ClassificacaoPage() {
               <p className="kicker text-xs text-muted">Leitura competitiva</p>
               <h2 className="mt-1 text-2xl font-semibold">Pressão por título e risco de queda</h2>
             </div>
-            <p className="max-w-2xl text-sm leading-6 text-muted">
+            <p className="max-w-2xl text-sm leading-6 text-muted text-left">
               As probabilidades abaixo não são odds de mercado. Elas funcionam como uma régua editorial do BOB para medir tração esportiva a partir de pontos, rodada e thresholds históricos do Brasileirão.
             </p>
           </div>

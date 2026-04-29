@@ -230,10 +230,10 @@ export default async function DashboardPage({
       {/* ── Variações: CTA que leva à página dedicada ── */}
       <section className="bob-card p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="kicker text-xs text-muted">Portfólio BOB da rodada</p>
-            <h2 className="mt-1 text-2xl font-semibold">5 cenários Big Odds prontos</h2>
-            <p className="mt-2 text-sm leading-6 text-muted max-w-xl">
+          <div className="text-left">
+            <p className="kicker text-xs text-muted text-left">Portfólio BOB da rodada</p>
+            <h2 className="mt-1 text-2xl font-semibold text-left">5 cenários Big Odds prontos</h2>
+            <p className="mt-2 text-sm leading-6 text-muted max-w-xl text-left">
               {anchors.length} âncoras analisadas · {variations.length} variações geradas · odd combinada mínima 900x ·
               mínimo 5 jogos por cenário. O BOB escolhe e justifica cada pick.
             </p>

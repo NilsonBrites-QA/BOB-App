@@ -13,10 +13,10 @@ export default function Home() {
           <div className="flex flex-col justify-between gap-8">
             <div className="space-y-5">
               <p className="kicker text-sm text-muted">BOB · Brasileirão 2026</p>
-              <h1 className="max-w-xl text-4xl font-semibold leading-tight sm:text-5xl">
+              <h1 className="max-w-xl text-4xl font-semibold leading-tight text-left sm:text-5xl">
                 {BOB_TRAITS.missao}
               </h1>
-              <p className="max-w-lg text-base leading-8 text-muted">
+              <p className="max-w-lg text-base leading-8 text-muted text-left">
                 Motor determinístico, memória evolutiva e IAs analíticas em paralelo.
                 Cinco variações simultâneas por rodada. Cada decisão com justificativa auditável.
               </p>
@@ -39,11 +39,11 @@ export default function Home() {
 
           {/* Manifesto */}
           <div className="flex flex-col justify-center rounded-3xl bg-accent px-7 py-7 text-white">
-            <p className="kicker text-xs text-white/60">Manifesto</p>
-            <blockquote className="mt-4 text-base leading-8 text-white/90">
+            <p className="kicker text-xs text-white/60 text-left">Manifesto</p>
+            <blockquote className="mt-4 text-base leading-8 text-white/90 text-left">
               {BOB_QUANTUM.manifesto}
             </blockquote>
-            <p className="mt-5 font-mono text-xs text-white/40">— BOB</p>
+            <p className="mt-5 font-mono text-xs text-white/40 text-left">— BOB</p>
           </div>
 
         </div>
@@ -105,9 +105,9 @@ export default function Home() {
 
       {/* ── Variações ─────────────────────────────────────────────────── */}
       <section className="panel rounded-3xl p-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-4">
-          <p className="kicker text-xs text-muted">Método BOB · Cinco variações por rodada</p>
-          <p className="max-w-lg text-xs text-muted">{BOB_QUANTUM.superposicao}</p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
+          <p className="kicker text-xs text-muted text-left">Método BOB · Cinco variações por rodada</p>
+          <p className="max-w-lg text-xs text-muted text-left sm:text-right">{BOB_QUANTUM.superposicao}</p>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-5">
           {(Object.entries(BOB_VARIATIONS) as [string, { nome: string; postura: string; descricao: string }][]).map(

@@ -5,7 +5,8 @@ import { MobileNav } from "@/components/mobile-nav";
 import { signOut } from "@/app/auth/actions";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
-import { FRONTEND_VERSION } from "@/lib/frontend-meta";
+import { FRONTEND_VERSION, VERSION_STATUS } from "@/lib/frontend-meta";
+import { MigrationBanner } from "./migration-banner";
 
 type SiteShellProps = {
   children: React.ReactNode;
@@ -36,6 +37,9 @@ export async function SiteShell({ children }: SiteShellProps) {
   return (
     <div className="flex min-h-full flex-col">
       {/* Header Bet365 — verde escuro forte, fixo */}
+      {/* Banner de migração — visível em todas as páginas exceto auth */}
+      {VERSION_STATUS.migrationPhase && <MigrationBanner />}
+
       <header className="sticky top-0 z-50 border-b border-[var(--border-strong)] bg-[var(--surface-strong)]">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
           <Link href="/" className="flex items-center gap-2.5 min-w-0">
@@ -51,7 +55,7 @@ export async function SiteShell({ children }: SiteShellProps) {
             </div>
             <div className="leading-tight">
               <p className="text-base font-bold text-foreground">BOB</p>
-              <p className="text-[10px] text-muted -mt-0.5">Big Odds · {FRONTEND_VERSION}</p>
+              <p className="text-[10px] text-muted -mt-0.5">Big Odds · {FRONTEND_VERSION} · {VERSION_STATUS.shortLabel}</p>
             </div>
           </Link>
 

@@ -92,10 +92,10 @@ export default async function AdminPage() {
     <div className="flex flex-1 flex-col gap-8 px-4 py-10 sm:px-6 lg:px-10">
       <section className="panel rounded-[28px] p-8">
         <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="space-y-4">
-            <p className="kicker text-sm text-muted">Painel administrativo</p>
-            <h1 className="text-4xl font-semibold leading-tight">Controle de integrações, custos, cache profundo e governança do cérebro.</h1>
-            <p className="max-w-3xl text-base leading-8 text-muted">
+          <div className="space-y-4 text-left">
+            <p className="kicker text-sm text-muted text-left">Painel administrativo</p>
+            <h1 className="text-4xl font-semibold leading-tight text-left">Controle de integrações, custos, cache profundo e governança do cérebro.</h1>
+            <p className="max-w-3xl text-base leading-8 text-muted text-left">
               O admin é obrigatório para operar o BOB sem tocar em código:
               quotas, feature flags, janelas de coleta, versão de prompt,
               integridade da memória e custos por análise.
@@ -124,10 +124,10 @@ export default async function AdminPage() {
 
       {/* ── Controle de rodadas (Fase A1: congelar / regenerar) ───────── */}
       <section className="panel rounded-[28px] p-6">
-        <div className="mb-5">
-          <p className="kicker text-xs text-muted">Governança das rodadas</p>
-          <h2 className="mt-1 text-2xl font-semibold">Aprovar, congelar e regenerar variações</h2>
-          <p className="mt-2 text-sm leading-7 text-muted">
+        <div className="mb-5 text-left">
+          <p className="kicker text-xs text-muted text-left">Governança das rodadas</p>
+          <h2 className="mt-1 text-2xl font-semibold text-left">Aprovar, congelar e regenerar variações</h2>
+          <p className="mt-2 text-sm leading-7 text-muted text-left">
             Variações são <strong>geradas uma única vez</strong> e <strong>congeladas</strong> ao serem
             aprovadas. A partir do clique em &quot;Aprovar e entregar&quot;, toda visita a /variacoes verá
             exatamente o mesmo conteúdo até você clicar em &quot;Regenerar&quot; (que cria nova versão e
@@ -229,11 +229,11 @@ export default async function AdminPage() {
 
       {/* ── Simulação Retroativa ─────────────────────────────────── */}
       <section className="panel rounded-3xl p-6">
-        <p className="kicker text-xs text-muted">Simulação retroativa cega</p>
+        <p className="kicker text-xs text-muted text-left">Simulação retroativa cega</p>
         <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_auto]">
-          <div>
-            <h2 className="text-2xl font-semibold">Progresso da simulação</h2>
-            <p className="mt-1 text-sm leading-7 text-muted">
+          <div className="text-left">
+            <h2 className="text-2xl font-semibold text-left">Progresso da simulação</h2>
+            <p className="mt-1 text-sm leading-7 text-muted text-left">
               BOB simula rodadas passadas como se fossem atuais e mede a acurácia por variação.
               Cada execução do cron <code className="rounded bg-surface-strong px-1 text-xs">/api/cron/simulate</code> processa uma rodada.
             </p>
@@ -296,7 +296,7 @@ export default async function AdminPage() {
 
       {/* ── Relatórios ────────────────────────────────────────────── */}
       <section className="panel rounded-3xl p-6">
-        <p className="kicker text-xs text-muted">Relatórios analíticos</p>
+        <p className="kicker text-xs text-muted text-left">Relatórios analíticos</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <Link
             href="/admin/calibration"

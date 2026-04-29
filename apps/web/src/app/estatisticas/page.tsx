@@ -243,10 +243,10 @@ export default async function EstatisticasPage({
       <section className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="kicker text-xs text-muted">Raio-X completo</p>
-            <h2 className="mt-1 text-2xl font-semibold">Confrontos organizados para decisão rápida</h2>
+            <p className="kicker text-xs text-muted text-left">Raio-X completo</p>
+            <h2 className="mt-1 text-2xl font-semibold text-left">Confrontos organizados para decisão rápida</h2>
           </div>
-          <p className="max-w-xl text-sm leading-6 text-muted">
+          <p className="max-w-xl text-sm leading-6 text-muted text-left">
             Abra qualquer confronto para ver a leitura completa do BOB, o peso dos fatores e o contexto de mercado antes da entrada.
           </p>
         </div>
@@ -280,7 +280,7 @@ export default async function EstatisticasPage({
             <p className="kicker text-xs text-muted">Como ler esta tela</p>
             <h2 className="mt-1 text-2xl font-semibold">Escala de confiança do BOB</h2>
           </div>
-          <p className="max-w-2xl text-sm leading-6 text-muted">
+          <p className="max-w-2xl text-sm leading-6 text-muted text-left">
             A leitura cruza probabilidade implícita, forma recente, contexto de tabela e sinais de mercado para separar o que é base, o que é jogo trabalhável e o que deve ficar fora do centro do bilhete.
           </p>
         </div>
