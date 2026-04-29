@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import { sendAccessApprovedEmail } from "@/lib/email/send-access-approved";
 import { sendPasswordResetByAdminEmail } from "@/lib/email/send-password-reset-by-admin";
+import { sendPasswordResetLinkEmail } from "@/lib/email/send-password-reset-link";
 import { sendPasswordRecoveryLinkEmail } from "@/lib/email/send-password-recovery-link";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { createClient } from "@/utils/supabase/server";
@@ -233,10 +234,18 @@ export async function changeUserRole(formData: FormData) {
 }
 
 /**
- * Admin reseta a senha de outro usuário. Define `must_change_password=true`
- * para forçar o usuário a trocar a senha no próximo login (UX padrão de
- * reset corporativo). A senha definida aqui é TEMPORÁRIA — o admin deve
- * comunicá-la ao usuário fora-do-app (mensagem, telefone, etc).
+ * Admin reseta a senha de outro usuário. Suporta 2 modos:
+ *
+ *   - `mode="link"` (RECOMENDADO): gera link de recovery do Supabase, envia
+ *     por email. Usuário clica e define a própria senha em /conta/senha.
+ *     Senha nunca trafega em plaintext. Padrão moderno (bancos, GitHub).
+ *
+ *   - `mode="temporary"`: admin digita uma senha temporária; sistema salva
+ *     no Supabase + envia por email. Usuário entra com ela e é forçado a
+ *     trocar. Útil quando o user não tem acesso ao email no momento.
+ *
+ * Em ambos os modos, `must_change_password=true` é setado para forçar troca
+ * no próximo login bem-sucedido (em /auth/confirm).
  *
  * Bloqueado contra resetar admin principal (proteção contra lockout).
  */
@@ -244,14 +253,20 @@ export async function adminResetUserPassword(formData: FormData) {
   await assertCallerIsAdmin();
 
   const userId = String(formData.get("userId") ?? "");
+  const mode = String(formData.get("mode") ?? "link") as "link" | "temporary";
   const newPassword = String(formData.get("newPassword") ?? "");
 
   if (!userId) {
     throw new Error("Usuário inválido.");
   }
-  const pwdCheck = validateStrongPassword(newPassword);
-  if (!pwdCheck.ok) {
-    throw new Error(pwdCheck.reason);
+  if (mode !== "link" && mode !== "temporary") {
+    throw new Error("Modo de reset inválido.");
+  }
+  if (mode === "temporary") {
+    const pwdCheck = validateStrongPassword(newPassword);
+    if (!pwdCheck.ok) {
+      throw new Error(pwdCheck.reason);
+    }
   }
 
   // Captura quem executou o reset (apenas o email — vai no email de notificação).
@@ -274,55 +289,85 @@ export async function adminResetUserPassword(formData: FormData) {
     );
   }
 
-  // 1. Atualizar senha no Supabase Auth
   const supabaseAdmin = createAdminClient();
-  const { data: list } = await supabaseAdmin.auth.admin.listUsers();
-  const supabaseUser = list.users.find(
-    (u) => u.email?.toLowerCase() === target.email.toLowerCase(),
-  );
-
-  if (!supabaseUser) {
-    // Caso raro: existe no DB mas não no Supabase. Cria.
-    const { error: createErr } = await supabaseAdmin.auth.admin.createUser({
-      email: target.email,
-      password: newPassword,
-      email_confirm: true,
-    });
-    if (createErr) {
-      throw new Error(`Falha ao criar usuário no Supabase: ${createErr.message}`);
-    }
-  } else {
-    const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(
-      supabaseUser.id,
-      { password: newPassword, email_confirm: true },
-    );
-    if (updateErr) {
-      throw new Error(`Falha ao atualizar senha: ${updateErr.message}`);
-    }
-  }
-
-  // 2. Marcar must_change_password no DB para forçar troca no próximo login
-  await prisma.user.update({
-    where: { id: userId },
-    data: { mustChangePassword: true },
-  });
-
-  // 3. Enviar email com a senha temporária (fire-and-forget, não bloqueia UI).
-  // Inclui o email do admin que executou o reset — útil para auditoria pelo destinatário.
   const adminEmail = caller?.email;
-  sendPasswordResetByAdminEmail({
-    to: target.email,
-    temporaryPassword: newPassword,
-    adminEmail,
-  })
-    .then((result) => {
-      if (!result.ok && !("skipped" in result)) {
-        console.warn(`[admin] Falha ao enviar email de reset para ${target.email}: ${result.error}`);
-      }
-    })
-    .catch((err) => {
-      console.warn("[admin] Erro inesperado no email de reset:", err);
+
+  if (mode === "link") {
+    // Modo seguro: gera link de recovery e envia por email.
+    // Não toca na senha atual do Supabase — apenas marca mustChangePassword.
+    // O link de recovery do Supabase já invalida a sessão atual quando usado.
+    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+      type: "recovery",
+      email: target.email,
     });
+
+    if (error || !data?.properties?.action_link) {
+      throw new Error(`Falha ao gerar link de reset: ${error?.message ?? "link ausente"}`);
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { mustChangePassword: true },
+    });
+
+    sendPasswordResetLinkEmail({
+      to: target.email,
+      resetLink: data.properties.action_link,
+      adminEmail,
+    })
+      .then((result) => {
+        if (!result.ok && !("skipped" in result)) {
+          console.warn(`[admin] Falha ao enviar email de reset (link) para ${target.email}: ${result.error}`);
+        }
+      })
+      .catch((err) => {
+        console.warn("[admin] Erro inesperado no email de reset (link):", err);
+      });
+  } else {
+    // Modo legado: admin digita senha temporária, sistema salva e envia.
+    const { data: list } = await supabaseAdmin.auth.admin.listUsers();
+    const supabaseUser = list.users.find(
+      (u) => u.email?.toLowerCase() === target.email.toLowerCase(),
+    );
+
+    if (!supabaseUser) {
+      const { error: createErr } = await supabaseAdmin.auth.admin.createUser({
+        email: target.email,
+        password: newPassword,
+        email_confirm: true,
+      });
+      if (createErr) {
+        throw new Error(`Falha ao criar usuário no Supabase: ${createErr.message}`);
+      }
+    } else {
+      const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(
+        supabaseUser.id,
+        { password: newPassword, email_confirm: true },
+      );
+      if (updateErr) {
+        throw new Error(`Falha ao atualizar senha: ${updateErr.message}`);
+      }
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { mustChangePassword: true },
+    });
+
+    sendPasswordResetByAdminEmail({
+      to: target.email,
+      temporaryPassword: newPassword,
+      adminEmail,
+    })
+      .then((result) => {
+        if (!result.ok && !("skipped" in result)) {
+          console.warn(`[admin] Falha ao enviar email de reset (senha) para ${target.email}: ${result.error}`);
+        }
+      })
+      .catch((err) => {
+        console.warn("[admin] Erro inesperado no email de reset (senha):", err);
+      });
+  }
 
   revalidatePath("/admin");
 }

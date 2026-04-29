@@ -22,8 +22,11 @@ type Props = {
 };
 
 export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, deleteAction }: Props) {
+  type ResetMode = "link" | "temporary";
+
   const [showReset, setShowReset] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [resetMode, setResetMode] = useState<ResetMode>("link");
   const [newPassword, setNewPassword] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -43,12 +46,16 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
     setError(null);
     const fd = new FormData();
     fd.set("userId", userId);
-    fd.set("newPassword", newPassword);
+    fd.set("mode", resetMode);
+    if (resetMode === "temporary") {
+      fd.set("newPassword", newPassword);
+    }
     startTransition(async () => {
       try {
         await resetAction(fd);
         setShowReset(false);
         setNewPassword("");
+        setResetMode("link");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Falha ao resetar.");
       }
@@ -106,35 +113,99 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
             <div>
               <h3 className="text-lg font-semibold">Resetar senha</h3>
               <p className="mt-1 text-xs text-muted">
-                <strong>{userEmail}</strong> será forçado a trocar essa senha no próximo login.
+                Conta: <strong>{userEmail}</strong>
               </p>
             </div>
 
+            {/* Seletor de modo */}
             <div className="space-y-2">
-              <label className="block text-xs font-medium text-muted">Senha temporária</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  required
-                  minLength={10}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Mínimo 10 chars (1 letra + 1 número)"
-                  className="flex-1 rounded-lg border border-border bg-white px-3 py-2 font-mono text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={generateRandomPassword}
-                  className="rounded-lg border border-border px-3 py-2 text-xs hover:bg-surface-strong"
-                  title="Gerar senha aleatória"
+              <span className="block text-xs font-medium text-muted">Como resetar?</span>
+              <div className="grid grid-cols-1 gap-2">
+                <label
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-xs transition ${
+                    resetMode === "link"
+                      ? "border-emerald-500 bg-emerald-50"
+                      : "border-border hover:bg-surface-strong"
+                  }`}
                 >
-                  ⚙ Gerar
-                </button>
+                  <input
+                    type="radio"
+                    name="resetMode"
+                    value="link"
+                    checked={resetMode === "link"}
+                    onChange={() => setResetMode("link")}
+                    className="mt-0.5"
+                  />
+                  <span className="flex-1">
+                    <span className="block font-semibold text-foreground">
+                      🔗 Enviar link &quot;Criar nova senha&quot;{" "}
+                      <span className="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+                        recomendado
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block text-muted">
+                      Usuário recebe email com link, define a própria senha. Senha nunca trafega
+                      em texto. Link expira em 1h.
+                    </span>
+                  </span>
+                </label>
+
+                <label
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-xs transition ${
+                    resetMode === "temporary"
+                      ? "border-amber-500 bg-amber-50"
+                      : "border-border hover:bg-surface-strong"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="resetMode"
+                    value="temporary"
+                    checked={resetMode === "temporary"}
+                    onChange={() => setResetMode("temporary")}
+                    className="mt-0.5"
+                  />
+                  <span className="flex-1">
+                    <span className="block font-semibold text-foreground">
+                      🔑 Definir senha temporária
+                    </span>
+                    <span className="mt-0.5 block text-muted">
+                      Você digita a senha; vai por email + você pode comunicar fora do app
+                      (telefone, etc). Senha trafega visível.
+                    </span>
+                  </span>
+                </label>
               </div>
-              <p className="text-[11px] text-muted">
-                Comunique a senha ao usuário fora do app (mensagem, telefone, etc).
-              </p>
             </div>
+
+            {/* Campo de senha (apenas no modo temporary) */}
+            {resetMode === "temporary" && (
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-muted">Senha temporária</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    minLength={10}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Mínimo 10 chars (1 letra + 1 número)"
+                    className="flex-1 rounded-lg border border-border bg-white px-3 py-2 font-mono text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={generateRandomPassword}
+                    className="rounded-lg border border-border px-3 py-2 text-xs hover:bg-surface-strong"
+                    title="Gerar senha aleatória"
+                  >
+                    ⚙ Gerar
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted">
+                  O usuário será forçado a trocar essa senha no próximo login.
+                </p>
+              </div>
+            )}
 
             {error && (
               <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -153,10 +224,18 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
               </button>
               <button
                 type="submit"
-                disabled={pending || newPassword.length < 10}
-                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                disabled={pending || (resetMode === "temporary" && newPassword.length < 10)}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
+                  resetMode === "link"
+                    ? "bg-emerald-600 hover:bg-emerald-700"
+                    : "bg-amber-600 hover:bg-amber-700"
+                }`}
               >
-                {pending ? "Resetando…" : "Resetar senha"}
+                {pending
+                  ? "Resetando…"
+                  : resetMode === "link"
+                  ? "Enviar link de reset"
+                  : "Resetar senha"}
               </button>
             </div>
           </form>
