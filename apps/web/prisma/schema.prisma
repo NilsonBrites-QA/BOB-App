@@ -547,9 +547,9 @@ model TeamAsset {
   name            String
   shortName       String?  @map("short_name")
 
-  /// URL do escudo/badge principal (strTeamBadge no TheSportsDB)
+  /// URL do logo alternativo/tipográfico (strTeamLogo no TheSportsDB — frequentemente null)
   logoUrl         String?  @map("logo_url")
-  /// URL do logo alternativo (strTeamLogo)
+  /// URL do escudo/crest principal (strTeamBadge no TheSportsDB — exibido no UI)
   badgeUrl        String?  @map("badge_url")
   /// URL do banner em HD (strTeamBanner)
   bannerUrl       String?  @map("banner_url")
