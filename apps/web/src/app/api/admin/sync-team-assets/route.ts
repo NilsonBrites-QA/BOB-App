@@ -24,8 +24,8 @@ export async function POST(request: Request) {
   try {
     const result = await syncAllTeams();
 
-    revalidateTag("team-assets");
-    revalidateTag("round-data");
+    revalidateTag("team-assets", "max");
+    revalidateTag("round-data", "max");
 
     return NextResponse.json({
       ok: true,
