@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import { AccordionItem, Accordion } from "@/components/ui/accordion";
 import { Modal } from "@/components/ui/modal";
+import { TeamShield } from "@/components/team-shield";
 
 // ─── Types compartilhados com o servidor ────────────────────────────────────
 
@@ -105,29 +105,6 @@ function AnchorTypeBadge({ type }: { type: AnchorView["type"] }) {
     <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${c.class}`}>
       {c.label}
     </span>
-  );
-}
-
-function TeamCrest({ url, name, size = 24 }: { url: string | null; name: string; size?: number }) {
-  if (url) {
-    return (
-      <Image
-        src={url}
-        alt={name}
-        width={size}
-        height={size}
-        className="rounded-sm object-contain"
-        unoptimized
-      />
-    );
-  }
-  return (
-    <div
-      className="flex items-center justify-center rounded-sm bg-[var(--surface-elevated)] text-[10px] font-bold text-muted"
-      style={{ width: size, height: size }}
-    >
-      {name.substring(0, 2).toUpperCase()}
-    </div>
   );
 }
 
@@ -275,11 +252,11 @@ export function VariacoesClient({ round, anchors, variations, audit }: Props) {
                   <span className="text-[10px] font-mono text-muted w-5">{i + 1}</span>
 
                   <div className="flex flex-1 items-center gap-2 min-w-0">
-                    <TeamCrest url={leg.homeBadge} name={leg.homeTeam} />
+                    <TeamShield teamName={leg.homeTeam} src={leg.homeBadge} size="sm" />
                     <span className="text-xs font-medium truncate">{leg.homeTeam}</span>
                     <span className="text-[10px] text-muted">×</span>
                     <span className="text-xs font-medium truncate">{leg.awayTeam}</span>
-                    <TeamCrest url={leg.awayBadge} name={leg.awayTeam} />
+                    <TeamShield teamName={leg.awayTeam} src={leg.awayBadge} size="sm" />
                   </div>
 
                   {leg.isAnchor && (
@@ -346,11 +323,11 @@ export function VariacoesClient({ round, anchors, variations, audit }: Props) {
               key={a.matchId}
               title={
                 <div className="flex flex-1 flex-wrap items-center gap-2">
-                  <TeamCrest url={a.homeBadge} name={a.homeTeam} size={18} />
+                  <TeamShield teamName={a.homeTeam} src={a.homeBadge} size={18} />
                   <span className="text-sm font-medium truncate">{a.homeTeam}</span>
                   <span className="text-[10px] text-muted">×</span>
                   <span className="text-sm font-medium truncate">{a.awayTeam}</span>
-                  <TeamCrest url={a.awayBadge} name={a.awayTeam} size={18} />
+                  <TeamShield teamName={a.awayTeam} src={a.awayBadge} size={18} />
                 </div>
               }
               subtitle={`${a.pickLabel} · confiança ${a.confidence}/100`}
@@ -441,11 +418,11 @@ export function VariacoesClient({ round, anchors, variations, audit }: Props) {
                 <tr key={match.matchId} className="border-b border-[var(--border)] hover:bg-[var(--surface-elevated)]">
                   <td className="px-2 py-2">
                     <div className="flex items-center gap-1.5">
-                      <TeamCrest url={match.homeBadge} name={match.homeTeam} size={16} />
+                      <TeamShield teamName={match.homeTeam} src={match.homeBadge} size={16} />
                       <span className="font-medium">{match.homeTeam}</span>
                       <span className="text-muted">×</span>
                       <span className="font-medium">{match.awayTeam}</span>
-                      <TeamCrest url={match.awayBadge} name={match.awayTeam} size={16} />
+                      <TeamShield teamName={match.awayTeam} src={match.awayBadge} size={16} />
                     </div>
                   </td>
                   {variations.map((v) => {

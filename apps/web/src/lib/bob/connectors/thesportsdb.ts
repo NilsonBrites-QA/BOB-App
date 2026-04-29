@@ -198,8 +198,10 @@ async function persistTeamAsset(t: TSDBTeam): Promise<TeamAssetRow> {
       tsdbId:      t.idTeam,
       name:        t.strTeam,
       shortName:   t.strTeamShort  ?? null,
-      logoUrl:     t.strTeamBadge  ?? null,
-      badgeUrl:    t.strTeamLogo   ?? null,
+      // strTeamBadge = escudo redondo principal (use no UI = badgeUrl)
+      // strTeamLogo  = logotipo tipográfico (frequentemente null) = logoUrl
+      badgeUrl:    t.strTeamBadge  ?? null,
+      logoUrl:     t.strTeamLogo   ?? null,
       bannerUrl:   t.strTeamBanner ?? null,
       stadiumName: t.strStadium    ?? null,
       stadiumThumb: t.strStadiumThumb ?? null,
@@ -211,8 +213,8 @@ async function persistTeamAsset(t: TSDBTeam): Promise<TeamAssetRow> {
       // conector de correlação deve preencher esses campos.
       name:        t.strTeam,
       shortName:   t.strTeamShort  ?? null,
-      logoUrl:     t.strTeamBadge  ?? null,
-      badgeUrl:    t.strTeamLogo   ?? null,
+      badgeUrl:    t.strTeamBadge  ?? null,
+      logoUrl:     t.strTeamLogo   ?? null,
       bannerUrl:   t.strTeamBanner ?? null,
       stadiumName: t.strStadium    ?? null,
       stadiumThumb: t.strStadiumThumb ?? null,

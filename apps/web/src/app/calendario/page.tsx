@@ -9,6 +9,7 @@ import {
 } from "@/lib/bob/connectors/football-data";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
+import { TeamShield } from "@/components/team-shield";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -259,16 +260,11 @@ export default async function CalendarioPage({
                         <span className="block text-sm font-medium sm:hidden text-right">
                           {match.homeTeam.tla || match.homeTeam.shortName}
                         </span>
-                        {match.homeTeam.crest && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={match.homeTeam.crest}
-                            alt={match.homeTeam.shortName}
-                            width={24}
-                            height={24}
-                            className="h-6 w-6 object-contain"
-                          />
-                        )}
+                        <TeamShield
+                          teamName={match.homeTeam.shortName || match.homeTeam.name}
+                          src={match.homeTeam.crest}
+                          size={24}
+                        />
                       </div>
 
                       {/* Placar / Horário */}
@@ -278,16 +274,11 @@ export default async function CalendarioPage({
 
                       {/* Time visitante */}
                       <div className="flex flex-1 items-center gap-2">
-                        {match.awayTeam.crest && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={match.awayTeam.crest}
-                            alt={match.awayTeam.shortName}
-                            width={24}
-                            height={24}
-                            className="h-6 w-6 object-contain"
-                          />
-                        )}
+                        <TeamShield
+                          teamName={match.awayTeam.shortName || match.awayTeam.name}
+                          src={match.awayTeam.crest}
+                          size={24}
+                        />
                         <span className="hidden text-sm font-medium sm:block">
                           {match.awayTeam.shortName || match.awayTeam.name}
                         </span>

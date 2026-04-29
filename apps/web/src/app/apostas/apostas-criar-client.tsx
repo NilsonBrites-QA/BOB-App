@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
 import { AccordionItem, Accordion } from "@/components/ui/accordion";
 import { Modal } from "@/components/ui/modal";
+import { TeamShield } from "@/components/team-shield";
 
 export type CriarApostaPickView = {
   market: string;
@@ -55,17 +55,6 @@ const PROFILE_META: Record<CriarApostaView["profile"], { label: string; emoji: s
   },
 };
 
-function TeamCrest({ url, name, size = 24 }: { url: string | null; name: string; size?: number }) {
-  if (url) {
-    return <Image src={url} alt={name} width={size} height={size} className="rounded-sm object-contain" unoptimized />;
-  }
-  return (
-    <div className="flex items-center justify-center rounded-sm bg-[var(--surface-elevated)] text-[10px] font-bold text-muted" style={{ width: size, height: size }}>
-      {name.substring(0, 2).toUpperCase()}
-    </div>
-  );
-}
-
 function RiskBadge({ level }: { level: CriarApostaView["riskLabel"] }) {
   const map = {
     "Baixo": "bob-risk-low",
@@ -92,11 +81,11 @@ function ApostaCard({ aposta, onCopy, copied, onOpenDetail }: {
       {/* Header */}
       <div className="bob-section-header">
         <div className="flex items-center gap-2 min-w-0">
-          <TeamCrest url={aposta.homeBadge} name={aposta.homeTeam} size={20} />
+          <TeamShield teamName={aposta.homeTeam} src={aposta.homeBadge} size={20} />
           <span className="font-semibold text-sm truncate">{aposta.homeTeam}</span>
           <span className="text-[10px] text-muted">×</span>
           <span className="font-semibold text-sm truncate">{aposta.awayTeam}</span>
-          <TeamCrest url={aposta.awayBadge} name={aposta.awayTeam} size={20} />
+          <TeamShield teamName={aposta.awayTeam} src={aposta.awayBadge} size={20} />
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <RiskBadge level={aposta.riskLabel} />
