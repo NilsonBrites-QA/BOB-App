@@ -437,16 +437,26 @@ export function scoreMatch(input: MatchInput): ScoredMatch {
 
   if (isClassico) reasons.push("Clássico regional — volatilidade elevada, score limitado");
 
-  // Resultado sugerido
-  const homeProb = oddToImpliedProb(input.homeOdd);
-  const drawProb = oddToImpliedProb(input.drawOdd);
-  const awayProb = oddToImpliedProb(input.awayOdd);
-  const suggestedResult: "1" | "X" | "2" =
-    homeProb >= drawProb && homeProb >= awayProb
-      ? "1"
-      : drawProb >= awayProb
-        ? "X"
-        : "2";
+  // ── Resultado sugerido com de-vig ────────────────────────────────────────
+  // Remove a margem da casa para obter probabilidades reais antes de escolher o pick.
+  // Ex: Palmeiras 1.27 | X 4.10 | Santos 7.00
+  //   Brutos: 0.787+0.244+0.143 = 1.174 → De-vig: Palmeiras 67%, X 21%, Santos 12%
+  //   → Pick correto: Palmeiras vencer (1), não Empate
+  const rawHomeProb = oddToImpliedProb(input.homeOdd);
+  const rawDrawProb = oddToImpliedProb(input.drawOdd);
+  const rawAwayProb = oddToImpliedProb(input.awayOdd);
+  const overround = rawHomeProb + rawDrawProb + rawAwayProb;
+  const norm = overround > 0 ? overround : 1;
+  const pHome = rawHomeProb / norm;
+  const pDraw = rawDrawProb / norm;
+  const pAway = rawAwayProb / norm;
+
+  let suggestedResult: "1" | "X" | "2" =
+    pHome >= pDraw && pHome >= pAway ? "1" : pDraw >= pAway ? "X" : "2";
+
+  // Ancoragem de mercado: favorito claro (odd ≤ 1.70) → mercado decide sem exceção
+  if (input.homeOdd > 1 && input.homeOdd <= 1.70) suggestedResult = "1";
+  if (input.awayOdd > 1 && input.awayOdd <= 1.70) suggestedResult = "2";
 
   // RN10: Value Edge — score do algoritmo deve superar a probabilidade implícita do mercado
   const algoProb = score / 100;

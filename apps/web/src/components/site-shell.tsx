@@ -43,16 +43,14 @@ export async function SiteShell({ children }: SiteShellProps) {
       <header className="sticky top-0 z-50 border-b border-[var(--border-strong)] bg-[var(--surface-strong)]">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
           <Link href="/" className="flex items-center gap-2.5 min-w-0">
-            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-[var(--accent)]">
-              <Image
-                src="/bob-logo.png"
-                alt="BOB"
-                width={28}
-                height={28}
-                priority
-                className="h-7 w-7 object-contain"
-              />
-            </div>
+            <Image
+              src="/bob-logo.png"
+              alt="BOB"
+              width={40}
+              height={40}
+              priority
+              className="h-10 w-10 object-contain"
+            />
             <div className="leading-tight">
               <p className="text-base font-bold text-foreground">BOB</p>
               <p className="text-[10px] text-muted -mt-0.5">Big Odds · {FRONTEND_VERSION} · {VERSION_STATUS.shortLabel}</p>
