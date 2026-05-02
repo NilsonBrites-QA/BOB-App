@@ -2,7 +2,16 @@ import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import { getSupabaseEnv } from "@/utils/supabase/config";
 
-const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth/confirm", "/auth/error"];
+// Rotas que não exigem sessão Supabase.
+// As rotas de API (/api/*) têm autenticação própria (CRON_SECRET ou são públicas).
+// Adicioná-las aqui evita o redirect 307 → /login quando o cron-job.org as chama.
+const PUBLIC_PATHS = [
+  "/login",
+  "/auth/callback",
+  "/auth/confirm",
+  "/auth/error",
+  "/api/",           // todas as rotas de API — autenticação gerenciada por cada route handler
+];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
