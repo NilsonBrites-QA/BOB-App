@@ -54,6 +54,13 @@ export async function GET(request: Request) {
     const season = await resolveActiveSeasonYear();
     info(`Temporada ativa: ${season}`);
 
+    // Garantir que a Season exista no banco (upsert seguro)
+    await prisma.season.upsert({
+      where: { year: season },
+      create: { year: season, active: true },
+      update: {},
+    });
+
     const { searchParams } = new URL(request.url);
     const roundParam = searchParams.get("round");
 
@@ -63,7 +70,7 @@ export async function GET(request: Request) {
       targetRound = parseInt(roundParam, 10);
       info(`Rodada explícita: ${targetRound}`);
     } else {
-      // Buscar a próxima rodada READY ou SCHEDULED no banco
+      // Buscar a próxima rodada READY ou DRAFT no banco
       const nextRound = await prisma.round.findFirst({
         where: {
           season: { year: season },
@@ -71,21 +78,29 @@ export async function GET(request: Request) {
         },
         orderBy: { number: "asc" },
         select:  { number: true },
-      });
+      }).catch(() => null);
 
       if (nextRound) {
         targetRound = nextRound.number;
         info(`Rodada detectada do banco: ${targetRound}`);
       } else {
-        // Última rodada + 1 (primeira rodada do campeonato se nenhuma existe)
-        const lastRound = await prisma.round.findFirst({
-          where:   { season: { year: season } },
-          orderBy: { number: "desc" },
-          select:  { number: true },
-        });
-        targetRound = (lastRound?.number ?? 0) + 1;
-        if (targetRound > 38) targetRound = 1;
-        info(`Rodada inferida: ${targetRound}`);
+        // Fallback: perguntar à API qual é a rodada atual
+        const { getCurrentRound } = await import("@/lib/bob/connectors");
+        const apiRound = await getCurrentRound().catch(() => null);
+        if (apiRound) {
+          targetRound = apiRound;
+          info(`Rodada detectada via API: ${targetRound}`);
+        } else {
+          // Último recurso: última rodada + 1
+          const lastRound = await prisma.round.findFirst({
+            where:   { season: { year: season } },
+            orderBy: { number: "desc" },
+            select:  { number: true },
+          }).catch(() => null);
+          targetRound = (lastRound?.number ?? 0) + 1;
+          if (targetRound > 38) targetRound = 1;
+          info(`Rodada inferida: ${targetRound}`);
+        }
       }
     }
 
