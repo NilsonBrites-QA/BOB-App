@@ -87,7 +87,7 @@ const fetchAndSerialize = unstable_cache(
       };
     }
   },
-  ["round-data-v1"],
+  ["round-data-v3"],
   { revalidate: 300, tags: ["round-data"] },
 );
 
