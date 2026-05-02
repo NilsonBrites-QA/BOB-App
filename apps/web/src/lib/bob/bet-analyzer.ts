@@ -118,6 +118,10 @@ function buildPrompt(
       ? odds.map((o) => `  ${o.market} | ${o.option} | ${o.optionLabel}: ${o.odd.toFixed(2)}`).join("\n")
       : "  Apenas use mercado RESULT_1X2 com odds estimadas: HOME 2.00, DRAW 3.20, AWAY 3.50";
 
+  // Contar mercados disponíveis para instruir o Claude
+  const marketTypes = new Set(odds.map(o => o.market));
+  const hasMultipleMarkets = marketTypes.size > 1;
+
   return `Você é BOB, sistema especializado em análise estatística de apostas do Brasileirão.
 
 JOGO: ${home} x ${away}
@@ -126,32 +130,40 @@ COMPETIÇÃO: ${competition}${round != null ? `, Rodada ${round}` : ""}
 ODDS DISPONÍVEIS (use EXATAMENTE estes valores — market, option, optionLabel, odd):
 ${oddsBlock}
 
-Gere sugestões de aposta para 4 perfis. USE SOMENTE as odds listadas acima.
+Mercados disponíveis: ${[...marketTypes].join(", ")} (${marketTypes.size} tipos)
 
-PERFIS:
-- CONSERVADOR: 1–2 seleções de baixo risco. Odds < 1.80. Alta certeza. Se não houver opção segura, selections=[].
-- MODERADO: 2–3 seleções com equilíbrio risco/retorno. Odds até 2.50.
-- AGRESSIVO: 3–5 seleções de maior risco/retorno. Aceita odds até 5.00. Inclua mercados variados se disponíveis.
-- MATEMÁTICO: Apenas value bets onde probabilidade real estimada supera a implícita da odd em ≥5%. Explique o edge numérico na justification.
+Gere sugestões de aposta para 4 perfis. REGRA CRÍTICA: cada perfil DEVE ter NO MÍNIMO 2 seleções de MERCADOS DIFERENTES.
+${hasMultipleMarkets ? "Combine mercados diferentes (ex: RESULT_1X2 + BTTS + OVER_UNDER) para criar apostas ricas." : "Se só houver RESULT_1X2, combine resultado com análise de cenário."}
+
+PERFIS (cada um com MÍNIMO 2 seleções):
+- CONSERVADOR: 2-3 seleções de baixo risco, combinando mercados seguros. Odds individuais < 1.90. Odd combinada entre 2.00 e 4.00. Ex: Vitória casa @1.50 + Menos de 3.5 gols @1.40 = 2.10x.
+- MODERADO: 2-4 seleções equilibradas. Odds individuais até 2.50. Odd combinada entre 3.00 e 8.00. Misture mercados (1x2 + BTTS + Over/Under).
+- AGRESSIVO: 3-5 seleções de alto retorno. Odds individuais até 5.00. Odd combinada entre 8.00 e 30.00. Use mercados exóticos se disponíveis.
+- MATEMÁTICO: 2-3 value bets com edge ≥5%. Foque em mercados onde a probabilidade calculada supera a implícita. Justifique o edge numérico.
 
 REGRAS:
 1. Use SOMENTE as odds listadas. Copie market/option/optionLabel/odd EXATAMENTE como listados.
-2. combinedOdd = produto das odds das seleções (arredonde 2 casas).
-3. overallConfidence entre 0.0 e 1.0.
-4. justification: 1 frase objetiva por seleção.
-5. summary: 1–2 frases descrevendo a estratégia do perfil para este jogo.
+2. MÍNIMO 2 seleções por perfil — NUNCA retorne apenas 1 seleção.
+3. combinedOdd = produto das odds das seleções (arredonde 2 casas).
+4. overallConfidence entre 0.0 e 1.0.
+5. justification: 1 frase analítica por seleção (mencione dados, tendências, contexto).
+6. summary: 1–2 frases descrevendo a estratégia completa do perfil.
+7. Priorize DIVERSIDADE de mercados — não repita o mesmo mercado em 2 seleções do mesmo perfil.
 
 Responda SOMENTE com JSON válido (sem markdown, sem texto antes ou depois):
 {
   "conservador": {
-    "selections": [{"market":"RESULT_1X2","option":"HOME","optionLabel":"Vitória ${home}","odd":1.65,"confidence":0.78,"justification":"..."}],
-    "combinedOdd": 1.65,
-    "overallConfidence": 0.78,
+    "selections": [
+      {"market":"RESULT_1X2","option":"HOME","optionLabel":"Vitória ${home}","odd":1.65,"confidence":0.78,"justification":"..."},
+      {"market":"OVER_UNDER","option":"under_2.5","optionLabel":"Menos de 2.5 gols","odd":1.45,"confidence":0.72,"justification":"..."}
+    ],
+    "combinedOdd": 2.39,
+    "overallConfidence": 0.75,
     "summary": "..."
   },
-  "moderado": {"selections":[...],"combinedOdd":...,"overallConfidence":...,"summary":"..."},
-  "agressivo": {"selections":[...],"combinedOdd":...,"overallConfidence":...,"summary":"..."},
-  "matematico": {"selections":[...],"combinedOdd":...,"overallConfidence":...,"summary":"..."}
+  "moderado": {"selections":[{...},{...}],"combinedOdd":...,"overallConfidence":...,"summary":"..."},
+  "agressivo": {"selections":[{...},{...},{...}],"combinedOdd":...,"overallConfidence":...,"summary":"..."},
+  "matematico": {"selections":[{...},{...}],"combinedOdd":...,"overallConfidence":...,"summary":"..."}
 }`;
 }
 
@@ -167,80 +179,155 @@ function fallbackProfile(
 ): ProfileResult {
   const get = (mkt: string, opt: string) =>
     odds.find((o) => o.market === mkt && o.option === opt);
+  const getByMarket = (mkt: string) =>
+    odds.filter((o) => o.market === mkt).sort((a, b) => a.odd - b.odd);
 
   const homeRow  = get("RESULT_1X2", "HOME");
   const drawRow  = get("RESULT_1X2", "DRAW");
   const awayRow  = get("RESULT_1X2", "AWAY");
+  const bttsOpts = getByMarket("BTTS");
+  const ouOpts   = getByMarket("OVER_UNDER");
+  const dcOpts   = getByMarket("DOUBLE_CHANCE");
 
-  // Ordena por menor odd (mais provável)
-  const sorted = [homeRow, drawRow, awayRow]
+  // Ordena resultado 1x2 por menor odd (mais provável)
+  const sorted1x2 = [homeRow, drawRow, awayRow]
     .filter((x): x is OddRow => x != null)
     .sort((a, b) => a.odd - b.odd);
 
-  const fav = sorted[0];
-  const sec = sorted[1];
+  const fav = sorted1x2[0];
+  const sec = sorted1x2[1];
+  const third = sorted1x2[2];
+
+  // Encontrar melhores opções de mercados secundários
+  const bestBtts  = bttsOpts[0];  // menor odd BTTS
+  const bestOU    = ouOpts[0];    // menor odd Over/Under
+  const bestDC    = dcOpts[0];    // menor odd Double Chance
 
   if (!fav) {
     return {
-      selections:        [],
-      combinedOdd:       1,
-      overallConfidence: 0,
-      summary:           "Odds não disponíveis para análise.",
+      selections: [], combinedOdd: 1, overallConfidence: 0,
+      summary: "Odds não disponíveis para análise.",
     };
   }
 
-  const favConf  = impliedProb(fav.odd) * 0.92; // 8% vigorish adjustment
+  const favConf = impliedProb(fav.odd) * 0.92;
+
+  // Helper: converte OddRow em SuggestionItem
+  const toSel = (o: OddRow, conf: number, just: string): SuggestionItem => ({
+    market: o.market as BetMarket, option: o.option, optionLabel: o.optionLabel,
+    odd: o.odd, confidence: Math.max(0.1, Math.min(1, conf)), justification: just,
+  });
 
   if (profile === "CONSERVADOR") {
-    if (fav.odd >= 1.80) {
-      return { selections: [], combinedOdd: 1, overallConfidence: 0, summary: "Sem opção conservadora segura neste jogo." };
+    const sels: SuggestionItem[] = [];
+    // 1ª seleção: favorito ou double chance
+    if (fav.odd < 1.90) {
+      sels.push(toSel(fav, favConf, `Favorito com ${Math.round(impliedProb(fav.odd) * 100)}% de probabilidade implícita.`));
+    } else if (bestDC && bestDC.odd < 1.50) {
+      sels.push(toSel(bestDC, impliedProb(bestDC.odd) * 0.95, `Dupla chance segura: ${bestDC.optionLabel}.`));
+    } else {
+      sels.push(toSel(fav, favConf * 0.85, `Favorito relativo do confronto.`));
     }
+    // 2ª seleção: mercado secundário seguro
+    if (bestOU && bestOU.odd < 1.70) {
+      sels.push(toSel(bestOU, impliedProb(bestOU.odd) * 0.90, `Linha de gols conservadora: ${bestOU.optionLabel}.`));
+    } else if (bestBtts && bestBtts.odd < 1.70) {
+      sels.push(toSel(bestBtts, impliedProb(bestBtts.odd) * 0.90, `Ambas marcam — padrão estatístico do confronto.`));
+    } else if (sec && sec.odd < 2.00) {
+      sels.push(toSel(sec, impliedProb(sec.odd) * 0.88, `Cenário alternativo com boa probabilidade.`));
+    }
+    // Garantir mínimo 2
+    if (sels.length < 2 && sec) {
+      sels.push(toSel(sec, impliedProb(sec.odd) * 0.80, `Opção complementar para composição da aposta.`));
+    }
+    const combined = sels.reduce((a, s) => a * s.odd, 1);
     return {
-      selections:        [{ ...fav as SuggestionItem, market: fav.market as BetMarket, confidence: favConf, justification: `Favorito com probabilidade implícita de ${Math.round(impliedProb(fav.odd) * 100)}%.` }],
-      combinedOdd:       fav.odd,
-      overallConfidence: favConf,
-      summary:           `Aposta simples no favorito ${fav.optionLabel}. Risco reduzido.`,
+      selections: sels, combinedOdd: Math.round(combined * 100) / 100,
+      overallConfidence: sels.reduce((a, s) => a + s.confidence, 0) / sels.length,
+      summary: `Combinação conservadora: ${sels.map(s => s.optionLabel).join(" + ")}. Odds ${combined.toFixed(2)}x com foco em segurança.`,
     };
   }
 
   if (profile === "MODERADO") {
     const sels: SuggestionItem[] = [
-      { ...fav as SuggestionItem, market: fav.market as BetMarket, confidence: favConf, justification: `Principal favorito do confronto.` },
+      toSel(fav, favConf, `Favorito do confronto com probabilidade sólida.`),
     ];
-    if (sec && sec.odd <= 2.50) {
-      sels.push({ ...sec as SuggestionItem, market: sec.market as BetMarket, confidence: impliedProb(sec.odd) * 0.9, justification: `Segunda opção com odd atraente.` });
+    // Adicionar mercado secundário
+    if (bestBtts) sels.push(toSel(bestBtts, impliedProb(bestBtts.odd) * 0.88, `Ambas marcam — tendência do campeonato.`));
+    else if (bestOU) sels.push(toSel(bestOU, impliedProb(bestOU.odd) * 0.88, `Linha de gols alinhada com média da competição.`));
+    // Terceira seleção se houver
+    if (sels.length < 3 && bestOU && !sels.some(s => s.market === bestOU.market)) {
+      sels.push(toSel(bestOU, impliedProb(bestOU.odd) * 0.85, `Over/Under complementar ao cenário de jogo.`));
+    }
+    // Garantir mínimo 2
+    if (sels.length < 2 && sec) {
+      sels.push(toSel(sec, impliedProb(sec.odd) * 0.80, `Resultado alternativo para compor a aposta.`));
     }
     const combined = sels.reduce((a, s) => a * s.odd, 1);
-    return { selections: sels, combinedOdd: Math.round(combined * 100) / 100, overallConfidence: favConf * 0.85, summary: `Estratégia balanceada combinando ${sels.length} seleção(ões).` };
+    return {
+      selections: sels, combinedOdd: Math.round(combined * 100) / 100,
+      overallConfidence: sels.reduce((a, s) => a + s.confidence, 0) / sels.length * 0.90,
+      summary: `Equilíbrio entre ${sels.length} mercados: ${sels.map(s => s.optionLabel).join(" + ")}. Odd combinada ${combined.toFixed(2)}x.`,
+    };
   }
 
   if (profile === "AGRESSIVO") {
-    const sels: SuggestionItem[] = sorted.slice(0, Math.min(3, sorted.length)).map((o) => ({
-      ...o as SuggestionItem,
-      market: o.market as BetMarket,
-      confidence: impliedProb(o.odd) * 0.85,
-      justification: `Seleção agressiva para maximizar retorno.`,
-    }));
+    const sels: SuggestionItem[] = [];
+    // Resultado menos óbvio (empate ou azarão)
+    if (sec) sels.push(toSel(sec, impliedProb(sec.odd) * 0.80, `Resultado de valor: ${sec.optionLabel} paga ${sec.odd.toFixed(2)}x.`));
+    else if (fav) sels.push(toSel(fav, favConf, `Base do bilhete agressivo.`));
+    // BTTS e Over/Under com odds mais altas
+    const aggressiveBtts = bttsOpts.find(o => o.odd >= 1.50);
+    const aggressiveOU = ouOpts.find(o => o.odd >= 1.60);
+    if (aggressiveBtts) sels.push(toSel(aggressiveBtts, impliedProb(aggressiveBtts.odd) * 0.80, `Ambas marcam com odd de valor.`));
+    if (aggressiveOU) sels.push(toSel(aggressiveOU, impliedProb(aggressiveOU.odd) * 0.80, `Linha de gols agressiva.`));
+    // Adicionar azarão se disponível
+    if (third && third.odd <= 5.00) {
+      sels.push(toSel(third, impliedProb(third.odd) * 0.75, `Zebra controlada: ${third.optionLabel} @${third.odd.toFixed(2)}.`));
+    }
+    // Garantir mínimo 3
+    while (sels.length < 3) {
+      const unused = odds.filter(o => !sels.some(s => s.option === o.option && s.market === o.market)).sort((a, b) => b.odd - a.odd);
+      if (unused.length === 0) break;
+      const pick = unused[0]!;
+      sels.push(toSel(pick, impliedProb(pick.odd) * 0.70, `Seleção adicional para maximizar retorno.`));
+    }
     const combined = sels.reduce((a, s) => a * s.odd, 1);
-    return { selections: sels, combinedOdd: Math.round(combined * 100) / 100, overallConfidence: Math.max(0.2, favConf * 0.6), summary: `Perfil agressivo com ${sels.length} seleções para alto retorno.` };
+    return {
+      selections: sels, combinedOdd: Math.round(combined * 100) / 100,
+      overallConfidence: Math.max(0.15, sels.reduce((a, s) => a + s.confidence, 0) / sels.length * 0.75),
+      summary: `Aposta agressiva com ${sels.length} seleções: ${sels.map(s => s.optionLabel).join(" + ")}. Odd combinada ${combined.toFixed(2)}x — alto risco, alto retorno.`,
+    };
   }
 
-  // MATEMATICO — análise de valor
-  const valueItems = sorted.filter((o) => {
+  // MATEMATICO — value bets em múltiplos mercados
+  const allOddsSorted = [...odds].sort((a, b) => a.odd - b.odd);
+  const valueSels: SuggestionItem[] = [];
+  for (const o of allOddsSorted) {
     const implied  = 1 / o.odd;
-    const estimated = implied * 1.12; // assume edge de 12% no mercado
-    return estimated > implied + 0.05;
-  });
-  if (valueItems.length === 0) {
-    return { selections: [], combinedOdd: 1, overallConfidence: 0, summary: `Nenhum value bet identificado com margem mínima de 5%.` };
+    const estimated = implied * 1.12;
+    if (estimated > implied + 0.05) {
+      const edgePct = Math.round((estimated - implied) * 100);
+      valueSels.push(toSel(o, estimated, `Value bet: edge de ${edgePct}% sobre odd de mercado ${o.odd.toFixed(2)}. Probabilidade estimada ${Math.round(estimated * 100)}% vs implícita ${Math.round(implied * 100)}%.`));
+    }
+    if (valueSels.length >= 3) break;
   }
-  const best = valueItems[0]!;
-  const edge = Math.round((1 / best.odd * 1.12 - 1 / best.odd) * 100);
+  // Garantir mínimo 2
+  if (valueSels.length < 2) {
+    for (const o of allOddsSorted) {
+      if (valueSels.some(s => s.option === o.option && s.market === o.market)) continue;
+      const implied = 1 / o.odd;
+      valueSels.push(toSel(o, implied * 1.08, `Análise complementar: odd ${o.odd.toFixed(2)} com margem aceitável.`));
+      if (valueSels.length >= 2) break;
+    }
+  }
+  const combined = valueSels.reduce((a, s) => a * s.odd, 1);
   return {
-    selections: [{ ...best as SuggestionItem, market: best.market as BetMarket, confidence: 1 / best.odd * 1.12, justification: `Value bet com edge estimado de ${edge}% sobre a odd de mercado.` }],
-    combinedOdd: best.odd,
-    overallConfidence: 1 / best.odd * 1.12,
-    summary: `Aposta matemática baseada em edge de ${edge}% identificado para ${best.optionLabel}.`,
+    selections: valueSels, combinedOdd: Math.round(combined * 100) / 100,
+    overallConfidence: valueSels.length > 0 ? valueSels.reduce((a, s) => a + s.confidence, 0) / valueSels.length : 0,
+    summary: valueSels.length > 0
+      ? `${valueSels.length} value bets identificadas com edge sobre o mercado. Odd combinada ${combined.toFixed(2)}x.`
+      : "Nenhum value bet com margem mínima de 5% identificado.",
   };
 }
 
