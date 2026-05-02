@@ -308,21 +308,25 @@ export async function fetchRoundMatchInputs(
       if (r) gatedHits.finished = true;
       return r ?? getFinishedMatches(200);
     }),
-    // Odds em cascata (3 fontes): OddsPapi(Betano/BR) → TheOddsAPI → API-Football(Bet365)
-    // OddsPapi tem chave configurada e cobre casas brasileiras (Betano = patrocinadora BSA).
+    // ── Odds em cascata (3 fontes) ──────────────────────────────────────────
+    // 1. The Odds API (theOddsApi.com) — FONTE PRIMÁRIA
+    //    Dedicada a odds, sport key soccer_brazil_campeonato, 500 créditos/mês grátis.
+    //    Inclui betano_br, pinnacle, bet365. Mais precisa que OddsPapi para BSA.
+    // 2. OddsPapi — fallback (Betano, Betnacional, EstrelaBet)
+    // 3. API-Football (Bet365, bookmaker=8) — último recurso
     (async () => {
-      // Fonte 1: OddsPapi — Betano, Betnacional, EstrelaBet, bet365, Pinnacle
-      const op = await getOddsByTournament(TOURNAMENT_SERIE_A).catch(() => null);
-      if (op && op.size > 0) {
-        console.info(`[Odds] OddsPapi: ${op.size / 2} jogos`);
-        return op;
-      }
-      // Fonte 2: The Odds API (theOddsApi.com) — free tier 500/mês
-      console.info("[Odds] OddsPapi vazio — caindo pra TheOddsAPI");
+      // Fonte 1: The Odds API
       const toa = await getOddsFromTheOddsApi().catch(() => null);
-      if (toa && toa.size > 0) return toa;
+      if (toa && toa.size > 0) {
+        console.info(`[Odds] TheOddsAPI: ${toa.size / 2} jogos`);
+        return toa;
+      }
+      // Fonte 2: OddsPapi
+      console.info("[Odds] TheOddsAPI vazio — caindo pra OddsPapi (Betano BR)");
+      const op = await getOddsByTournament(TOURNAMENT_SERIE_A).catch(() => null);
+      if (op && op.size > 0) return op;
       // Fonte 3: API-Football (Bet365, bookmaker=8)
-      console.info("[Odds] TheOddsAPI vazio — caindo pra API-Football (Bet365)");
+      console.info("[Odds] OddsPapi vazio — caindo pra API-Football");
       const af = await getOddsByRoundFromApiFootball(season, round).catch(() => null);
       if (af && af.size > 0) return af;
       console.warn("[Odds] Todas as fontes falharam — usando fallback sintético");

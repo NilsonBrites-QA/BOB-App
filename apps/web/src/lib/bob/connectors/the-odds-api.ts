@@ -1,17 +1,20 @@
 /**
  * BOB — Conector The Odds API (theoddsapi.com)
  *
- * A fonte mais confiável de odds reais para o mercado brasileiro.
- * Agrega Bet365, Pinnacle, Betano, Betfair e mais de 80 bookmakers.
+ * FONTE PRIMÁRIA de odds reais do Brasileirão Série A.
  *
- * Free tier: 500 requests/mês → ~2 req/dia → suficiente para atualização semanal.
- * Cache ISR: 3h (odds pré-jogo mudam lentamente).
+ * Vantagens sobre OddsPapi:
+ *   ✓ Endpoint dedicado ao esporte (sem filtro de torneio complexo)
+ *   ✓ Suporta casas brasileiras: betano_br, estrelabet, bet365, pinnacle
+ *   ✓ 500 créditos/mês gratuitos → ~2 chamadas/dia
+ *   ✓ Formato limpo e documentado
  *
+ * Chave: process.env.THE_ODDS_API_KEY
  * Documentação: https://the-odds-api.com/lando-odds-api/odds-api-documentation.html
  *
- * Liga: soccer_brazil_campeonato
- * Mercado: h2h (1X2 moneyline)
- * Região: eu (odds decimais europeias)
+ * Sport key: soccer_brazil_campeonato = Brasileirão Série A
+ * Mercado: h2h = 1X2
+ * Região: eu = odds decimais (padrão europeu/brasil)
  */
 
 import type { OddsMap, FixtureOdds } from "./oddspapi";
@@ -20,175 +23,165 @@ import { matchKey } from "./oddspapi";
 const BASE_URL = "https://api.the-odds-api.com/v4";
 
 /**
- * ID do esporte no The Odds API para o Brasileirão Série A.
- * Verificado em: https://api.the-odds-api.com/v4/sports/?apiKey=...
+ * Sport key do Brasileirão Série A no The Odds API.
+ * Verificado em: https://api.the-odds-api.com/v4/sports/?apiKey=KEY
  */
 const SPORT_KEY = "soccer_brazil_campeonato";
 
 // ─── Tipos da API ─────────────────────────────────────────────────────────────
 
 type TheOddsOutcome = {
-  name:  string;  // ex: "Flamengo", "Draw", "Palmeiras"
-  price: number;  // odds decimal, ex: 2.15
-};
-
-type TheOddsBookmaker = {
-  key:       string;  // ex: "bet365", "pinnacle"
-  title:     string;
-  markets:   TheOddsMarket[];
+  name:  string;  // "Flamengo", "Draw", "Palmeiras"
+  price: number;  // odds decimal: 2.15
 };
 
 type TheOddsMarket = {
-  key:      string;  // "h2h" para 1X2
+  key:      string;      // "h2h"
   outcomes: TheOddsOutcome[];
+};
+
+type TheOddsBookmaker = {
+  key:     string;       // "bet365", "pinnacle", "betano_br"
+  title:   string;
+  markets: TheOddsMarket[];
 };
 
 type TheOddsEvent = {
   id:            string;
   home_team:     string;
   away_team:     string;
-  commence_time: string;  // ISO 8601
+  commence_time: string; // ISO 8601
   bookmakers:    TheOddsBookmaker[];
 };
 
-// ─── Preferência de bookmakers (em ordem de confiança para Brasileirão) ─────
+// ─── Preferência de bookmakers ────────────────────────────────────────────────
 
+/**
+ * Ordem de preferência — Betano é a patrocinadora oficial do Brasileirão,
+ * então suas odds são as mais relevantes para o usuário brasileiro.
+ * Pinnacle é o sharp book (sem margem) — referência de mercado.
+ */
 const PREFERRED_BOOKMAKERS = [
+  "betano_br",
   "pinnacle",
   "bet365",
-  "betano_br",
-  "betfair",
   "unibet",
+  "williamhill",
 ];
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Normalização de nomes ────────────────────────────────────────────────────
 
-/**
- * Extrai as odds 1X2 de um evento priorizando o bookmaker mais confiável.
- * Se Pinnacle não disponível, usa bet365, etc.
- */
-function extractBestOdds(event: TheOddsEvent): FixtureOdds | null {
-  const h2hBookmakers = event.bookmakers.filter((b) =>
-    b.markets.some((m) => m.key === "h2h")
-  );
-
-  if (h2hBookmakers.length === 0) return null;
-
-  // Tentar preferred bookmakers em ordem
-  for (const preferred of PREFERRED_BOOKMAKERS) {
-    const bk = h2hBookmakers.find((b) => b.key === preferred);
-    if (!bk) continue;
-
-    const market = bk.markets.find((m) => m.key === "h2h");
-    if (!market) continue;
-
-    const parsed = parseH2H(market, event.home_team, event.away_team);
-    if (parsed) return { ...parsed, source: "api-football" };
-  }
-
-  // Fallback: primeiro disponível
-  const bk = h2hBookmakers[0]!;
-  const market = bk.markets.find((m) => m.key === "h2h");
-  if (!market) return null;
-
-  const parsed = parseH2H(market, event.home_team, event.away_team);
-  if (!parsed) return null;
-  return { ...parsed, source: "api-football" };
-}
-
-/**
- * Parseia o mercado h2h extraindo Home, Draw, Away pelas posições relativas.
- * The Odds API retorna 3 outcomes: [homeTeam, awayTeam, "Draw"] em qualquer ordem.
- */
-function parseH2H(
-  market: TheOddsMarket,
-  homeTeam: string,
-  awayTeam: string,
-): { homeOdd: number; drawOdd: number; awayOdd: number } | null {
-  const draw = market.outcomes.find(
-    (o) => o.name.toLowerCase() === "draw"
-  );
-  const home = market.outcomes.find(
-    (o) => normalizeTOA(o.name) === normalizeTOA(homeTeam)
-  );
-  const away = market.outcomes.find(
-    (o) => normalizeTOA(o.name) === normalizeTOA(awayTeam)
-  );
-
-  // Se não achou pelo nome exato, tenta parcial
-  const homeFallback = !home
-    ? market.outcomes.find((o) =>
-        o.name !== "Draw" &&
-        (normalizeTOA(o.name).includes(normalizeTOA(homeTeam)) ||
-          normalizeTOA(homeTeam).includes(normalizeTOA(o.name)))
-      )
-    : null;
-
-  const awayFallback = !away
-    ? market.outcomes.find((o) =>
-        o.name !== "Draw" &&
-        o !== home &&
-        o !== homeFallback
-      )
-    : null;
-
-  const finalHome  = home  ?? homeFallback;
-  const finalAway  = away  ?? awayFallback;
-
-  if (!finalHome || !finalAway || !draw) return null;
-  if (finalHome.price <= 1 || finalAway.price <= 1 || draw.price <= 1) return null;
-
-  return {
-    homeOdd: finalHome.price,
-    drawOdd: draw.price,
-    awayOdd: finalAway.price,
-  };
-}
-
-/** Normalização para matching de nomes (TheOddsAPI usa nomes ligeiramente diferentes) */
 function normalizeTOA(name: string): string {
   return name
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+(fc|sc|ec|ca|se|cr|ac|af|rj|sp|mg|pr|rs|ba|ce|pe|go|pa|df|sc)$/i, "")
+    .replace(/[\u0300-\u036f]/g, "")  // remove acentos
+    .replace(/\s+(fc|sc|ec|ca|se|cr|ac|af|fbc|rj|sp|mg|pr|rs|ba|ce|pe|go|pa|df)$/i, "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-// ─── API Principal ────────────────────────────────────────────────────────────
+// ─── Parse de odds h2h ────────────────────────────────────────────────────────
+
+function extractOddsFromBookmaker(
+  bookmaker: TheOddsBookmaker,
+  homeTeam:  string,
+  awayTeam:  string,
+): { homeOdd: number; drawOdd: number; awayOdd: number } | null {
+  const h2hMarket = bookmaker.markets.find((m) => m.key === "h2h");
+  if (!h2hMarket || h2hMarket.outcomes.length < 3) return null;
+
+  const homeN = normalizeTOA(homeTeam);
+  const awayN = normalizeTOA(awayTeam);
+
+  // Identificar cada outcome pelo nome
+  const draw    = h2hMarket.outcomes.find((o) => o.name.toLowerCase() === "draw");
+  const homeOut = h2hMarket.outcomes.find((o) => {
+    const n = normalizeTOA(o.name);
+    return n === homeN || homeN.includes(n) || n.includes(homeN);
+  });
+  const awayOut = h2hMarket.outcomes.find((o) => {
+    const n = normalizeTOA(o.name);
+    return o !== homeOut && (n === awayN || awayN.includes(n) || n.includes(awayN));
+  });
+
+  // Fallback posicional: The Odds API retorna [home, away, draw] ou [home, draw, away]
+  // Ordem mais comum: outcome[0]=home, outcome[1]=away, outcome[2]=draw
+  const finalHome  = homeOut ?? h2hMarket.outcomes.find((o) => o.name !== "Draw" && o !== awayOut);
+  const finalAway  = awayOut ?? h2hMarket.outcomes.find((o) => o !== finalHome && o.name !== "Draw");
+  const finalDraw  = draw    ?? h2hMarket.outcomes.find((o) => o !== finalHome && o !== finalAway);
+
+  if (!finalHome || !finalAway || !finalDraw) return null;
+  if (finalHome.price <= 1 || finalAway.price <= 1 || finalDraw.price <= 1) return null;
+
+  return {
+    homeOdd: finalHome.price,
+    drawOdd: finalDraw.price,
+    awayOdd: finalAway.price,
+  };
+}
+
+function getBestOdds(
+  event: TheOddsEvent,
+): { homeOdd: number; drawOdd: number; awayOdd: number } | null {
+  // Tentar bookmakers em ordem de preferência
+  for (const preferred of PREFERRED_BOOKMAKERS) {
+    const bk = event.bookmakers.find((b) => b.key === preferred);
+    if (!bk) continue;
+    const odds = extractOddsFromBookmaker(bk, event.home_team, event.away_team);
+    if (odds) return odds;
+  }
+  // Fallback: primeiro bookmaker disponível
+  for (const bk of event.bookmakers) {
+    const odds = extractOddsFromBookmaker(bk, event.home_team, event.away_team);
+    if (odds) return odds;
+  }
+  return null;
+}
+
+// ─── Função principal ─────────────────────────────────────────────────────────
 
 /**
  * Busca odds 1X2 do Brasileirão Série A no The Odds API.
  *
- * Retorna um OddsMap com chave "homeNorm|awayNorm" compatível com o lookup
- * do connectors/index.ts (mesma estrutura do OddsPapi).
+ * Uma única chamada busca todos os jogos com odds de múltiplas casas.
+ * Consome ~1 crédito de API (de 500/mês gratuitos).
  *
- * Headers de uso são logados para monitorar a quota free (500/mês).
+ * Retorna OddsMap compatível com o lookupOdds() do connectors/index.ts.
  */
 export async function getOddsFromTheOddsApi(): Promise<OddsMap> {
   const map: OddsMap = new Map();
-  const key = process.env.THE_ODDS_API_KEY;
+  const apiKey = process.env.THE_ODDS_API_KEY;
 
-  if (!key) {
-    console.warn("[TheOddsAPI] THE_ODDS_API_KEY não configurado. Pulando.");
+  if (!apiKey) {
+    console.warn("[TheOddsAPI] THE_ODDS_API_KEY não configurado.");
     return map;
   }
 
   try {
-    const url = `${BASE_URL}/sports/${SPORT_KEY}/odds?apiKey=${key}&regions=eu&markets=h2h&oddsFormat=decimal&bookmakers=${PREFERRED_BOOKMAKERS.join(",")}`;
+    // Buscar os bookmakers preferidos num único request
+    // regions=eu → odds decimais (padrão Brasil)
+    const bookmakersParam = PREFERRED_BOOKMAKERS.join(",");
+    const url = `${BASE_URL}/sports/${SPORT_KEY}/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal&bookmakers=${bookmakersParam}`;
 
     const res = await fetch(url, {
-      next: { revalidate: 10800 }, // cache ISR 3h
+      next: { revalidate: 10800 }, // cache 3h (odds pré-jogo não mudam muito)
     });
 
-    // Logar consumo da quota free
-    const remaining  = res.headers.get("x-requests-remaining");
-    const used       = res.headers.get("x-requests-used");
-    const lastUpdate = res.headers.get("x-requests-last");
-    console.info(
-      `[TheOddsAPI] Quota: ${used} usadas · ${remaining} restantes · última: ${lastUpdate}`
-    );
+    // ── Log da quota (500/mês gratuitos) ──────────────────────────────────
+    const remaining  = res.headers.get("x-requests-remaining") ?? "?";
+    const used       = res.headers.get("x-requests-used") ?? "?";
+    console.info(`[TheOddsAPI] Créditos: ${used} usados, ${remaining} restantes`);
+
+    if (res.status === 401) {
+      console.error("[TheOddsAPI] Chave inválida ou não autorizada.");
+      return map;
+    }
+
+    if (res.status === 429) {
+      console.warn("[TheOddsAPI] Quota atingida (500/mês). Usando fallback.");
+      return map;
+    }
 
     if (!res.ok) {
       console.warn(`[TheOddsAPI] HTTP ${res.status}`);
@@ -202,22 +195,59 @@ export async function getOddsFromTheOddsApi(): Promise<OddsMap> {
       return map;
     }
 
-    for (const event of events) {
-      const odds = extractBestOdds(event);
-      if (!odds) continue;
-
-      // Indexar por nome normalizado (mesmo formato do OddsPapi)
-      const key = matchKey(event.home_team, event.away_team);
-      map.set(key, odds);
-
-      // Indexar também pelo ID do evento (para drill-down futuro)
-      map.set(event.id, odds);
+    if (events.length === 0) {
+      console.info("[TheOddsAPI] Nenhum evento retornado — fora de temporada ou sem jogos próximos.");
+      return map;
     }
 
-    console.info(`[TheOddsAPI] ${map.size / 2} jogos com odds carregados`);
+    let count = 0;
+    for (const event of events) {
+      const odds = getBestOdds(event);
+      if (!odds) continue;
+
+      const fixture: FixtureOdds = { ...odds, source: "oddspapi" };
+
+      // Indexar por nomes normalizados (para lookup pelo nome do time)
+      const key = matchKey(event.home_team, event.away_team);
+      map.set(key, fixture);
+
+      // Indexar também pelo ID do evento (para debug)
+      map.set(event.id, fixture);
+
+      count++;
+
+      // Log detalhado para os primeiros 3 jogos (diagnóstico)
+      if (count <= 3) {
+        console.info(
+          `[TheOddsAPI] ${event.home_team} x ${event.away_team}: ` +
+          `H=${odds.homeOdd} X=${odds.drawOdd} A=${odds.awayOdd}`
+        );
+      }
+    }
+
+    console.info(`[TheOddsAPI] ✓ ${count} jogos com odds reais carregados`);
+
   } catch (err) {
-    console.warn("[TheOddsAPI] Falha ao buscar odds:", err);
+    console.error("[TheOddsAPI] Falha:", err);
   }
 
   return map;
+}
+
+/**
+ * Lista os esportes disponíveis no The Odds API (diagnóstico).
+ * Use para confirmar o sport_key do Brasileirão.
+ */
+export async function listAvailableSports(): Promise<Array<{ key: string; title: string; active: boolean }>> {
+  const apiKey = process.env.THE_ODDS_API_KEY;
+  if (!apiKey) return [];
+
+  try {
+    const res = await fetch(`${BASE_URL}/sports/?apiKey=${apiKey}`);
+    if (!res.ok) return [];
+    const data = await res.json() as Array<{ key: string; title: string; active: boolean }>;
+    return data.filter((s) => s.key.includes("brazil") || s.title.toLowerCase().includes("brazil"));
+  } catch {
+    return [];
+  }
 }
