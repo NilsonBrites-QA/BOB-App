@@ -11,7 +11,6 @@ import type {
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
 import { loadRoundData } from "@/lib/bob/round-loader";
 import { loadDeliveredRound } from "@/lib/bob/persist";
-import { getTeamAssetsMap, findTeamAsset } from "@/lib/bob/connectors/thesportsdb";
 import { DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
 import { VariacoesClient } from "./variacoes-client";
 import type { VariationView, AnchorView, AuditView, RoundView, VariationLeg } from "./variacoes-client";
@@ -232,7 +231,6 @@ type DbRound = {
   variations: DbVariation[];
   anchors: DbAnchor[];
 };
-type AssetMapType = Awaited<ReturnType<typeof getTeamAssetsMap>>;
 
 function pickResultToOutcome(r: string): "Home" | "Draw" | "Away" {
   if (r === "HOME") return "Home";
@@ -249,9 +247,8 @@ function splitMatch(s: string): { home: string; away: string } {
 function renderFromDb(args: {
   season: number;
   dbRound: DbRound;
-  assetMap: AssetMapType;
 }) {
-  const { season, dbRound, assetMap } = args;
+  const { season, dbRound } = args;
 
   // Variações
   const variations: VariationView[] = dbRound.variations.map((v) => {
@@ -268,8 +265,8 @@ function renderFromDb(args: {
         fairOdd:    p.odd, // sem snapshot — usa o próprio odd
         cleanProb:  p.odd > 0 ? 1 / p.odd : 0,
         isAnchor:   p.isAnchor,
-        homeBadge:  findTeamAsset(home, assetMap)?.badgeUrl ?? null,
-        awayBadge:  findTeamAsset(away, assetMap)?.badgeUrl ?? null,
+        homeBadge:  null, // modo DB: crests não disponíveis (TeamShield mostra iniciais)
+        awayBadge:  null,
       };
     });
 
@@ -312,8 +309,8 @@ function renderFromDb(args: {
         ? String((a.reasons as unknown[])[0])
         : `${matchKeyHome} oferece o melhor equilíbrio da rodada`,
       risks:      [],
-      homeBadge:  findTeamAsset(matchKeyHome, assetMap)?.badgeUrl ?? null,
-      awayBadge:  findTeamAsset(matchKeyAway, assetMap)?.badgeUrl ?? null,
+      homeBadge:  null,
+      awayBadge:  null,
     };
   });
 
@@ -375,14 +372,6 @@ export default async function VariacoesPage({
 
   const roundData = await loadRoundData(season, round);
 
-  const assetMap =
-    roundData.source === "api" && roundData.assets.size > 0
-      ? roundData.assets
-      : await getTeamAssetsMap().catch(() => new Map());
-
-  // teamBadges não é mais um lookup direto — usamos findTeamAsset() abaixo
-  // para matching robusto (acentos, sufixos, parciais).
-
   // ── DB-FIRST: variações congeladas (Fase A1) ──────────────────────────────
   // Se a rodada já foi DELIVERED (admin clicou "Aprovar e entregar" ou cron rodou),
   // lemos as variações salvas — IMUTÁVEIS — em vez de recalcular a cada visita.
@@ -397,13 +386,18 @@ export default async function VariacoesPage({
     return renderFromDb({
       season,
       dbRound: dbRound as DbRound,
-      assetMap,
     });
   }
   // ── Fim do branch DB-first ────────────────────────────────────────────────
 
   // Run engine
   const allScored = roundData.matches.map(scoreMatch);
+
+  // Mapa matchId → crests (vem do football-data.org via homeCrest/awayCrest)
+  const crestMap = new Map(
+    allScored.map((m) => [m.id, { home: m.homeCrest ?? null, away: m.awayCrest ?? null }])
+  );
+
   const anchors = selectAnchorsFromScored(allScored);
   const anchorIds = new Set(anchors.map((a) => a.id));
   const pool = allScored.filter((m) => !anchorIds.has(m.id));
@@ -464,8 +458,8 @@ export default async function VariacoesPage({
       fairOdd: leg.fairOdd,
       cleanProb: leg.cleanProb,
       isAnchor: leg.isAnchor,
-      homeBadge: findTeamAsset(leg.homeTeam, assetMap)?.badgeUrl ?? null,
-      awayBadge: findTeamAsset(leg.awayTeam, assetMap)?.badgeUrl ?? null,
+      homeBadge: crestMap.get(leg.matchId)?.home ?? null,
+      awayBadge: crestMap.get(leg.matchId)?.away ?? null,
     }));
 
     const meta = variationTitle(v.id);
@@ -509,8 +503,8 @@ export default async function VariacoesPage({
       confidence: a.score,
       reason: buildAnchorReason(a),
       risks: ((a as { calibrationAlerts?: string[] }).calibrationAlerts ?? []).slice(0, 3),
-      homeBadge: findTeamAsset(a.homeTeam, assetMap)?.badgeUrl ?? null,
-      awayBadge: findTeamAsset(a.awayTeam, assetMap)?.badgeUrl ?? null,
+      homeBadge: a.homeCrest ?? null,
+      awayBadge: a.awayCrest ?? null,
     };
   });
 

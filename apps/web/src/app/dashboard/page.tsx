@@ -8,7 +8,6 @@ import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/b
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
 import { detectZebras, type ZebraOpportunity } from "@/lib/bob/engine/zebra-detector";
 import { demoMatches, DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
-import { getTeamAssetsMap, findTeamAsset } from "@/lib/bob/connectors/thesportsdb";
 import { BOB_COPY } from "@/lib/bob/personality";
 import { TeamIdentity } from "@/components/team-identity";
 import { describeRoundFallback, loadRoundData } from "@/lib/bob/round-loader";
@@ -95,11 +94,11 @@ export default async function DashboardPage({
 
   const roundData = await loadRoundData(paramSeason, paramRound);
 
-  const assetMap = roundData.source === "api" && roundData.assets.size > 0
-    ? roundData.assets
-    : await getTeamAssetsMap().catch(() => new Map());
 
-  // Lookup robusto via findTeamAsset (lida com acentos, sufixos, parciais)
+  // Mapa matchId → crests (vem direto do football-data.org via homeCrest/awayCrest)
+  const crestMap = new Map(
+    roundData.matches.map((m) => [m.id, { home: m.homeCrest ?? null, away: m.awayCrest ?? null }])
+  );
 
   const filteredMatches = roundData.matches.filter((match) => !excludedIds.has(match.id));
   const allScored = filteredMatches.map(scoreMatch);
@@ -269,21 +268,21 @@ export default async function DashboardPage({
                   <div className="min-w-0 space-y-1.5">
                     <TeamIdentity
                       teamName={z.homeTeam}
-                      badgeUrl={findTeamAsset(z.homeTeam, assetMap)?.badgeUrl ?? null}
+                      badgeUrl={crestMap.get(z.matchId)?.home ?? null}
                       badgeSize={22}
                       className="min-w-0"
                       nameClassName="text-sm font-semibold"
-                      subtitle={`Mandante · ${z.homePosition}º na tabela`}
+                      subtitle={`Mandante \u00b7 ${z.homePosition}\u00ba na tabela`}
                     />
                     <div className="flex items-center gap-2 pl-1">
                       <span className="h-px w-3 shrink-0 bg-border/80" />
                       <TeamIdentity
                         teamName={z.awayTeam}
-                        badgeUrl={findTeamAsset(z.awayTeam, assetMap)?.badgeUrl ?? null}
+                        badgeUrl={crestMap.get(z.matchId)?.away ?? null}
                         badgeSize={22}
                         className="min-w-0"
                         nameClassName="text-sm font-medium"
-                        subtitle={`Visitante · ${z.awayPosition}º na tabela`}
+                        subtitle={`Visitante \u00b7 ${z.awayPosition}\u00ba na tabela`}
                       />
                     </div>
                   </div>

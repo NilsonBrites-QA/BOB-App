@@ -6,7 +6,6 @@ import { SectionCard } from "@/components/section-card";
 import { scoreMatch } from "@/lib/bob/engine/scoring";
 import { getFactorBreakdown } from "@/lib/bob/engine/factor-breakdown";
 import { DEMO_ROUND_LABEL } from "@/lib/bob/demo-matches";
-import { getTeamAssetsMap, findTeamAsset } from "@/lib/bob/connectors/thesportsdb";
 import { describeRoundFallback, loadRoundData } from "@/lib/bob/round-loader";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
@@ -63,11 +62,7 @@ export default async function EstatisticasPage({
 
   const roundData = await loadRoundData(paramSeason, paramRound);
 
-  const assetMap = roundData.source === "api" && roundData.assets.size > 0
-    ? roundData.assets
-    : await getTeamAssetsMap().catch(() => new Map());
-
-  // Lookup robusto via findTeamAsset (lida com acentos, sufixos, parciais)
+  // Escudos vêm direto do football-data.org (homeCrest/awayCrest no ScoredMatch)
 
   const roundLabel = roundData.source === "api" && roundData.meta
     ? `Rodada ${roundData.meta.round} · ${roundData.meta.season}`
@@ -258,8 +253,8 @@ export default async function EstatisticasPage({
                 key={match.id}
                 match={match}
                 breakdown={breakdown}
-                homeBadgeUrl={findTeamAsset(match.homeTeam, assetMap)?.badgeUrl ?? null}
-                awayBadgeUrl={findTeamAsset(match.awayTeam, assetMap)?.badgeUrl ?? null}
+                homeBadgeUrl={match.homeCrest ?? null}
+                awayBadgeUrl={match.awayCrest ?? null}
                 isAnchor={match.isAnchorCandidate}
               />
             ))}

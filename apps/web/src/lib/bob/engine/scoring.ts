@@ -139,6 +139,11 @@ export type MatchInput = {
 
   /** Status do jogo na API — "SCHEDULED" | "TIMED" | "FINISHED" | "IN_PLAY" | etc. */
   status?: string;
+
+  /** URL do escudo do mandante (vem direto do football-data.org — campo crest) */
+  homeCrest?: string | null;
+  /** URL do escudo do visitante (vem direto do football-data.org — campo crest) */
+  awayCrest?: string | null;
 };
 
 export type FactorBreakdown = {

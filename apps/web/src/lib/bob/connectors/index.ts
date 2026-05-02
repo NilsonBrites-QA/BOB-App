@@ -8,8 +8,7 @@
  *   2. API-Football (COMPLEMENTO) — injuries, team stats, copa BR (free: 100 req/dia)
  *      CONFIRMADO: cobre temporada atual 2026 (league 71, Current: true)
  *   3. OddsPapi (ODDS REAIS) — Pinnacle via proxy, tournamentId=325 (A), 390 (B)
- *   4. TheSportsDB — assets visuais (logos, banners) — 100% free
- *   5. open-meteo.com — clima por estádio — gratuito e ilimitado
+ *   4. open-meteo.com — clima por estádio — gratuito e ilimitado
  */
 
 // ─── Imports com política de acesso em camadas ─────────────────────────────────────────────
@@ -18,7 +17,6 @@
 //   GATED   → caminho oficial — checkgate L1+L2 antes de chamar a API.
 //   RAW     → fallback INTERNO — acessa ISR do Next.js (edge cache).
 //             NÃO re-exportadas; invisíveis para módulos externos.
-//   DB-FIRST → TheSportsDB — leitura pura do banco, sem API call.
 //
 // ╳ PROIBIDO adicionar re-exportações de funções raw via este arquivo. ╳
 
@@ -48,10 +46,6 @@ import {
   getFixturesByLeague,
 } from "./api-football";
 
-// TheSportsDB — DB-first absoluto ──────────────────────────────────
-import { getTeamAssetsMap } from "./thesportsdb";
-export type { TeamAssetRow } from "./thesportsdb";
-
 import { getOddsByTournament, lookupOdds, TOURNAMENT_SERIE_A } from "./oddspapi";
 import { getOddsByRoundFromApiFootball } from "./api-football";
 import type { MatchInput } from "@/lib/bob/engine/scoring";
@@ -62,11 +56,10 @@ import { fetchWeatherForRound } from "./weather";
 export type FetchRoundResult = {
   matches: MatchInput[];
   /**
-   * Assets visuais dos times (logos, escudos, banners) — DB-first.
-   * Keyed pelo nome curto do time em lowercase (ex: "flamengo", "palmeiras").
-   * Pode ser vazio se `syncAllTeams()` ainda não foi executado no setup.
+   * Mantido por retrocompatibilidade com round-loader.ts.
+   * Sempre vazio — escudos vêm do football-data.org via homeCrest/awayCrest em MatchInput.
    */
-  assets: Map<string, import("./thesportsdb").TeamAssetRow>;
+  assets: Map<string, never>;
   meta: {
     season: number;
     round: number;
@@ -75,11 +68,6 @@ export type FetchRoundResult = {
     source: "football-data" | "api-football" | "demo";
     /** ISO string da data/hora do primeiro jogo da rodada (UTC) */
     firstMatchAt: string | null;
-    /**
-     * Rastreio de quais fontes passaram pelo path gated (L2 hit = sync autorizado)
-     * vs. path ISR (null = throttle ativo, dado servido do edge cache).
-     * Exposto ao BOB Live Brain Console (Fase 4) via `meta.gatedHits`.
-     */
     gatedHits: {
       standings: boolean;
       matchday: boolean;
@@ -333,7 +321,7 @@ export async function fetchRoundMatchInputs(
   if (roundMatches.length === 0) {
     return {
       matches: [],
-      assets: new Map(),
+      assets: new Map<string, never>(),
       meta: {
         season,
         round,
@@ -426,11 +414,6 @@ export async function fetchRoundMatchInputs(
     // Falha silenciosa — usar "none" como default
   }
 
-  // ── Etapa 2D: Assets visuais dos times (DB-first — sem chamada de API) ────
-  // getTeamAssetsMap() lê exclusivamente do banco (tabela team_assets).
-  // Não possui janela de cache: ou está no banco (sync já feito) ou não.
-  // Se vazio: syncAllTeams() deve ser executado como setup job (TheSportsDB).
-  const assets = await getTeamAssetsMap().catch(() => new Map());
 
   const weatherMap = await fetchWeatherForRound(
     roundMatches.map((m) => ({
@@ -569,12 +552,16 @@ export async function fetchRoundMatchInputs(
 
       // Status do jogo (SCHEDULED, TIMED, FINISHED, IN_PLAY etc.)
       status: m.status,
+
+      // Escudos direto do football-data.org (campo crest) — sem depender do banco
+      homeCrest: m.homeTeam.crest ?? null,
+      awayCrest: m.awayTeam.crest ?? null,
     };
   });
 
   return {
     matches,
-    assets,
+    assets: new Map<string, never>(),
     meta: {
       season,
       round,
@@ -601,7 +588,7 @@ export async function fetchRoundMatchInputs(
               : "partial",
         injuries: gatedHits.injuries && injuriesMap.size > 0 ? "live" : "fallback",
         cup: cupMap.size > 0 ? "live" : "fallback",
-        assets: assets.size > 0 ? "ready" : "empty",
+        assets: "ready", // crests vêm via homeCrest/awayCrest no MatchInput
         weather: weatherMap.size > 0 ? "live" : "fallback",
       },
     },
@@ -675,14 +662,3 @@ async function _detectNextOpenRound(): Promise<number | null> {
 
 export { _detectNextOpenRound as detectNextOpenRound };
 
-// ─── Re-exports seguros pelo Orquestrador ─────────────────────────────────────
-//
-// Apenas funções que NÃO burlam o cache-gate são re-exportadas daqui.
-// Funções raw de football-data e api-football NÃO constam nesta lista.
-
-/**
- * Assets visuais dos times (logos, escudos, banners).
- * DB-first absoluto: leitura pura do banco, sem chamada de API.
- * Re-exportada para uso direto pelo Cérebro e pelo Live Brain Console.
- */
-export { getTeamAssetsMap } from "./thesportsdb";
