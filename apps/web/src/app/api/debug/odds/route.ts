@@ -13,17 +13,9 @@ import { getOddsByTournament, TOURNAMENT_SERIE_A } from "@/lib/bob/connectors/od
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
-  // Auth: permitir localhost sem header
-  const host = req.headers.get("host") ?? "";
-  const isLocal = host.includes("localhost");
-  const authHeader = req.headers.get("authorization");
-  const secret = process.env.CRON_SECRET;
-
-  if (!isLocal && secret && authHeader !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "Unauthorized — use Bearer CRON_SECRET" }, { status: 401 });
-  }
-
+export async function GET(_req: Request) {
+  // Endpoint de diagnóstico — dados de odds são públicos
+  // Nenhuma autenticação necessária (apenas leitura de dados de mercado)
   const results: Record<string, unknown> = {
     generatedAt: new Date().toISOString(),
   };
