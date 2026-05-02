@@ -1,215 +1,221 @@
 /**
- * BOB — Conector OddsPapi (Odds Reais via Pinnacle)
+ * BOB — Conector OddsPapi v4 (Betano, EstrelaBet, bet365, Betnacional, etc.)
  *
- * OddsPapi serve como proxy da Pinnacle API (fechada ao público desde Jul/2025).
- * Fornece odds 1X2 reais para o Brasileirão Série A e Série B.
+ * OddsPapi agrega bookmakers brasileiros e globais via API unificada.
+ * Endpoint principal: GET /v4/odds
+ *
+ * Bookmakers brasileiros disponíveis:
+ *   betano       — patrocinadora oficial do Brasileirão (fonte primária)
+ *   betnacional  — bookmaker nacional
+ *   betplay      — mercado BR
+ *   estrelabet   — mercado BR
+ *   bet365       — global, alta liquidez
+ *   pinnacle     — odds sharp, sem margem
  *
  * Documentação: https://oddspapi.io/pt/docs
  *
- * Mercados:
- *   market 101 = 1X2 moneyline
- *     outcome 101 = Home win  → campo `price`
- *     outcome 102 = Draw      → campo `price`
- *     outcome 103 = Away win  → campo `price`
- *
- * Rate limit: 500ms cooldown obrigatório entre requests.
- * Cache: revalidate 3h (odds pré-jogo mudam lentamente).
- *
- * IDs de torneio:
- *   325 = Brasileiro Serie A
- *   390 = Brasileiro Serie B
- *   373 = Copa do Brasil
+ * Chave: process.env.ODDSPAPI_KEY
  */
 
 const BASE_URL = "https://api.oddspapi.io/v4";
 
-/** Cooldown entre requisições (ms) */
-const RATE_LIMIT_MS = 520;
+// ─── Constantes ────────────────────────────────────────────────────────────────
 
-/** ID do torneio para odds */
+/** sportId=10 = Futebol */
+const SOCCER_SPORT_ID = 10;
+
+/**
+ * Torneio IDs (tournamentId) para o Brasileirão.
+ * tournamentId=325 = Brasileirão Série A
+ */
 export const TOURNAMENT_SERIE_A = 325;
 export const TOURNAMENT_SERIE_B = 390;
 export const TOURNAMENT_COPA_BR = 373;
 
-// ─── Tipos da API ─────────────────────────────────────────────────────────────
+/**
+ * Ordem de preferência de bookmakers para o Brasileirão.
+ * Betano é a patrocinadora oficial — odds mais relevantes para o mercado BR.
+ */
+const PREFERRED_BOOKMAKERS = [
+  "betano",
+  "betnacional",
+  "estrelabet",
+  "bet365",
+  "pinnacle",
+];
 
-type OddsOutcome = {
-  id: number;       // 101=home, 102=draw, 103=away
-  price: number;    // odds decimal, ex: 1.78
+// ─── Tipos da API (formato real do /v4/odds) ──────────────────────────────────
+
+type ParticipantInfo = {
+  name: string;
+  id?:  number | string;
 };
 
-type OddsMarket = {
-  id: number;     // 101 = 1X2
-  outcomes: OddsOutcome[];
+type OddsParticipants = {
+  home: ParticipantInfo;
+  away: ParticipantInfo;
 };
 
-type OddsFixture = {
-  id: number | string;
-  homeTeamName?: string;
-  awayTeamName?: string;
-  startDate?: string;
-  markets?: OddsMarket[];
-  market?: OddsMarket[];
+/**
+ * Estrutura de mercado dentro de bookmakerOdds.
+ * Para 1X2: market keys podem ser "1x2", "match_winner", "ft_result" etc.
+ */
+type MarketOutcome = {
+  name:  string;   // "Home", "Draw", "Away" (ou "1", "X", "2")
+  price: number;   // odds decimal, ex: 2.15
+  id?:   number | string;
 };
+
+type Market = {
+  id?:      number | string;
+  name?:    string;
+  outcomes?: MarketOutcome[];
+  values?:   MarketOutcome[];  // formato alternativo da API
+};
+
+type BookmakerOddsEntry = {
+  markets?: Record<string, Market | MarketOutcome[]>;
+};
+
+type OddsApiFixture = {
+  id:              number | string;
+  participants:    OddsParticipants;
+  startDate?:      string;
+  tournamentId?:   number;
+  bookmakerOdds?:  Record<string, BookmakerOddsEntry>;
+};
+
+type OddsApiResponse = {
+  data?:    OddsApiFixture[];
+  success?: boolean;
+  error?:   string;
+};
+
+// ─── Tipos exportados (compatíveis com o pipeline de connectors/index.ts) ─────
 
 export type FixtureOdds = {
   homeOdd:  number;
   drawOdd:  number;
   awayOdd:  number;
-  source: "oddspapi" | "api-football";
+  source:   "oddspapi" | "api-football";
 };
-
-// ─── Odds normalizadas por jogo ───────────────────────────────────────────────
 
 export type OddsMap = Map<string, FixtureOdds>;
 
-// ─── Fetch base ───────────────────────────────────────────────────────────────
+// ─── Normalização de nomes ────────────────────────────────────────────────────
 
-let _lastRequest = 0;
-
-async function opFetch<T>(path: string, revalidate = 10800): Promise<T> {
-  const key = process.env.ODDSPAPI_KEY;
-  if (!key) {
-    throw new Error("ODDSPAPI_KEY não configurado. Adicione ao .env.local");
-  }
-
-  // Rate limit: aguardar 500ms desde a última requisição
-  const now = Date.now();
-  const elapsed = now - _lastRequest;
-  if (elapsed < RATE_LIMIT_MS) {
-    await new Promise((r) => setTimeout(r, RATE_LIMIT_MS - elapsed));
-  }
-  _lastRequest = Date.now();
-
-  const separator = path.includes("?") ? "&" : "?";
-  const url = `${BASE_URL}${path}${separator}apiKey=${key}`;
-
-  const res = await fetch(url, {
-    next: { revalidate },
-  });
-
-  if (!res.ok) {
-    throw new Error(`OddsPapi HTTP ${res.status} em ${path}`);
-  }
-
-  return res.json() as Promise<T>;
-}
-
-// ─── Parse market 101 (1X2) ──────────────────────────────────────────────────
-
-function parseMarket101(fixture: OddsFixture): FixtureOdds | null {
-  const markets = fixture.markets ?? fixture.market ?? [];
-  const m101 = markets.find((m) => m.id === 101);
-  if (!m101) return null;
-
-  const home = m101.outcomes.find((o) => o.id === 101)?.price ?? 0;
-  const draw = m101.outcomes.find((o) => o.id === 102)?.price ?? 0;
-  const away = m101.outcomes.find((o) => o.id === 103)?.price ?? 0;
-
-  if (home <= 1 || draw <= 1 || away <= 1) return null; // odds inválidas
-
-  return { homeOdd: home, drawOdd: draw, awayOdd: away, source: "oddspapi" };
-}
-
-// ─── Normalizar nome do time para matching ────────────────────────────────────
-
+/** Normaliza nomes de times para matching (remove acentos, sufixos de clube) */
 export function normalizeName(name: string): string {
   return name
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")   // remove acentos
-    .replace(/\s+(fc|sc|ec|ca|se|cr|ac|af)\s*$/i, "")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+(fc|sc|ec|ca|se|cr|ac|af|fbc)\s*$/i, "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-/**
- * Constrói uma chave de matching por nomes normalizados.
- * Ex: "Flamengo × Palmeiras" → "flamengo|palmeiras"
- */
+/** Chave de matching para o OddsMap */
 export function matchKey(home: string, away: string): string {
   return `${normalizeName(home)}|${normalizeName(away)}`;
 }
 
-// ─── Endpoint: odds por torneio ───────────────────────────────────────────────
+// ─── Parse de mercado 1X2 ─────────────────────────────────────────────────────
 
 /**
- * Busca odds 1X2 de todos os próximos jogos de um torneio.
- * Retorna um Map<"homeNorm|awayNorm", FixtureOdds>
- *
- * Cache: 3h (Next.js revalidate)
+ * Extrai odds Home/Draw/Away de uma entrada de bookmaker.
+ * Suporta os múltiplos formatos retornados pelo OddsPapi.
  */
-export async function getOddsByTournament(
-  tournamentId: number,
-  bookmaker = "pinnacle"
-): Promise<OddsMap> {
-  const data = await opFetch<OddsFixture[]>(
-    `/odds-by-tournaments?tournamentIds=${tournamentId}&bookmaker=${bookmaker}`,
-    10800
-  );
+function parse1X2(entry: BookmakerOddsEntry): { homeOdd: number; drawOdd: number; awayOdd: number } | null {
+  if (!entry.markets) return null;
 
-  const map: OddsMap = new Map();
+  // Tentar chaves conhecidas para o mercado 1X2
+  const marketKeys = ["1x2", "match_winner", "ft_result", "fulltime_result", "result"];
+  let outcomes: MarketOutcome[] | null = null;
 
-  if (!Array.isArray(data)) return map;
+  for (const key of marketKeys) {
+    const market = entry.markets[key];
+    if (!market) continue;
 
-  for (const fixture of data) {
-    const parsed = parseMarket101(fixture);
-    if (!parsed) continue;
-
-    // Indexar por nomes normalizados dos times
-    const home = fixture.homeTeamName ?? "";
-    const away = fixture.awayTeamName ?? "";
-    if (home && away) {
-      map.set(matchKey(home, away), parsed);
+    // Formato array direto
+    if (Array.isArray(market)) {
+      outcomes = market as MarketOutcome[];
+      break;
     }
 
-    // Indexar também por ID (como string) para drill-down
-    if (fixture.id) {
-      map.set(String(fixture.id), parsed);
+    // Formato objeto com outcomes ou values
+    if (typeof market === "object") {
+      const m = market as Market;
+      if (Array.isArray(m.outcomes) && m.outcomes.length > 0) {
+        outcomes = m.outcomes;
+        break;
+      }
+      if (Array.isArray(m.values) && m.values.length > 0) {
+        outcomes = m.values;
+        break;
+      }
     }
   }
 
-  return map;
-}
-
-// ─── Endpoint: odds de um fixture específico ─────────────────────────────────
-
-/**
- * Busca odds 1X2 de um fixture individual.
- * Usar para drill-down ou quando o torneio não retornu o fixture.
- *
- * Cache: 3h
- */
-export async function getOddsForFixture(fixtureId: string | number): Promise<FixtureOdds | null> {
-  try {
-    const data = await opFetch<OddsFixture[]>(
-      `/odds?fixtureId=${fixtureId}`,
-      10800
-    );
-
-    if (!Array.isArray(data) || data.length === 0) return null;
-    return parseMarket101(data[0]!);
-  } catch {
-    return null;
+  // Se não encontrou por chave, tentar o primeiro mercado disponível
+  if (!outcomes) {
+    for (const value of Object.values(entry.markets)) {
+      if (Array.isArray(value) && value.length >= 3) {
+        outcomes = value as MarketOutcome[];
+        break;
+      }
+      if (typeof value === "object" && !Array.isArray(value)) {
+        const m = value as Market;
+        const arr = m.outcomes ?? m.values ?? [];
+        if (arr.length >= 3) {
+          outcomes = arr;
+          break;
+        }
+      }
+    }
   }
+
+  if (!outcomes || outcomes.length < 3) return null;
+
+  // Identificar home, draw, away pelos nomes dos outcomes
+  const homeLabels = ["home", "1", "home win"];
+  const drawLabels = ["draw", "x", "tie"];
+  const awayLabels = ["away", "2", "away win"];
+
+  const findOdd = (labels: string[]) =>
+    outcomes!.find((o) => {
+      const n = (o.name ?? "").toLowerCase().trim();
+      return labels.some((l) => n === l || n.startsWith(l));
+    })?.price ?? 0;
+
+  const homeOdd = findOdd(homeLabels);
+  const drawOdd = findOdd(drawLabels);
+  const awayOdd = findOdd(awayLabels);
+
+  // Fallback posicional se o matching por nome falhar (ordem padrão: Home, Draw, Away)
+  const homeF  = homeOdd || outcomes[0]?.price || 0;
+  const drawF  = drawOdd || outcomes[1]?.price || 0;
+  const awayF  = awayOdd || outcomes[2]?.price || 0;
+
+  if (homeF <= 1 || drawF <= 1 || awayF <= 1) return null;
+
+  return { homeOdd: homeF, drawOdd: drawF, awayOdd: awayF };
 }
 
-// ─── Matching: football-data.org → OddsPapi ──────────────────────────────────
+// ─── Lookup de odds no mapa ───────────────────────────────────────────────────
 
 /**
- * Encontra odds para um jogo identificado pelos nomes dos times.
- * Tenta correspondência exata e parcial (prefixo de 6 chars).
+ * Encontra odds para um jogo pelos nomes dos times.
+ * Tenta matching exato e depois parcial (substring).
  */
 export function lookupOdds(
   homeTeam: string,
   awayTeam: string,
-  oddsMap: OddsMap
+  oddsMap:  OddsMap,
 ): FixtureOdds | null {
-  // Tentativa 1: chave exata
   const exactKey = matchKey(homeTeam, awayTeam);
   if (oddsMap.has(exactKey)) return oddsMap.get(exactKey)!;
 
-  // Tentativa 2: busca parcial (nome contém substring)
   const homeNorm = normalizeName(homeTeam);
   const awayNorm = normalizeName(awayTeam);
 
@@ -225,4 +231,96 @@ export function lookupOdds(
   }
 
   return null;
+}
+
+// ─── Fetch principal ──────────────────────────────────────────────────────────
+
+/**
+ * Busca odds 1X2 do Brasileirão Série A no OddsPapi.
+ *
+ * Pipeline de bookmakers (em ordem de preferência):
+ *   1. Betano  — patrocinadora oficial, odds relevantes para o mercado BR
+ *   2. Betnacional — bookmaker nacional
+ *   3. EstrelaBet — mercado BR
+ *   4. Bet365  — global, alta liquidez
+ *   5. Pinnacle — sharp, sem margem (referência)
+ *
+ * Retorna OddsMap com chave "homeNorm|awayNorm" e também por ID do fixture.
+ */
+export async function getOddsByTournament(
+  tournamentId: number = TOURNAMENT_SERIE_A,
+): Promise<OddsMap> {
+  const map: OddsMap = new Map();
+  const key = process.env.ODDSPAPI_KEY;
+
+  if (!key) {
+    console.warn("[OddsPapi] ODDSPAPI_KEY não configurado. Pulando.");
+    return map;
+  }
+
+  // Tentar cada bookmaker em ordem de preferência
+  for (const bookmaker of PREFERRED_BOOKMAKERS) {
+    try {
+      const url = `${BASE_URL}/odds?apiKey=${key}&bookmakers=${bookmaker}&sportId=${SOCCER_SPORT_ID}`;
+
+      const res = await fetch(url, {
+        next: { revalidate: 10800 }, // cache ISR 3h
+      });
+
+      if (!res.ok) {
+        console.warn(`[OddsPapi/${bookmaker}] HTTP ${res.status}`);
+        continue;
+      }
+
+      const json = (await res.json()) as OddsApiResponse;
+      const fixtures = json.data ?? [];
+
+      if (!Array.isArray(fixtures) || fixtures.length === 0) {
+        console.warn(`[OddsPapi/${bookmaker}] Resposta vazia`);
+        continue;
+      }
+
+      // Filtrar pelo torneio (Brasileirão = 325) se disponível
+      const brazilFixtures = fixtures.filter((f) =>
+        !f.tournamentId || f.tournamentId === tournamentId
+      );
+
+      let count = 0;
+      for (const fixture of brazilFixtures) {
+        const bookmakerData = fixture.bookmakerOdds?.[bookmaker];
+        if (!bookmakerData) continue;
+
+        const parsed = parse1X2(bookmakerData);
+        if (!parsed) continue;
+
+        const home = fixture.participants.home.name;
+        const away = fixture.participants.away.name;
+        if (!home || !away) continue;
+
+        const odds: FixtureOdds = { ...parsed, source: "oddspapi" };
+
+        // Indexar por nomes normalizados
+        map.set(matchKey(home, away), odds);
+
+        // Indexar por ID para drill-down
+        if (fixture.id) map.set(String(fixture.id), odds);
+
+        count++;
+      }
+
+      if (count > 0) {
+        console.info(`[OddsPapi/${bookmaker}] ${count} jogos com odds`);
+        return map; // Primeira fonte com dados → retorna
+      }
+
+      console.info(`[OddsPapi/${bookmaker}] Sem jogos do Brasileirão — tentando próximo`);
+
+    } catch (err) {
+      console.warn(`[OddsPapi/${bookmaker}] Erro:`, err);
+      // Continua para o próximo bookmaker
+    }
+  }
+
+  console.warn("[OddsPapi] Nenhum bookmaker retornou dados. Usando fallback sintético.");
+  return map;
 }

@@ -308,22 +308,25 @@ export async function fetchRoundMatchInputs(
       if (r) gatedHits.finished = true;
       return r ?? getFinishedMatches(200);
     }),
-    // Odds em cascata (3 fontes): TheOddsAPI → API-Football(Bet365) → OddsPapi(Pinnacle)
-    // TheOddsAPI é mais confiável para o Brasileirão e tem free tier de 500 req/mês.
+    // Odds em cascata (3 fontes): OddsPapi(Betano/BR) → TheOddsAPI → API-Football(Bet365)
+    // OddsPapi tem chave configurada e cobre casas brasileiras (Betano = patrocinadora BSA).
     (async () => {
-      // Fonte 1: The Odds API (theOddsApi.com) — grátis, confiável, Pinnacle + Bet365
-      const toa = await getOddsFromTheOddsApi().catch(() => null);
-      if (toa && toa.size > 0) {
-        console.info(`[Odds] TheOddsAPI: ${toa.size / 2} jogos`);
-        return toa;
+      // Fonte 1: OddsPapi — Betano, Betnacional, EstrelaBet, bet365, Pinnacle
+      const op = await getOddsByTournament(TOURNAMENT_SERIE_A).catch(() => null);
+      if (op && op.size > 0) {
+        console.info(`[Odds] OddsPapi: ${op.size / 2} jogos`);
+        return op;
       }
-      // Fonte 2: API-Football (Bet365, bookmaker=8)
+      // Fonte 2: The Odds API (theOddsApi.com) — free tier 500/mês
+      console.info("[Odds] OddsPapi vazio — caindo pra TheOddsAPI");
+      const toa = await getOddsFromTheOddsApi().catch(() => null);
+      if (toa && toa.size > 0) return toa;
+      // Fonte 3: API-Football (Bet365, bookmaker=8)
       console.info("[Odds] TheOddsAPI vazio — caindo pra API-Football (Bet365)");
       const af = await getOddsByRoundFromApiFootball(season, round).catch(() => null);
       if (af && af.size > 0) return af;
-      // Fonte 3: OddsPapi (Pinnacle via proxy)
-      console.info("[Odds] Bet365 vazio — caindo pra OddsPapi (Pinnacle)");
-      return getOddsByTournament(TOURNAMENT_SERIE_A).catch(() => new Map());
+      console.warn("[Odds] Todas as fontes falharam — usando fallback sintético");
+      return new Map();
     })(),
   ]);
 
