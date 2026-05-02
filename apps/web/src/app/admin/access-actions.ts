@@ -300,16 +300,33 @@ export async function adminResetUserPassword(formData: FormData) {
   }
 
   if (mode === "link") {
-    // Modo seguro: gera link de recovery e envia por email.
-    // Não toca na senha atual do Supabase — apenas marca mustChangePassword.
-    // O link de recovery do Supabase já invalida a sessão atual quando usado.
+    // Verifica se o usuário existe no Supabase Auth antes de gerar o link.
+    // Sem isso, generateLink retorna erro obscuro que causa 500.
+    const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+    const supabaseUser = listData?.users?.find(
+      (u) => u.email?.toLowerCase() === target.email.toLowerCase(),
+    );
+
+    if (!supabaseUser) {
+      throw new Error(
+        `Usuário ${target.email} não encontrado no Supabase Auth. ` +
+        "Use o modo 'Senha temporária' para criar o acesso primeiro.",
+      );
+    }
+
     const { data, error } = await supabaseAdmin.auth.admin.generateLink({
       type: "recovery",
       email: target.email,
+      options: {
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://bob.qaplay.com.br"}/conta?forced=1`,
+      },
     });
 
     if (error || !data?.properties?.action_link) {
-      throw new Error(`Falha ao gerar link de reset: ${error?.message ?? "link ausente"}`);
+      throw new Error(
+        `Falha ao gerar link de reset: ${error?.message ?? "link ausente"}. ` +
+        "Tente o modo 'Senha temporária' como alternativa.",
+      );
     }
 
     await prisma.user.update({

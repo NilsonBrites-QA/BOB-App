@@ -90,7 +90,7 @@ async function finalizeAuthenticatedUser(
     .catch(() => null);
 
   if (dbUser?.mustChangePassword) {
-    const forcePath = "/conta/senha?forced=1";
+    const forcePath = "/conta?forced=1";
     authClient.setResponse(buildSuccessResponse(origin, forcePath, mode));
     return authClient.getResponse();
   }
