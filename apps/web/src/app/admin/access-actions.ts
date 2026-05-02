@@ -283,14 +283,21 @@ export async function adminResetUserPassword(formData: FormData) {
     throw new Error("Usuário não encontrado.");
   }
 
-  if (isPrimaryAdmin(target.email)) {
+  const supabaseAdmin = createAdminClient();
+  const adminEmail = caller?.email;
+
+  const isSelfReset = adminEmail?.toLowerCase() === target.email.toLowerCase();
+
+  if (isPrimaryAdmin(target.email) && !isSelfReset) {
     throw new Error(
-      "O admin principal não pode ter a senha resetada por outro admin. Use a tela /conta/senha logado como ele, ou edite via Supabase Dashboard.",
+      "O admin principal não pode ter a senha resetada por outro admin. Use o botão Reset na sua própria linha (auto-reset via link).",
     );
   }
 
-  const supabaseAdmin = createAdminClient();
-  const adminEmail = caller?.email;
+  // Self-reset do admin principal só pode ser via link (nunca senha temporária)
+  if (isSelfReset && mode === "temporary") {
+    throw new Error("Para redefinir sua própria senha, use o modo 'Enviar link' — mais seguro.");
+  }
 
   if (mode === "link") {
     // Modo seguro: gera link de recovery e envia por email.

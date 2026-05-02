@@ -83,12 +83,13 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {/* Reset — admin principal só aparece o botão para si mesmo (self-reset) */}
       <button
         type="button"
         onClick={() => { setShowReset(true); setError(null); }}
-        disabled={isPrimary || pending}
+        disabled={pending}
         className="rounded-lg border border-amber-400 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-40"
-        title={isPrimary ? "Admin principal não pode ser resetado por outro admin" : "Resetar senha"}
+        title="Resetar senha"
       >
         🔑 Reset
       </button>
