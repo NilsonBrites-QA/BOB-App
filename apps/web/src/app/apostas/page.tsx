@@ -79,6 +79,7 @@ export default async function ApostasPage({
       bobNarrative:       a.bobNarrative,
       riskLabel:          a.riskLabel,
       alerts:             a.alerts,
+      result:             a.result,
     };
   });
 

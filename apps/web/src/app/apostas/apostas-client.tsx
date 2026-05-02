@@ -14,7 +14,8 @@
 
 import { useState } from "react";
 import { TeamShield } from "@/components/team-shield";
-import type { CriarApostaPick, CriarApostaProfile } from "@/lib/bob/engine/criar-apostas";
+import type { CriarApostaPick, CriarApostaProfile, BetResult } from "@/lib/bob/engine/criar-apostas";
+
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -33,7 +34,9 @@ export type TicketView = {
   bobNarrative:        string;
   riskLabel:           "Baixo" | "Médio" | "Alto";
   alerts:              string[];
+  result:              BetResult;
 };
+
 
 type Props = {
   tickets:    TicketView[];
@@ -87,6 +90,24 @@ function buildCopyText(t: TicketView): string {
   return [header, picks, odd, conf].join("\n");
 }
 
+function ResultBadge({ result }: { result: BetResult }) {
+  if (result === "GREEN") return (
+    <span className="flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-0.5 text-[10px] font-bold text-accent-strong">
+      <span>●</span> GREEN
+    </span>
+  );
+  if (result === "RED") return (
+    <span className="flex items-center gap-1 rounded-full bg-red-500/15 px-2.5 py-0.5 text-[10px] font-bold text-red-600">
+      <span>●</span> RED
+    </span>
+  );
+  return (
+    <span className="flex items-center gap-1 rounded-full bg-border/40 px-2.5 py-0.5 text-[10px] font-medium text-muted">
+      <span>○</span> Aguardando
+    </span>
+  );
+}
+
 // ─── Card de Ticket ───────────────────────────────────────────────────────────
 
 function TicketCard({ ticket }: { ticket: TicketView }) {
@@ -104,7 +125,7 @@ function TicketCard({ ticket }: { ticket: TicketView }) {
 
   return (
     <article className="panel flex flex-col gap-0 overflow-hidden rounded-[24px]">
-      {/* Header: times */}
+      {/* Header: times + resultado */}
       <div className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
         <div className="flex items-center gap-3 min-w-0">
           <TeamShield teamName={ticket.homeTeam} src={ticket.homeCrest} size={28} />
@@ -121,15 +142,19 @@ function TicketCard({ ticket }: { ticket: TicketView }) {
         </div>
       </div>
 
-      {/* Perfil + risco */}
+      {/* Resultado GREEN/RED + perfil + risco */}
       <div className="flex items-center justify-between gap-2 px-5 pt-3">
-        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${PROFILE_COLORS[ticket.profile]}`}>
-          {PROFILE_LABELS[ticket.profile]}
-        </span>
-        <span className={`text-xs font-medium ${RISK_COLORS[ticket.riskLabel]}`}>
-          Risco {ticket.riskLabel}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${PROFILE_COLORS[ticket.profile]}`}>
+            {PROFILE_LABELS[ticket.profile]}
+          </span>
+          <span className={`text-xs font-medium ${RISK_COLORS[ticket.riskLabel]}`}>
+            Risco {ticket.riskLabel}
+          </span>
+        </div>
+        <ResultBadge result={ticket.result} />
       </div>
+
 
       {/* Barra de confiança */}
       <div className="px-5 pt-2">
@@ -287,7 +312,7 @@ export function ApostasClient({ tickets, roundLabel, isDemo }: Props) {
       {filtered.length > 0 ? (
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((ticket) => (
-            <TicketCard key={ticket.matchId} ticket={ticket} />
+            <TicketCard key={`${ticket.matchId}-${ticket.profile}`} ticket={ticket} />
           ))}
         </div>
       ) : (
