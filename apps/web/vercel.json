@@ -30,6 +30,9 @@
     { "path": "/api/cron/import-matches", "schedule": "0 8 * * *" },
     { "path": "/api/cron/judge-variations", "schedule": "0 9 * * *" },
     { "path": "/api/cron/judge-variations", "schedule": "0 14 * * *" },
-    { "path": "/api/cron/judge-variations", "schedule": "0 19 * * *" }
+    { "path": "/api/cron/judge-variations", "schedule": "0 19 * * *" },
+    { "path": "/api/cron/brain-weekly",     "schedule": "0 8 * * 2" },
+    { "path": "/api/cron/update-odds",      "schedule": "0 8 * * *" },
+    { "path": "/api/cron/update-odds",      "schedule": "0 18 * * *" }
   ]
 }

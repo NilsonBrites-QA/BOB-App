@@ -61,18 +61,32 @@ function buildPrompt(
   anchors: ScoredMatch[],
   poolAvailable: ScoredMatch[],
 ): string {
+  // Calcular sobreposição entre pares de variações para mostrar à LLM
+  const overlapMatrix = variations.map((v1) =>
+    variations.map((v2) => {
+      if (v1.id === v2.id) return "-";
+      const ids1 = new Set(v1.legs.map((l) => l.matchId));
+      const shared = v2.legs.filter((l) => ids1.has(l.matchId)).length;
+      const pct = Math.round((shared / Math.max(v1.legs.length, v2.legs.length)) * 100);
+      return `${pct}%`;
+    })
+  );
+  const overlapText = variations
+    .map((v, i) => `  ${v.id}: [${variations.map((_, j) => overlapMatrix[i]![j]).join(" | ")}]`)
+    .join("\n");
+
   const anchorsText = anchors
     .map(
       (a, i) =>
-        `${i + 1}. [id:${a.id}] ${a.homeTeam} x ${a.awayTeam} — score ${a.score} — casa ${a.homeOdd} | empate ${a.drawOdd} | fora ${a.awayOdd}`,
+        `${i + 1}. [id:${a.id}] ${a.homeTeam} x ${a.awayTeam} — score ${a.score.toFixed(0)} — casa ${a.homeOdd} | empate ${a.drawOdd} | fora ${a.awayOdd}`,
     )
     .join("\n");
 
   const poolText = poolAvailable
-    .slice(0, 12)
+    .slice(0, 14)
     .map(
       (m) =>
-        `[id:${m.id}] ${m.homeTeam} x ${m.awayTeam} — score ${m.score} — casa ${m.homeOdd} | empate ${m.drawOdd} | fora ${m.awayOdd}`,
+        `[id:${m.id}] ${m.homeTeam} x ${m.awayTeam} — score ${m.score.toFixed(0)} — casa ${m.homeOdd} | empate ${m.drawOdd} | fora ${m.awayOdd}`,
     )
     .join("\n");
 
@@ -88,49 +102,82 @@ function buildPrompt(
     })
     .join("\n\n");
 
-  return `Você é o BOB, analista quantitativo do Brasileirão Série A. Sua função é AUDITAR ATIVAMENTE 5 variações de bilhete Big Odds (alvo 900x+) propostas por motor estatístico determinístico.
+  return `Você é o BOB — analista quantitativo sênior do Brasileirão Série A, especialista em construção de bilhetes Big Odds (900x+).
 
-ÂNCORAS DA RODADA (jogos de maior confiança — NUNCA substituir):
+Seu trabalho é AUDITAR CRITICAMENTE 5 variações geradas por motor determinístico e devolver:
+1. Análise editorial profunda de cada variação
+2. Substituições obrigatórias onde houver duplicação ou pick subótimo
+
+═══════════════════════════════════════════════
+ÂNCORAS DA RODADA (confiança máxima — NUNCA substituir):
 ${anchorsText}
 
-POOL DE JOGOS DISPONÍVEIS (podem entrar nas variações como substituição):
+POOL DISPONÍVEL PARA SUBSTITUIÇÕES:
 ${poolText}
 
-5 VARIAÇÕES PROPOSTAS PELO MOTOR:
+5 VARIAÇÕES DO MOTOR:
 ${varsText}
 
-SUA MISSÃO:
-1. Para cada variação, produza enrichment editorial:
-   - bobNarrative: 1-2 frases sobre a estratégia
-   - keyInsight: ponto-chave decisivo
-   - riskAlerts: 0-2 alertas reais
-   - confidence: "alta" (odds <1500x e ≥3 âncoras), "média" (1500-3000x), "baixa" (>3000x)
-2. SE identificar pick subótimo, PROPONHA substituição (máximo 1 por variação):
-   - fromMatchId: id do match atual (NUNCA âncora)
-   - toMatchId: id do match do pool que entra no lugar
-   - reason: justificativa em 1 frase
-   - Sem substituição se a variação está sólida.
+MATRIZ DE SOBREPOSIÇÃO ENTRE VARIAÇÕES (colunas = V1|V2|V3|V4|V5):
+${overlapText}
+═══════════════════════════════════════════════
 
-REGRAS DURAS:
-- NÃO substitua âncoras (jogos marcados [ÂNCORA])
-- NÃO invente IDs — use apenas os ids das listas acima
-- NÃO invente estatísticas — use só o que está nos dados
+REGRAS DE ANÁLISE OBRIGATÓRIAS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+① DIVERSIDADE FORÇADA: Se duas variações têm sobreposição > 50% (excluindo âncoras),
+   OBRIGATORIAMENTE proponha substituição na variação de menor confiança.
+   Cada variação deve ter identidade distinta — estratégia diferente, não só picks diferentes.
 
-Responda APENAS um JSON válido (sem texto antes ou depois):
+② PERFIL ESTRATÉGICO de cada variação:
+   - V1 (Segurança): máxima confiança, mínimo risco. Favorece favoritos absolutos.
+   - V2 (Equilíbrio): balanceia segurança com empates calculados. Empates devem ter ratio draw/home < 2.0.
+   - V3 (Lógica Pura): segue estritamente o motor. Aceita favoritos menos óbvios (homeOdd 1.6–2.4).
+   - V4 (Pressão Curta): menos jogos, mais valor por pick. Homeodds mais altas. Contrarian em 1 pick.
+   - V5 (Extrema): aceita azarões (away < 3.6) e empates contraintuitivos. Alto risco, alta recompensa.
+
+③ VALOR ESPERADO: Para cada pick fora das âncoras, considere se a odd de mercado está dentro do
+   valor justo (Poisson implícito). Se homeOdd < 1.35, o valor esperado é negativo — alerte.
+
+④ PICKS SUBÓTIMOS — condições para substituição obrigatória:
+   - Pick repetido em 3+ variações sem ser âncora (rompe diversidade)
+   - Empate com drawOdd > 3.60 (estatisticamente raro demais)
+   - Vitória do visitante com awayOdd > 4.00 em variação conservadora (V1/V2)
+   - HomeOdd < 1.25 (odd baixa demais — custo de oportunidade alto)
+
+REGRAS DURAS (nunca violar):
+- NÃO substitua âncoras [ÂNCORA]
+- NÃO invente IDs — use apenas ids das listas acima
+- NÃO invente estatísticas — use só os dados fornecidos
+- Máximo 2 substituições por variação
+- bobNarrative deve ser analítico, não genérico (mencione times e odds específicos)
+
+Responda APENAS JSON válido (sem markdown, sem texto antes/depois):
 {
   "enrichments": [
-    {"variationId": "V1", "bobNarrative": "...", "keyInsight": "...", "riskAlerts": ["..."], "confidence": "alta"},
+    {
+      "variationId": "V1",
+      "bobNarrative": "<análise específica mencionando times e odds — 2 frases mínimo>",
+      "keyInsight": "<ponto decisivo único desta variação — diferente das outras>",
+      "riskAlerts": ["<alerta 1 específico>"],
+      "confidence": "alta"
+    },
     {"variationId": "V2", ...},
     {"variationId": "V3", ...},
     {"variationId": "V4", ...},
     {"variationId": "V5", ...}
   ],
   "replacements": [
-    {"variationId": "V4", "fromMatchId": "<id atual>", "toMatchId": "<id do pool>", "reason": "..."}
+    {
+      "variationId": "<qual variação ajustar>",
+      "fromMatchId": "<id do pick atual a remover — NUNCA âncora>",
+      "toMatchId": "<id do pick do pool que entra>",
+      "reason": "<justificativa analítica em 1 frase — cite odds e contexto>"
+    }
   ]
 }
 
-O array "replacements" pode estar vazio se nenhuma variação precisa de ajuste.`;
+O array "replacements" deve estar PREENCHIDO se houver sobreposição > 50% ou pick subótimo.
+Deixe vazio APENAS se todas as 5 variações forem genuinamente distintas e coerentes.`;
 }
 
 // ─── Validador de substituições ───────────────────────────────────────────────

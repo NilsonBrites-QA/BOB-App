@@ -322,8 +322,9 @@ function enforceDivergence(
   primary: VariationPick[],
   target: VariationPick[],
   reserve: ScoredMatch[],
+  threshold: number = 0.45, // limiar de sobreposição (era 70%, agora 45%)
 ): VariationPick[] {
-  if (overlapRatio(primary, target) <= 0.70) return target;
+  if (overlapRatio(primary, target) <= threshold) return target;
 
   const usedIds = new Set([
     ...primary.map((p) => p.fixtureId),
@@ -332,18 +333,23 @@ function enforceDivergence(
 
   // Encontrar candidatos do reserve ainda não usados
   const candidates = reserve.filter((m) => !usedIds.has(m.id));
-  if (candidates.length === 0) return target; // reserva esgotada, retorna como está
+  if (candidates.length === 0) return target;
 
-  // Substituir o último fill não-âncora de target por um candidato do reserve
+  // Substituir os últimos N fills não-âncora necessários para baixar a sobreposição
   const result = [...target];
-  const lastFillIndex = result.map((p, i) => ({ p, i }))
+  const nonAnchorIndices = result
+    .map((p, i) => ({ p, i }))
     .filter(({ p }) => !p.isAnchor)
-    .at(-1)?.i;
+    .reverse();
 
-  if (lastFillIndex === undefined) return result;
+  let subIdx = 0;
+  for (const { i } of nonAnchorIndices) {
+    if (overlapRatio(primary, result) <= threshold) break;
+    if (subIdx >= candidates.length) break;
+    const sub = candidates[subIdx++]!;
+    result[i] = toWinPick(sub);
+  }
 
-  const sub = candidates[0]!;
-  result[lastFillIndex] = toWinPick(sub);
   return result;
 }
 
@@ -424,8 +430,10 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
   };
 
   // ── V3: Lógica Pura (4 âncoras + 5 fills, ~9 jogos) ──────────────────────
-  // Usa score-ordered fills: os favoritos mais óbvios pelo algoritmo
-  const v3FillPicks = fills.slice(0, 5).map((m, i) =>
+  // DIFERENCIAL DE V1: usa offset +2 nos fills para garantir picks diferentes
+  // V1 usa fills[0..3], V3 usa fills[2..6] → sobreposição máxima de 2 fills
+  const v3FillOffset = Math.min(2, Math.floor(fills.length / 3));
+  const v3FillPicks = fills.slice(v3FillOffset, v3FillOffset + 5).map((m, i) =>
     // Último fill inclui um empate para variedade de odd
     i === 4 ? toDrawPick(m) : toWinPick(m),
   );
@@ -491,8 +499,9 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
   };
 
   // ── V5: Extrema (2–3 âncoras + empates e azarões, ~10 jogos) ─────────────
+  // DIFERENCIAL: V5 começa nos draws de índice 2+ para não repetir V2
   const v5AnchorPicks = anchors.slice(0, 2).map(toAnchorPick);
-  const v5DrawPicks = draws.slice(0, 5).map(toDrawPick);
+  const v5DrawPicks = draws.slice(2, 7).map(toDrawPick);   // offset: evita repetir V2 (draws[0..2])
   const v5UpsetPicks = upsets.slice(0, 3).map(toUpsetPick);
   const v5PicksRaw: VariationPick[] = [
     ...v5AnchorPicks,
