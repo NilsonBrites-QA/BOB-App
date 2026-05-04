@@ -11,6 +11,7 @@ import type {
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
 import { loadRoundData } from "@/lib/bob/round-loader";
 import { loadDeliveredRound } from "@/lib/bob/persist";
+import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
 import { DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
 import { VariacoesClient } from "./variacoes-client";
 import type { VariationView, AnchorView, AuditView, RoundView, VariationLeg } from "./variacoes-client";
@@ -244,11 +245,16 @@ function splitMatch(s: string): { home: string; away: string } {
   return { home: parts[0]?.trim() ?? "", away: parts[1]?.trim() ?? "" };
 }
 
-function renderFromDb(args: {
+async function renderFromDb(args: {
   season: number;
   dbRound: DbRound;
 }) {
   const { season, dbRound } = args;
+
+  // ── CORREÇÃO: Escudos carregados do banco (DB-first, PRD §9) ──
+  // Antes: homeBadge/awayBadge eram null — TeamShield mostrava só iniciais.
+  // Agora: uma query carrega todos os escudos da tabela team_assets.
+  const badgeMap = await loadAllBadgesFromDb();
 
   // Variações
   const variations: VariationView[] = dbRound.variations.map((v) => {
@@ -265,8 +271,8 @@ function renderFromDb(args: {
         fairOdd:    p.odd, // sem snapshot — usa o próprio odd
         cleanProb:  p.odd > 0 ? 1 / p.odd : 0,
         isAnchor:   p.isAnchor,
-        homeBadge:  null, // modo DB: crests não disponíveis (TeamShield mostra iniciais)
-        awayBadge:  null,
+        homeBadge:  resolveBadge(home, badgeMap),
+        awayBadge:  resolveBadge(away, badgeMap),
       };
     });
 
@@ -293,7 +299,7 @@ function renderFromDb(args: {
     return view;
   });
 
-  // Âncoras
+  // Âncoras — agora com escudos do banco
   const anchorsView: AnchorView[] = dbRound.anchors.map((a) => {
     const matchKeyHome = a.team;
     const matchKeyAway = a.opponent;
@@ -309,8 +315,8 @@ function renderFromDb(args: {
         ? String((a.reasons as unknown[])[0])
         : `${matchKeyHome} oferece o melhor equilíbrio da rodada`,
       risks:      [],
-      homeBadge:  null,
-      awayBadge:  null,
+      homeBadge:  resolveBadge(matchKeyHome, badgeMap),
+      awayBadge:  resolveBadge(matchKeyAway, badgeMap),
     };
   });
 
@@ -330,7 +336,7 @@ function renderFromDb(args: {
     cutoff,
     totalMatches:  variations[0]?.legCount ?? 0,
     difficulty:    "balanced",
-    difficultyLabel: "Rodada congelada — variações imutáveis",
+    difficultyLabel: "Variações oficiais — leitura congelada",
     bobMessage:
       `Variações entregues e congeladas (versão ${
         (dbRound as { version?: number }).version ?? 1
@@ -383,7 +389,8 @@ export default async function VariacoesPage({
     : null;
 
   if (dbRound && dbRound.status === "DELIVERED" && dbRound.variations.length > 0) {
-    return renderFromDb({
+    // renderFromDb agora é async (carrega escudos do banco)
+    return await renderFromDb({
       season,
       dbRound: dbRound as DbRound,
     });
@@ -393,10 +400,10 @@ export default async function VariacoesPage({
   // Run engine
   const allScored = roundData.matches.map(scoreMatch);
 
-  // Mapa matchId → crests (vem do football-data.org via homeCrest/awayCrest)
-  const crestMap = new Map(
-    allScored.map((m) => [m.id, { home: m.homeCrest ?? null, away: m.awayCrest ?? null }])
-  );
+  // ── CORREÇÃO: Escudos do banco (DB-first, PRD §9) ──
+  // Antes: crestMap usava URLs da API externa (homeCrest/awayCrest) → rate-limit, escudos sumiam.
+  // Agora: uma query carrega todos os escudos da tabela team_assets.
+  const badgeMap = await loadAllBadgesFromDb();
 
   const anchors = selectAnchorsFromScored(allScored);
   const anchorIds = new Set(anchors.map((a) => a.id));
@@ -458,8 +465,8 @@ export default async function VariacoesPage({
       fairOdd: leg.fairOdd,
       cleanProb: leg.cleanProb,
       isAnchor: leg.isAnchor,
-      homeBadge: crestMap.get(leg.matchId)?.home ?? null,
-      awayBadge: crestMap.get(leg.matchId)?.away ?? null,
+      homeBadge: resolveBadge(leg.homeTeam, badgeMap),
+      awayBadge: resolveBadge(leg.awayTeam, badgeMap),
     }));
 
     const meta = variationTitle(v.id);
@@ -503,8 +510,8 @@ export default async function VariacoesPage({
       confidence: a.score,
       reason: buildAnchorReason(a),
       risks: ((a as { calibrationAlerts?: string[] }).calibrationAlerts ?? []).slice(0, 3),
-      homeBadge: a.homeCrest ?? null,
-      awayBadge: a.awayCrest ?? null,
+      homeBadge: resolveBadge(a.homeTeam, badgeMap),
+      awayBadge: resolveBadge(a.awayTeam, badgeMap),
     };
   });
 

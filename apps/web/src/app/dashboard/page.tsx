@@ -11,8 +11,14 @@ import { demoMatches, DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/
 import { BOB_COPY } from "@/lib/bob/personality";
 import { TeamIdentity } from "@/components/team-identity";
 import { describeRoundFallback, loadRoundData } from "@/lib/bob/round-loader";
+import { loadDeliveredRound } from "@/lib/bob/persist";
+import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
 import type { Variation } from "@/lib/bob/types";
 import type { Variation as BeamVariation, TicketLeg } from "@/lib/bob/engine/beam-search";
+
+// ISR de 5 min: leitura do DB é instantânea (~30ms).
+// Variações congeladas NUNCA mudam entre requests.
+export const revalidate = 300;
 
 // ─── Helper: converter beam-search variation para formato legado ─────────────
 
@@ -79,6 +85,12 @@ function describeIntegration(label: string, status: string) {
   return `${label} em fallback`;
 }
 
+// ─── Helper: extrai nomes de time a partir de pick.match ("Team A x Team B") ─
+function splitTeamNames(match: string): [string, string] {
+  const parts = match.split(/\s+[x×]\s+/i);
+  return [(parts[0] ?? "").trim(), (parts[1] ?? "").trim()];
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function DashboardPage({
@@ -94,59 +106,170 @@ export default async function DashboardPage({
 
   const roundData = await loadRoundData(paramSeason, paramRound);
 
+  // ── CORREÇÃO CRÍTICA: Carregar escudos do banco (DB-first, PRD §9) ──
+  // Substitui o antigo crestMap que dependia de URLs vindas da API externa.
+  // Uma única query carrega TODOS os times. Zero chamadas externas.
+  const badgeMap = await loadAllBadgesFromDb();
 
-  // Mapa matchId → crests (vem direto do football-data.org via homeCrest/awayCrest)
-  const crestMap = new Map(
-    roundData.matches.map((m) => [m.id, { home: m.homeCrest ?? null, away: m.awayCrest ?? null }])
-  );
+  // ── CORREÇÃO CRÍTICA: Verificar se há variações CONGELADAS no banco ──
+  // Antes: scoreMatch() + generateVariations() rodava em todo SSR, gerando
+  // variações diferentes a cada F5 (violação de RN-07 e conceito de
+  // "Orquestrador Cognitivo Determinístico").
+  // Agora: lemos as variações imutáveis do banco (DELIVERED).
+  // O motor SÓ roda se não houver rodada congelada (draft/demo).
+  const effectiveRound = roundData.source === "api" && roundData.meta
+    ? roundData.meta.round
+    : (paramRound ?? 0);
 
-  const filteredMatches = roundData.matches.filter((match) => !excludedIds.has(match.id));
-  const allScored = filteredMatches.map(scoreMatch);
-  const anchors = selectAnchorsFromScored(allScored);
-  const anchorIds = new Set(anchors.map((anchor) => anchor.id));
-  const pool = allScored.filter((match) => !anchorIds.has(match.id));
-  const variationsResult = generateVariations({ anchors, pool });
-  const variations: Variation[] = (variationsResult.variations || []).map(convertBeamToLegacy);
-  const roundLabel = roundData.source === "api" && roundData.meta
-    ? `Rodada ${roundData.meta.round} · ${roundData.meta.season}`
-    : DEMO_ROUND_LABEL;
-  const { label: firstMatch, cutoff } = roundData.source === "api" && roundData.meta
-    ? formatFirstMatch(roundData.meta.firstMatchAt)
-    : { label: DEMO_FIRST_MATCH, cutoff: DEMO_CUTOFF };
+  const dbRound = effectiveRound > 0
+    ? await loadDeliveredRound(paramSeason, effectiveRound).catch(() => null)
+    : null;
 
-  // Detect zebra opportunities
-  const sourceMatches = filteredMatches.length > 0 ? filteredMatches : demoMatches.filter((m) => !excludedIds.has(m.id));
-  const zebras: ZebraOpportunity[] = detectZebras(sourceMatches, 3);
+  // ── Caminho 1: Variações congeladas do banco (IDEAL — determinístico) ──
+  const hasDelivered = dbRound && dbRound.status === "DELIVERED" && dbRound.variations?.length > 0;
 
-  // Dificuldade da rodada
-  const roundDifficulty = analyzeRoundDifficulty(allScored);
-  const anchorTarget = Math.min(4, allScored.length);
-  const integrationMeta = roundData.source === "api" && roundData.meta ? roundData.meta.integrations : null;
-  const degradedIntegrations = integrationMeta
-    ? [
-        integrationMeta.odds !== "live" ? describeIntegration("odds", integrationMeta.odds) : null,
-        integrationMeta.h2h !== "live" ? describeIntegration("H2H", integrationMeta.h2h) : null,
-        integrationMeta.injuries !== "live" ? describeIntegration("desfalques", integrationMeta.injuries) : null,
-        integrationMeta.cup !== "live" ? describeIntegration("copas", integrationMeta.cup) : null,
-        integrationMeta.assets !== "ready" ? describeIntegration("escudos", integrationMeta.assets) : null,
-        integrationMeta.weather !== "live" ? describeIntegration("clima", integrationMeta.weather) : null,
-      ].filter((value): value is string => Boolean(value))
+  let variations: Variation[];
+  let anchorsForDisplay: Array<{
+    id: string; homeTeam: string; awayTeam: string; score: number;
+    reasons: string[]; homeCrest: string | null; awayCrest: string | null;
+    suggestedResult: string; factorBreakdown?: unknown[];
+    isMarginalAnchor?: boolean;
+  }>;
+  let allScoredCount: number;
+  let roundLabel: string;
+  let firstMatch: string;
+  let cutoff: string;
+  let integrationMeta: unknown = null;
+  let degradedIntegrations: string[] = [];
+  let resolvedRound: number | null = null;
+  let resolvedSeason: number | null = null;
+
+  if (hasDelivered) {
+    // ── DB-FIRST: variações imutáveis (mesmo comportamento do /variacoes) ──
+    console.log(`[Dashboard] Renderizando variações congeladas da rodada ${effectiveRound} v${(dbRound as { version?: number }).version ?? 1}`);
+
+    variations = (dbRound.variations ?? []).map((v: { code: string; title: string; posture: string; projectedOdd: number; gameCount: number; anchorsTogether?: boolean; summary: string; picks: Array<{ fixtureId?: string; match: string; result: string; odd: number; isAnchor: boolean }> }) => ({
+      id: v.code ?? "V?",
+      title: v.title,
+      posture: v.posture,
+      projectedOdd: v.projectedOdd,
+      gameCount: v.gameCount,
+      anchorsTogether: v.anchorsTogether ?? false,
+      summary: v.summary,
+      picks: (v.picks ?? []).map((p) => {
+        const resultMap: Record<string, "1" | "X" | "2"> = { HOME: "1", DRAW: "X", AWAY: "2" };
+        return {
+          fixtureId: p.fixtureId ?? undefined,
+          match: p.match,
+          result: resultMap[p.result] ?? "1" as "1" | "X" | "2",
+          odd: p.odd,
+          isAnchor: p.isAnchor,
+        };
+      }),
+    }));
+
+    anchorsForDisplay = (dbRound.anchors ?? []).map((a: { id: string; team: string; opponent: string; score: number; reasons: unknown }) => ({
+      id: `anchor-${a.id}`,
+      homeTeam: a.team,
+      awayTeam: a.opponent,
+      score: a.score,
+      reasons: Array.isArray(a.reasons) ? a.reasons.map(String) : [],
+      homeCrest: resolveBadge(a.team, badgeMap),
+      awayCrest: resolveBadge(a.opponent, badgeMap),
+      suggestedResult: "1",
+    }));
+
+    allScoredCount = dbRound.variations?.[0]?.picks?.length ?? 10;
+    roundLabel = `Rodada ${dbRound.number} · ${paramSeason}`;
+    const fmResult = dbRound.firstMatchAt
+      ? formatFirstMatch(dbRound.firstMatchAt.toISOString())
+      : { label: DEMO_FIRST_MATCH, cutoff: DEMO_CUTOFF };
+    firstMatch = fmResult.label;
+    cutoff = fmResult.cutoff;
+    resolvedRound = dbRound.number;
+    resolvedSeason = paramSeason;
+  } else {
+    // ── Caminho 2: Motor on-the-fly (apenas para draft/demo sem rodada entregue) ──
+    // NOTA: Este caminho existe apenas como fallback para quando o admin ainda não
+    // congelou a rodada. As variações geradas aqui NÃO são as oficiais.
+    console.log(`[Dashboard] Sem rodada congelada — gerando variações on-the-fly (não oficial)`);
+
+    const filteredMatches = roundData.matches.filter((match) => !excludedIds.has(match.id));
+    const allScored = filteredMatches.map(scoreMatch);
+    const anchors = selectAnchorsFromScored(allScored);
+    const anchorIds = new Set(anchors.map((anchor) => anchor.id));
+    const pool = allScored.filter((match) => !anchorIds.has(match.id));
+    const variationsResult = generateVariations({ anchors, pool });
+    variations = (variationsResult.variations || []).map(convertBeamToLegacy);
+    allScoredCount = allScored.length;
+
+    anchorsForDisplay = anchors.map((a) => ({
+      ...a,
+      reasons: a.reasons ?? [],
+      homeCrest: resolveBadge(a.homeTeam, badgeMap),
+      awayCrest: resolveBadge(a.awayTeam, badgeMap),
+    }));
+
+    roundLabel = roundData.source === "api" && roundData.meta
+      ? `Rodada ${roundData.meta.round} · ${roundData.meta.season}`
+      : DEMO_ROUND_LABEL;
+    const fmResult = roundData.source === "api" && roundData.meta
+      ? formatFirstMatch(roundData.meta.firstMatchAt)
+      : { label: DEMO_FIRST_MATCH, cutoff: DEMO_CUTOFF };
+    firstMatch = fmResult.label;
+    cutoff = fmResult.cutoff;
+
+    integrationMeta = roundData.source === "api" && roundData.meta ? roundData.meta.integrations : null;
+    degradedIntegrations = integrationMeta
+      ? [
+          (integrationMeta as Record<string, string>).odds !== "live" ? describeIntegration("odds", (integrationMeta as Record<string, string>).odds) : null,
+          (integrationMeta as Record<string, string>).h2h !== "live" ? describeIntegration("H2H", (integrationMeta as Record<string, string>).h2h) : null,
+          (integrationMeta as Record<string, string>).injuries !== "live" ? describeIntegration("desfalques", (integrationMeta as Record<string, string>).injuries) : null,
+          (integrationMeta as Record<string, string>).cup !== "live" ? describeIntegration("copas", (integrationMeta as Record<string, string>).cup) : null,
+          (integrationMeta as Record<string, string>).assets !== "ready" ? describeIntegration("escudos", (integrationMeta as Record<string, string>).assets) : null,
+          (integrationMeta as Record<string, string>).weather !== "live" ? describeIntegration("clima", (integrationMeta as Record<string, string>).weather) : null,
+        ].filter((value): value is string => Boolean(value))
+      : [];
+
+    resolvedRound = roundData.source === "api" ? roundData.meta.round : null;
+    resolvedSeason = roundData.source === "api" ? roundData.meta.season : null;
+  }
+
+  // ── Construir mapa de badges para os componentes de variação ──
+  // Extrai todos os nomes de time das variações e resolve contra o badgeMap.
+  const teamBadges: Record<string, string | null> = {};
+  for (const v of variations) {
+    for (const pick of v.picks) {
+      const [home, away] = splitTeamNames(pick.match);
+      if (home && !(home in teamBadges)) teamBadges[home] = resolveBadge(home, badgeMap);
+      if (away && !(away in teamBadges)) teamBadges[away] = resolveBadge(away, badgeMap);
+    }
+  }
+
+  // Detect zebra opportunities (usa matches da API quando disponível)
+  const sourceMatchesForZebra = !hasDelivered
+    ? roundData.matches.filter((m) => !excludedIds.has(m.id))
+    : demoMatches.filter((m) => !excludedIds.has(m.id));
+  const zebras: ZebraOpportunity[] = !hasDelivered && sourceMatchesForZebra.length > 0
+    ? detectZebras(sourceMatchesForZebra, 3)
     : [];
 
-  // Determinar round e season resolvidos para a narrativa
-  const resolvedRound = roundData.source === "api" ? roundData.meta.round : null;
-  const resolvedSeason = roundData.source === "api" ? roundData.meta.season : null;
+  // Dificuldade da rodada
+  const roundDifficulty = !hasDelivered
+    ? analyzeRoundDifficulty(roundData.matches.map(scoreMatch))
+    : { difficulty: "balanced" as const, difficultyScore: 50, bobMessage: "Variações congeladas — determinismo garantido.", reasons: ["Rodada entregue e congelada"] };
+  const anchorTarget = Math.min(4, allScoredCount);
 
   // Mensagem de abertura diária do BOB (wiring BOB_FAITH)
   const greeterRound = resolvedRound ?? 15; // fallback para demo rodada 15
   const aberturaMensagem = BOB_COPY.aberturaDiaria(greeterRound);
   const heroChips = [
     {
-      label: roundData.source === "api" ? "Dados ao vivo" : "Modo demonstrativo",
-      tone: roundData.source === "api" ? ("accent" as const) : ("signal" as const),
+      label: hasDelivered ? "Variações oficiais" : (roundData.source === "api" ? "Dados ao vivo" : "Modo demonstrativo"),
+      tone: hasDelivered ? ("accent" as const) : (roundData.source === "api" ? ("accent" as const) : ("signal" as const)),
     },
     {
-      label: `${anchors.length} âncoras ativas`,
+      label: `${anchorsForDisplay.length} âncoras ativas`,
       tone: "neutral" as const,
     },
     excludedIds.size > 0
@@ -155,10 +278,10 @@ export default async function DashboardPage({
           tone: "signal" as const,
         }
       : null,
-    integrationMeta
+    !hasDelivered && integrationMeta
       ? {
-          label: integrationMeta.odds === "live" ? "Odds reais" : "Odds em fallback",
-          tone: integrationMeta.odds === "live" ? ("neutral" as const) : ("signal" as const),
+          label: (integrationMeta as Record<string, string>).odds === "live" ? "Odds reais" : "Odds em fallback",
+          tone: (integrationMeta as Record<string, string>).odds === "live" ? ("neutral" as const) : ("signal" as const),
         }
       : null,
   ].filter((value): value is NonNullable<typeof value> => Boolean(value));
@@ -166,7 +289,7 @@ export default async function DashboardPage({
   const heroMetrics = [
     { label: "Primeiro jogo", value: firstMatch, note: "abertura oficial da rodada" },
     { label: "Janela final", value: cutoff, note: "último ajuste antes do apito" },
-    { label: "Âncoras", value: `${anchors.length} de ${anchorTarget}`, note: "base principal do portfólio" },
+    { label: "Âncoras", value: `${anchorsForDisplay.length} de ${anchorTarget}`, note: "base principal do portfólio" },
     { label: "Cenários", value: `${variations.length}`, note: "roteiros prontos para entrar" },
   ];
 
@@ -178,7 +301,7 @@ export default async function DashboardPage({
       <PageHero
         eyebrow="Brasileirão Série A · painel premium da rodada"
         title={roundLabel}
-        description={`${anchors.length} âncoras em destaque, ${variations.length} cenários prontos e ${allScored.length} jogos no radar do BOB.`}
+        description={`${anchorsForDisplay.length} âncoras em destaque, ${variations.length} cenários prontos e ${allScoredCount} jogos no radar do BOB.`}
         chips={heroChips}
         metrics={heroMetrics}
         aside={(() => {
@@ -213,7 +336,8 @@ export default async function DashboardPage({
         })()}
       />
 
-      {(roundData.source === "demo" || degradedIntegrations.length > 0) && (
+      {/* Banner de modo demo ou degradação — SÓ aparece quando NÃO há rodada congelada */}
+      {!hasDelivered && (roundData.source === "demo" || degradedIntegrations.length > 0) && (
         <div className="rounded-[24px] border border-signal/25 bg-signal/8 px-5 py-4 text-sm text-foreground">
           <p className="font-semibold text-signal">
             {roundData.source === "demo" ? "Leitura em modo demonstrativo" : "Leitura ao vivo com cobertura parcial"}
@@ -226,6 +350,18 @@ export default async function DashboardPage({
         </div>
       )}
 
+      {/* Banner de variações congeladas — quando DB-first está ativo */}
+      {hasDelivered && (
+        <div className="rounded-[24px] border border-accent/25 bg-accent/5 px-5 py-4 text-sm text-foreground">
+          <p className="font-semibold text-accent-strong">
+            ✓ Variações oficiais da rodada
+          </p>
+          <p className="mt-1 leading-6 text-muted">
+            Estas variações foram geradas, analisadas e congeladas pelo BOB. Elas são idênticas para todos os usuários e não mudam ao recarregar a página.
+          </p>
+        </div>
+      )}
+
       {/* ── Variações: CTA que leva à página dedicada ── */}
       <section className="bob-card p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -233,7 +369,7 @@ export default async function DashboardPage({
             <p className="kicker text-xs text-muted text-left">Portfólio BOB da rodada</p>
             <h2 className="mt-1 text-2xl font-semibold text-left">5 cenários Big Odds prontos</h2>
             <p className="mt-2 text-sm leading-6 text-muted max-w-xl text-left">
-              {anchors.length} âncoras analisadas · {variations.length} variações geradas · odd combinada mínima 900x ·
+              {anchorsForDisplay.length} âncoras analisadas · {variations.length} variações geradas · odd combinada mínima 900x ·
               mínimo 5 jogos por cenário. O BOB escolhe e justifica cada pick.
             </p>
           </div>
@@ -246,7 +382,7 @@ export default async function DashboardPage({
         </div>
       </section>
 
-      {/* ── Oportunidades de Zebra ── */}
+      {/* ── Oportunidades de Zebra (apenas quando não congelado — dados ao vivo) ── */}
       {zebras.length > 0 && (
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
@@ -268,7 +404,7 @@ export default async function DashboardPage({
                   <div className="min-w-0 space-y-1.5">
                     <TeamIdentity
                       teamName={z.homeTeam}
-                      badgeUrl={crestMap.get(z.matchId)?.home ?? null}
+                      badgeUrl={resolveBadge(z.homeTeam, badgeMap)}
                       badgeSize={22}
                       className="min-w-0"
                       nameClassName="text-sm font-semibold"
@@ -278,7 +414,7 @@ export default async function DashboardPage({
                       <span className="h-px w-3 shrink-0 bg-border/80" />
                       <TeamIdentity
                         teamName={z.awayTeam}
-                        badgeUrl={crestMap.get(z.matchId)?.away ?? null}
+                        badgeUrl={resolveBadge(z.awayTeam, badgeMap)}
                         badgeSize={22}
                         className="min-w-0"
                         nameClassName="text-sm font-medium"
@@ -318,7 +454,7 @@ export default async function DashboardPage({
           <NarrativeSection
             season={resolvedSeason}
             round={resolvedRound}
-            anchors={anchors}
+            anchors={anchorsForDisplay as Parameters<typeof NarrativeSection>[0]["anchors"]}
             variations={variations}
           />
         </Suspense>

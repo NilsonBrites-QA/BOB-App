@@ -55,12 +55,18 @@ export function TeamShield({
   const showFallback = !src || failed;
 
   if (showFallback) {
+    // Fallback premium: funciona em dark mode E light mode.
+    // Gradiente sutil + ring + iniciais com contraste garantido.
+    // PRD §4 (UI/UX Apple): NUNCA mostrar ícone de imagem quebrada.
     return (
       <span
         className={[
           "inline-flex shrink-0 items-center justify-center rounded-full",
-          "bg-gradient-to-br from-white/10 to-transparent backdrop-blur-md",
-          "border border-white/10 text-white font-semibold shadow-lg",
+          "bg-gradient-to-br from-accent/20 to-accent/5",
+          "ring-1 ring-accent/20",
+          "text-accent-strong font-bold",
+          "shadow-[0_1px_3px_rgba(0,0,0,0.08)]",
+          "dark:from-accent/15 dark:to-accent/5 dark:ring-accent/15 dark:text-accent",
           sizeConfig.text,
           className,
         ]
