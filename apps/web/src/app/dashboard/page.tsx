@@ -10,7 +10,7 @@ import { detectZebras, type ZebraOpportunity } from "@/lib/bob/engine/zebra-dete
 import { demoMatches, DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
 import { BOB_COPY } from "@/lib/bob/personality";
 import { TeamIdentity } from "@/components/team-identity";
-import { describeRoundFallback, loadRoundData } from "@/lib/bob/round-loader";
+import { describeRoundFallback, loadRoundData, resolveCurrentRound } from "@/lib/bob/round-loader";
 import { loadDeliveredRound } from "@/lib/bob/persist";
 import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
 import type { Variation } from "@/lib/bob/types";
@@ -117,9 +117,26 @@ export default async function DashboardPage({
   // "Orquestrador Cognitivo Determinístico").
   // Agora: lemos as variações imutáveis do banco (DELIVERED).
   // O motor SÓ roda se não houver rodada congelada (draft/demo).
-  const effectiveRound = roundData.source === "api" && roundData.meta
-    ? roundData.meta.round
-    : (paramRound ?? 0);
+  //
+  // TAREFA 2: Quando o round loader cai em demo (API indisponível), usamos
+  // resolveCurrentRound() para tentar resolver a rodada via banco (L2).
+  // Isso garante que variações congeladas apareçam mesmo sem API.
+  let effectiveRound: number;
+  let calendarInterrupted = false;
+
+  if (roundData.source === "api" && roundData.meta) {
+    effectiveRound = roundData.meta.round;
+  } else if (paramRound) {
+    effectiveRound = paramRound;
+  } else {
+    // API falhou — tentar resolver a rodada via cascata L1→L2→L3
+    const resolution = await resolveCurrentRound(paramSeason);
+    effectiveRound = resolution.round;
+    calendarInterrupted = resolution.resolvedBy === "database";
+    if (calendarInterrupted) {
+      console.info(`[Dashboard] ${resolution.auditMessage}`);
+    }
+  }
 
   const dbRound = effectiveRound > 0
     ? await loadDeliveredRound(paramSeason, effectiveRound).catch(() => null)
@@ -336,8 +353,21 @@ export default async function DashboardPage({
         })()}
       />
 
+      {/* Banner de sinal de calendário interrompido — específico para L2 fallback */}
+      {!hasDelivered && calendarInterrupted && (
+        <div className="rounded-[24px] border border-amber-400/30 bg-amber-50/80 dark:bg-amber-950/20 px-5 py-4 text-sm text-foreground">
+          <p className="font-semibold text-amber-700 dark:text-amber-400">
+            ⚡ Sinal de calendário interrompido
+          </p>
+          <p className="mt-1 leading-6 text-muted">
+            O provedor de calendário não respondeu — exibindo a rodada {effectiveRound} (última conhecida no banco).
+            O BOB retomará a leitura ao vivo assim que o sinal se restabelecer.
+          </p>
+        </div>
+      )}
+
       {/* Banner de modo demo ou degradação — SÓ aparece quando NÃO há rodada congelada */}
-      {!hasDelivered && (roundData.source === "demo" || degradedIntegrations.length > 0) && (
+      {!hasDelivered && !calendarInterrupted && (roundData.source === "demo" || degradedIntegrations.length > 0) && (
         <div className="rounded-[24px] border border-signal/25 bg-signal/8 px-5 py-4 text-sm text-foreground">
           <p className="font-semibold text-signal">
             {roundData.source === "demo" ? "Leitura em modo demonstrativo" : "Leitura ao vivo com cobertura parcial"}
