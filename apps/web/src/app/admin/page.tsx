@@ -19,6 +19,15 @@ import { getSimulationProgress } from "@/lib/bob/engine/blind-simulation";
 import { RoundControlPanel } from "./round-control-panel";
 import { getCurrentRound } from "@/lib/bob/connectors";
 
+// ─── Wrappers de form action ────────────────────────────────────────────────
+// React exige (FormData) => void | Promise<void> para <form action={...}>.
+// Nossas server actions retornam ActionResult — wrappers adaptam a assinatura.
+// Erros são sempre capturados dentro da action e logados no servidor.
+async function doGrantUserAccess(fd: FormData): Promise<void> { await grantUserAccess(fd); }
+async function doCreateUserWithPassword(fd: FormData): Promise<void> { await createUserWithPassword(fd); }
+async function doToggleUserAccess(fd: FormData): Promise<void> { await toggleUserAccess(fd); }
+async function doChangeUserRole(fd: FormData): Promise<void> { await changeUserRole(fd); }
+
 export default async function AdminPage() {
   const cookieStore = await cookies();
   const supabase = await createClient(cookieStore);
@@ -355,7 +364,7 @@ export default async function AdminPage() {
                     Solicitado em {new Date(u.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
                   </span>
                 </div>
-                <form action={toggleUserAccess} className="flex gap-2">
+                <form action={doToggleUserAccess} className="flex gap-2">
                   <input type="hidden" name="userId" value={u.id} />
                   <input type="hidden" name="active" value="true" />
                   <button
@@ -386,7 +395,7 @@ export default async function AdminPage() {
           <p className="mt-1 text-xs text-emerald-800">
             Define email + senha e libera acesso na hora. O usuário entra direto em <code>/login</code> sem signup.
           </p>
-          <form action={createUserWithPassword} className="mt-3 grid gap-3 sm:grid-cols-[1.4fr_1fr_auto_auto]">
+          <form action={doCreateUserWithPassword} className="mt-3 grid gap-3 sm:grid-cols-[1.4fr_1fr_auto_auto]">
             <input
               name="email"
               type="email"
@@ -417,7 +426,7 @@ export default async function AdminPage() {
           <summary className="cursor-pointer text-xs text-muted hover:text-foreground">
             Apenas liberar acesso (usuário já existe no Supabase)
           </summary>
-          <form action={grantUserAccess} className="mt-2 grid gap-3 rounded-[20px] border border-border bg-surface-strong p-4 sm:grid-cols-[1fr_auto_auto]">
+          <form action={doGrantUserAccess} className="mt-2 grid gap-3 rounded-[20px] border border-border bg-surface-strong p-4 sm:grid-cols-[1fr_auto_auto]">
             <input
               name="email"
               type="email"
@@ -476,7 +485,7 @@ export default async function AdminPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <form action={changeUserRole} className="flex items-center gap-2">
+                      <form action={doChangeUserRole} className="flex items-center gap-2">
                         <input type="hidden" name="userId" value={u.id} />
                         <select
                           name="role"
@@ -506,7 +515,7 @@ export default async function AdminPage() {
                         >
                           {u.active ? "Ativo" : "Bloqueado"}
                         </span>
-                        <form action={toggleUserAccess}>
+                        <form action={doToggleUserAccess}>
                           <input type="hidden" name="userId" value={u.id} />
                           <input type="hidden" name="active" value={String(!u.active)} />
                           <button

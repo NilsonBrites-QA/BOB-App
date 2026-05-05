@@ -7,18 +7,19 @@
  *   - Botão "Resetar senha" → modal com input de senha temporária
  *   - Botão "Deletar" → confirmação dupla
  *
- * Server actions são passadas como props pra preservar progressive
- * enhancement (formulários funcionam mesmo sem JS).
+ * Server actions retornam ActionResult (nunca lançam erro).
+ * Isso evita Server Component Crash ao exibir mensagens de falha.
  */
 
 import { useState, useTransition } from "react";
+import type { ActionResult } from "./access-actions";
 
 type Props = {
   userId: string;
   userEmail: string;
   isPrimary: boolean;
-  resetAction: (formData: FormData) => Promise<void>;
-  deleteAction: (formData: FormData) => Promise<void>;
+  resetAction: (formData: FormData) => Promise<ActionResult>;
+  deleteAction: (formData: FormData) => Promise<ActionResult>;
 };
 
 export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, deleteAction }: Props) {
@@ -51,13 +52,13 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
       fd.set("newPassword", newPassword);
     }
     startTransition(async () => {
-      try {
-        await resetAction(fd);
+      const result = await resetAction(fd);
+      if (result.success) {
         setShowReset(false);
         setNewPassword("");
         setResetMode("link");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Falha ao resetar.");
+      } else {
+        setError(result.message);
       }
     });
   }
@@ -72,11 +73,11 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
     const fd = new FormData();
     fd.set("userId", userId);
     startTransition(async () => {
-      try {
-        await deleteAction(fd);
+      const result = await deleteAction(fd);
+      if (result.success) {
         setShowDelete(false);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Falha ao deletar.");
+      } else {
+        setError(result.message);
       }
     });
   }
