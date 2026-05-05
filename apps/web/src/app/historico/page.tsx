@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
+import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -210,6 +211,9 @@ export default async function HistoricoPage({
       select: { id: true, content: true, createdAt: true, roundId: true },
     }).catch(() => [] as { id: string; content: unknown; createdAt: Date; roundId: string | null }[]),
   ]);
+
+  // Escudos DB-first — uma query para toda a página
+  const badgeMap = await loadAllBadgesFromDb().catch(() => new Map<string, string | null>());
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -428,6 +432,15 @@ export default async function HistoricoPage({
                       <div className="space-y-1.5">
                         {v.picks.map((p) => {
                           const badge = pickBadge(p.correct);
+                          // Parse "Time A x Time B" para extrair escudos
+                          const matchParts = p.match.split(/\s+[x×]\s+/i);
+                          const homeTeam = matchParts[0]?.trim() ?? "";
+                          const awayTeam = matchParts[1]?.trim() ?? "";
+                          const pickTeam =
+                            p.result === "HOME" ? homeTeam :
+                            p.result === "AWAY" ? awayTeam : null;
+                          const pickBadgeUrl = pickTeam ? resolveBadge(pickTeam, badgeMap) : null;
+
                           return (
                             <div
                               key={p.id}
@@ -437,6 +450,16 @@ export default async function HistoricoPage({
                                 {p.isAnchor && (
                                   <span title="Âncora" className="shrink-0 text-[10px] font-bold text-accent">⊕</span>
                                 )}
+                                {/* Escudo do time do pick */}
+                                {pickBadgeUrl ? (
+                                  <img
+                                    src={pickBadgeUrl}
+                                    alt={pickTeam ?? ""}
+                                    width={14}
+                                    height={14}
+                                    className="shrink-0 object-contain opacity-90"
+                                  />
+                                ) : null}
                                 <span className="truncate text-xs font-medium">{p.match}</span>
                                 <span className="shrink-0 text-[10px] text-muted/70">
                                   {p.result === "HOME" ? "1" : p.result === "DRAW" ? "X" : "2"}

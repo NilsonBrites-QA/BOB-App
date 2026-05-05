@@ -2,7 +2,6 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PageHero } from "@/components/page-hero";
 import { SectionCard } from "@/components/section-card";
-import { TeamIdentity } from "@/components/team-identity";
 import { getStandings } from "@/lib/bob/connectors/football-data";
 import { calcTeamOdds } from "@/lib/bob/engine/standings-odds";
 import type { TeamOdds, TitleProb, RelegProb } from "@/lib/bob/engine/standings-odds";
@@ -217,108 +216,33 @@ export default async function ClassificacaoPage() {
 
       {totalTable.length > 0 ? (
         <>
-          <section className="space-y-4 lg:hidden">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <p className="kicker text-xs text-muted text-left">Leitura responsiva</p>
-                <h2 className="mt-1 text-2xl font-semibold text-left">Tabela em cards para mobile</h2>
-              </div>
-              <p className="max-w-lg text-sm leading-6 text-muted text-left">
-                Em telas menores, a classificação vira cards para preservar leitura, escudos e zonas sem esmagar a informação.
-              </p>
-            </div>
-
-            <div className="grid gap-3">
-              {totalTable.map((entry) => {
-                const zone = zoneConfig(entry.position);
-                const odds = oddsMap.get(entry.team.id);
-                const titleBadge = odds ? titleProbBadge(odds.titleProb) : null;
-                const relegBadge = odds ? relegProbBadge(odds.relegProb) : null;
-
-                return (
-                  <article
-                    key={entry.team.id}
-                    className={["panel rounded-[24px] p-4", zone.row].join(" ")}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1 space-y-3">
-                        <div className="flex items-center gap-3">
-                          <div className="flex min-w-[3rem] flex-col items-center justify-center rounded-[18px] border border-border/70 bg-background/60 px-2 py-2">
-                            <span className="text-[10px] uppercase tracking-[0.2em] text-muted">Pos</span>
-                            <span className="mt-1 font-mono text-lg font-bold">{entry.position}</span>
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <TeamIdentity
-                              teamName={entry.team.name}
-                              displayName={entry.team.shortName || entry.team.name}
-                              badgeUrl={entry.team.crest}
-                              badgeSize={26}
-                              className="min-w-0"
-                              nameClassName="text-base font-semibold"
-                              subtitle={zone.label}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-2">
-                          <div className="rounded-[18px] border border-border/70 bg-background/55 px-3 py-2 text-center">
-                            <p className="text-[10px] uppercase tracking-[0.18em] text-muted">Pts</p>
-                            <p className="mt-1 font-mono text-lg font-bold">{entry.points}</p>
-                          </div>
-                          <div className="rounded-[18px] border border-border/70 bg-background/55 px-3 py-2 text-center">
-                            <p className="text-[10px] uppercase tracking-[0.18em] text-muted">J</p>
-                            <p className="mt-1 font-mono text-lg font-bold">{entry.playedGames}</p>
-                          </div>
-                          <div className="rounded-[18px] border border-border/70 bg-background/55 px-3 py-2 text-center">
-                            <p className="text-[10px] uppercase tracking-[0.18em] text-muted">V</p>
-                            <p className="mt-1 font-mono text-lg font-bold text-accent">{entry.won}</p>
-                          </div>
-                          <div className="rounded-[18px] border border-border/70 bg-background/55 px-3 py-2 text-center">
-                            <p className="text-[10px] uppercase tracking-[0.18em] text-muted">SG</p>
-                            <p className={["mt-1 font-mono text-lg font-bold", entry.goalDifference > 0 ? "text-accent" : entry.goalDifference < 0 ? "text-red-500" : "text-muted"].join(" ")}>
-                              {entry.goalDifference > 0 ? "+" : ""}{entry.goalDifference}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          {formDotRow(entry.form)}
-                          {titleBadge && odds?.titleProb !== "Eliminado" && (
-                            <span className={["rounded-full px-2 py-0.5 text-[10px] font-semibold", titleBadge.cls].join(" ")}>
-                              Título {titleBadge.short}
-                            </span>
-                          )}
-                          {relegBadge && odds?.relegProb !== "Seguro" && (
-                            <span className={["rounded-full px-2 py-0.5 text-[10px] font-semibold", relegBadge.cls].join(" ")}>
-                              Z4 {relegBadge.short}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="hidden lg:block">
-            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          {/* ── Tabela única — mobile scroll horizontal + sticky col (estilo Flashscore) ── */}
+          <section>
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <p className="kicker text-xs text-muted text-left">Mesa completa</p>
-                <h2 className="mt-1 text-2xl font-semibold text-left">Tabela detalhada para leitura ampla</h2>
+                <h2 className="mt-1 text-xl font-semibold text-left">Tabela da Rodada</h2>
               </div>
-              <p className="max-w-xl text-sm leading-6 text-muted text-left">
-                A visão desktop preserva a profundidade da tabela e adiciona contexto competitivo sem comprometer legibilidade.
-              </p>
+              {/* Legenda compacta — expansível no mobile */}
+              <details className="group w-full sm:w-auto">
+                <summary className="cursor-pointer list-none text-xs text-muted hover:text-foreground sm:text-right">
+                  <span className="underline underline-offset-2">Ver legenda de zonas</span>
+                </summary>
+                <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted">
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent" />G4 Libertadores</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent/50" />G6 Sul-Americana</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-500" />Z4 Rebaixamento</span>
+                </div>
+              </details>
             </div>
 
             <div className="overflow-x-auto rounded-[24px] border border-border bg-background/70">
-              <table className="min-w-[980px] w-full border-collapse text-left text-sm">
-                <thead className="bg-[rgba(18,32,24,0.04)]">
+              <table className="w-full border-collapse text-left text-sm" style={{ minWidth: "600px" }}>
+                <thead className="bg-[rgba(18,32,24,0.04)] dark:bg-white/4">
                   <tr>
-                    <th className="w-12 px-4 py-3 font-medium text-muted">#</th>
-                    <th className="px-4 py-3 font-medium text-muted">Time</th>
+                    {/* Coluna sticky: # + Time */}
+                    <th className="sticky left-0 z-10 bg-background/95 backdrop-blur-sm px-3 py-3 font-medium text-muted whitespace-nowrap">#&nbsp;&nbsp;Time</th>
+                    <th className="w-10 px-3 py-3 text-center font-medium text-muted">Pts</th>
                     <th className="w-10 px-3 py-3 text-center font-medium text-muted">J</th>
                     <th className="w-10 px-3 py-3 text-center font-medium text-muted">V</th>
                     <th className="w-10 px-3 py-3 text-center font-medium text-muted">E</th>
@@ -326,10 +250,9 @@ export default async function ClassificacaoPage() {
                     <th className="w-10 px-3 py-3 text-center font-medium text-muted">GS</th>
                     <th className="w-10 px-3 py-3 text-center font-medium text-muted">GC</th>
                     <th className="w-12 px-3 py-3 text-center font-medium text-muted">SG</th>
-                    <th className="w-14 px-4 py-3 text-center font-semibold text-foreground">Pts</th>
                     <th className="px-3 py-3 font-medium text-muted">Forma</th>
-                    <th className="px-3 py-3 text-center font-medium text-muted">Título</th>
-                    <th className="px-3 py-3 text-center font-medium text-muted">Z4</th>
+                    <th className="hidden sm:table-cell px-3 py-3 text-center font-medium text-muted">Título</th>
+                    <th className="hidden sm:table-cell px-3 py-3 text-center font-medium text-muted">Z4</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -342,48 +265,51 @@ export default async function ClassificacaoPage() {
                     return (
                       <tr
                         key={entry.team.id}
-                        className={["border-t border-border/60 align-middle transition hover:bg-white/50", zone.row].join(" ")}
+                        className={["border-t border-border/60 align-middle transition hover:bg-white/30 dark:hover:bg-white/5", zone.row].join(" ")}
                       >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
+                        {/* Sticky: posição + escudo + nome */}
+                        <td className={["sticky left-0 z-10 bg-background/95 backdrop-blur-sm px-3 py-2.5", zone.row].join(" ")}>
+                          <div className="flex items-center gap-2 whitespace-nowrap">
                             <span className={`h-2 w-2 shrink-0 rounded-full ${zone.dot}`} />
-                            <span className="font-mono text-sm font-semibold tabular-nums">{entry.position}</span>
+                            <span className="w-5 font-mono text-xs font-semibold tabular-nums text-muted">{entry.position}</span>
+                            {entry.team.crest ? (
+                              <img
+                                src={entry.team.crest}
+                                alt=""
+                                width={18}
+                                height={18}
+                                className="shrink-0 object-contain"
+                              />
+                            ) : (
+                              <span className="w-[18px]" />
+                            )}
+                            <span className="font-medium truncate max-w-[100px] sm:max-w-[160px]">
+                              {entry.team.shortName || entry.team.name}
+                            </span>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <TeamIdentity
-                              teamName={entry.team.name}
-                              displayName={entry.team.shortName || entry.team.name}
-                              badgeUrl={entry.team.crest}
-                              badgeSize={22}
-                              className="min-w-0 flex-1"
-                              nameClassName="font-medium"
-                            />
-                            <span className={`text-[10px] font-medium ${zone.text}`}>{zone.label}</span>
-                          </div>
+                        {/* Pontos — bold */}
+                        <td className="px-3 py-2.5 text-center">
+                          <span className="font-mono text-sm font-bold tabular-nums">{entry.points}</span>
                         </td>
-                        <td className="px-3 py-3 text-center font-mono text-xs tabular-nums text-muted">{entry.playedGames}</td>
-                        <td className="px-3 py-3 text-center font-mono text-xs tabular-nums text-accent">{entry.won}</td>
-                        <td className="px-3 py-3 text-center font-mono text-xs tabular-nums text-muted">{entry.draw}</td>
-                        <td className="px-3 py-3 text-center font-mono text-xs tabular-nums text-muted">{entry.lost}</td>
-                        <td className="px-3 py-3 text-center font-mono text-xs tabular-nums text-muted">{entry.goalsFor}</td>
-                        <td className="px-3 py-3 text-center font-mono text-xs tabular-nums text-muted">{entry.goalsAgainst}</td>
-                        <td className={["px-3 py-3 text-center font-mono text-xs tabular-nums", entry.goalDifference > 0 ? "text-accent" : entry.goalDifference < 0 ? "text-red-500" : "text-muted"].join(" ")}>
+                        <td className="px-3 py-2.5 text-center font-mono text-xs tabular-nums text-muted">{entry.playedGames}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-xs tabular-nums text-accent font-semibold">{entry.won}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-xs tabular-nums text-muted">{entry.draw}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-xs tabular-nums text-muted">{entry.lost}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-xs tabular-nums text-muted">{entry.goalsFor}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-xs tabular-nums text-muted">{entry.goalsAgainst}</td>
+                        <td className={["px-3 py-2.5 text-center font-mono text-xs tabular-nums", entry.goalDifference > 0 ? "text-accent" : entry.goalDifference < 0 ? "text-red-500" : "text-muted"].join(" ")}>
                           {entry.goalDifference > 0 ? "+" : ""}{entry.goalDifference}
                         </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="font-mono text-base font-bold tabular-nums">{entry.points}</span>
-                        </td>
-                        <td className="px-3 py-3">{formDotRow(entry.form)}</td>
-                        <td className="px-3 py-3 text-center">
+                        <td className="px-3 py-2.5">{formDotRow(entry.form)}</td>
+                        <td className="hidden sm:table-cell px-3 py-2.5 text-center">
                           {titleBadge && odds?.titleProb !== "Eliminado" && (
                             <span title={odds?.titleNote} className={["rounded-full px-2 py-0.5 text-[10px] font-semibold", titleBadge.cls].join(" ")}>
                               {titleBadge.short}
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-3 text-center">
+                        <td className="hidden sm:table-cell px-3 py-2.5 text-center">
                           {relegBadge && odds?.relegProb !== "Seguro" && (
                             <span title={odds?.relegNote} className={["rounded-full px-2 py-0.5 text-[10px] font-semibold", relegBadge.cls].join(" ")}>
                               {relegBadge.short}
@@ -406,6 +332,7 @@ export default async function ClassificacaoPage() {
           </p>
         </section>
       )}
+
 
       {teamOdds.length > 0 && (
         <section className="panel rounded-[28px] p-6">

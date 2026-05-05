@@ -112,19 +112,39 @@ export function resolveBadge(
   teamName: string,
   badgeMap: Map<string, string | null>,
 ): string | null {
+  if (!teamName) return null;
+
   // 1. Match exato
   if (badgeMap.has(teamName)) return badgeMap.get(teamName) ?? null;
 
   // 2. Match case-insensitive
+  const lower = teamName.toLowerCase();
   for (const [key, val] of badgeMap) {
-    if (key.toLowerCase() === teamName.toLowerCase()) return val;
+    if (key.toLowerCase() === lower) {
+      badgeMap.set(teamName, val); // memoize
+      return val;
+    }
   }
 
-  // 3. Match parcial (contém)
+  // 3. Match normalizado (sem acentos, case-insensitive, contém)
   const normalized = normalizeTeamName(teamName);
   for (const [key, val] of badgeMap) {
-    if (normalizeTeamName(key).includes(normalized) || normalized.includes(normalizeTeamName(key))) {
+    const keyNorm = normalizeTeamName(key);
+    if (keyNorm === normalized || keyNorm.includes(normalized) || normalized.includes(keyNorm)) {
+      badgeMap.set(teamName, val); // memoize
       return val;
+    }
+  }
+
+  // 4. Palavra principal: pega a primeira palavra com ≥ 4 chars e tenta match
+  // Ex: "Atletico" de "Atlético-MG" ou "Atletico Mineiro"
+  const firstWord = normalized.split(/[\s\-]+/).find((w) => w.length >= 4);
+  if (firstWord) {
+    for (const [key, val] of badgeMap) {
+      if (normalizeTeamName(key).includes(firstWord)) {
+        badgeMap.set(teamName, val); // memoize
+        return val;
+      }
     }
   }
 

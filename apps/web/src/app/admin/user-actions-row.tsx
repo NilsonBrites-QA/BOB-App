@@ -110,7 +110,7 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <form
             onSubmit={handleReset}
-            className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"
+            className="w-full max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           >
             <div>
               <h3 className="text-lg font-semibold">Resetar senha</h3>
@@ -126,8 +126,8 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
                 <label
                   className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-xs transition ${
                     resetMode === "link"
-                      ? "border-emerald-500 bg-emerald-50"
-                      : "border-border hover:bg-surface-strong"
+                      ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 dark:border-emerald-600"
+                      : "border-border hover:bg-surface-strong dark:hover:bg-slate-800"
                   }`}
                 >
                   <input
@@ -155,8 +155,8 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
                 <label
                   className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-xs transition ${
                     resetMode === "temporary"
-                      ? "border-amber-500 bg-amber-50"
-                      : "border-border hover:bg-surface-strong"
+                      ? "border-amber-500 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-600"
+                      : "border-border hover:bg-surface-strong dark:hover:bg-slate-800"
                   }`}
                 >
                   <input
@@ -192,7 +192,7 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Mínimo 10 chars (1 letra + 1 número)"
-                    className="flex-1 rounded-lg border border-border bg-white px-3 py-2 font-mono text-sm"
+                    className="flex-1 rounded-lg border border-border bg-white px-3 py-2 font-mono text-sm dark:bg-slate-800 dark:border-slate-600 dark:text-white dark:placeholder:text-slate-500"
                   />
                   <button
                     type="button"
@@ -210,7 +210,7 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
             )}
 
             {error && (
-              <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-700/50 dark:bg-red-950/40 dark:text-red-400">
                 {error}
               </p>
             )}
@@ -249,7 +249,7 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <form
             onSubmit={handleDelete}
-            className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-xl"
+            className="w-full max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           >
             <div>
               <h3 className="text-lg font-semibold text-red-700">⚠ Deletar usuário</h3>
@@ -258,8 +258,8 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
               </p>
             </div>
 
-            <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm">
-              <p className="text-red-900">Será deletado:</p>
+            <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm dark:border-red-700/50 dark:bg-red-950/40">
+              <p className="text-red-900 dark:text-red-300">Será deletado:</p>
               <p className="mt-1 font-mono text-xs">{userEmail}</p>
             </div>
 
@@ -273,12 +273,12 @@ export function UserActionsRow({ userId, userEmail, isPrimary, resetAction, dele
                 value={deleteConfirm}
                 onChange={(e) => setDeleteConfirm(e.target.value)}
                 placeholder={userEmail}
-                className="w-full rounded-lg border border-border bg-white px-3 py-2 font-mono text-sm"
+                className="w-full rounded-lg border border-border bg-white px-3 py-2 font-mono text-sm dark:bg-slate-800 dark:border-slate-600 dark:text-white dark:placeholder:text-slate-500"
               />
             </div>
 
             {error && (
-              <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <p className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-700/50 dark:bg-red-950/40 dark:text-red-400">
                 {error}
               </p>
             )}
