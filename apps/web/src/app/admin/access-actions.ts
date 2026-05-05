@@ -533,3 +533,29 @@ export async function requestPasswordReset(formData: FormData): Promise<ActionRe
     return { success: true, message: "Se o email estiver cadastrado, você receberá as instruções em breve." };
   }
 }
+
+// ─── Form Action Wrappers (void) ─────────────────────────────────────────────
+// Next.js exige (FormData) => void | Promise<void> para <form action={...}>.
+// Estes wrappers são Server Actions válidos (arquivo tem "use server") e adaptam
+// a assinatura das actions que retornam ActionResult.
+// O erro é capturado internamente — jamais vaza para o Client.
+
+export async function formGrantUserAccess(fd: FormData): Promise<void> {
+  const r = await grantUserAccess(fd);
+  if (!r.success) console.error("[admin/formGrantUserAccess]", r.message, r.error);
+}
+
+export async function formCreateUserWithPassword(fd: FormData): Promise<void> {
+  const r = await createUserWithPassword(fd);
+  if (!r.success) console.error("[admin/formCreateUserWithPassword]", r.message, r.error);
+}
+
+export async function formToggleUserAccess(fd: FormData): Promise<void> {
+  const r = await toggleUserAccess(fd);
+  if (!r.success) console.error("[admin/formToggleUserAccess]", r.message, r.error);
+}
+
+export async function formChangeUserRole(fd: FormData): Promise<void> {
+  const r = await changeUserRole(fd);
+  if (!r.success) console.error("[admin/formChangeUserRole]", r.message, r.error);
+}
