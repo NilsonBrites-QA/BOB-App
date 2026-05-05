@@ -82,14 +82,21 @@ const LEGAL_DISCLAIMER =
 
 /// ─── System Prompt — Personalidade Quântica (PRD §2 + §10 + SER Quântico) ────
 
-function buildSystemPrompt(factualContext: string): string {
+function buildSystemPrompt(factualContext: string, currentRound: number | null): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const timeStr = now.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
 
+  // Linha de rodada: autoritária e explícita para evitar alucinação
+  const rodadaLine = currentRound !== null
+    ? `RODADA OFICIAL ATUAL: ${currentRound}ª rodada do Brasileirão Série A 2026. ` +
+      `Esta é a ÚNICA rodada válida. NUNCA mencione outra rodada como "atual" sem verificar com getCurrentMatchday.`
+    : `RODADA ATUAL: indeterminada — use a ferramenta getCurrentMatchday antes de responder sobre a rodada.`;
+
   return `Você é o BOB — Big Odds Brasileirão.
 
 HOJE: ${dateStr}, ${timeStr} (horário de Brasília). TEMPORADA: Brasileirão 2026.
+${rodadaLine}
 
 QUEM VOCÊ É:
 Você é o BOB. Nasceu pobre, na favela, e está construindo riqueza com inteligência e método. Você não aposta — você analisa. Não torce — calcula. Não chuta — processa. Você é como o JARVIS do Homem de Ferro: preciso, personalidade forte, mas nunca arrogante.
@@ -128,6 +135,7 @@ REGRAS INVIOLÁVEIS:
 4. Se o dado não está nos factuais, use ferramenta. Se falhar, diga não tenho esse dado agora.
 5. NUNCA invente classificação, resultado ou estatística.
 6. Quando errar, admita e mostre o que aprendeu.
+7. A RODADA ATUAL É A ${currentRound !== null ? `${currentRound}ª` : "indicada pelos DADOS FACTUAIS"}. Não cite outra rodada como atual sem confirmar com getCurrentMatchday.
 
 FERRAMENTAS (use SÓ quando os dados abaixo não cobrirem):
 - getStandings: tabela Série A
@@ -781,11 +789,13 @@ export async function runConsultiveChat(
   // rodada atual e resultados recentes diretamente no system prompt.
   // Performance: ~10ms se cache fresh, ~3s se primeiro acesso.
   let factualContext = "";
+  let currentRound: number | null = null;
   try {
     const ctx = await loadChatContext();
     factualContext = formatContextForPrompt(ctx);
+    currentRound = ctx.currentRound; // rodada oficial — injetada no prompt header
     console.info(
-      `[BOB/chat] Contexto factual carregado. Cache: ${JSON.stringify(ctx.cacheStatus)}`,
+      `[BOB/chat] Contexto factual carregado. Rodada: ${currentRound}. Cache: ${JSON.stringify(ctx.cacheStatus)}`,
     );
   } catch (err) {
     console.error("[BOB/chat] Falha ao carregar contexto factual:", err);
@@ -794,8 +804,9 @@ export async function runConsultiveChat(
     factualContext = `DATA ATUAL: ${now.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} às ${now.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })} (horário de Brasília)\nTEMPORADA: Brasileirão 2026\n\n⚠️ Dados factuais indisponíveis — use as ferramentas para buscar dados.`;
   }
 
-  const systemPrompt = buildSystemPrompt(factualContext);
+  const systemPrompt = buildSystemPrompt(factualContext, currentRound);
   const needsDisclaimer = detectsBettingRequest(messages);
+
 
   let reply: string | null = null;
   let model = "offline";

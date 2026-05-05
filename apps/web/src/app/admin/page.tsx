@@ -8,13 +8,11 @@ import {
   adminDeleteUser,
   adminResetUserPassword,
   formChangeUserRole,
-  formCreateUserWithPassword,
-  formGrantUserAccess,
   formToggleUserAccess,
 } from "./access-actions";
 import { UserActionsRow } from "./user-actions-row";
+import { AddWhitelistUserForm, GrantAccessForm } from "./whitelist-forms";
 import { isPrimaryAdmin } from "@/lib/auth/config";
-import { PASSWORD_POLICY_HINT } from "@/lib/auth/password";
 import { getSimulationProgress } from "@/lib/bob/engine/blind-simulation";
 import { RoundControlPanel } from "./round-control-panel";
 import { getCurrentRound } from "@/lib/bob/connectors";
@@ -383,60 +381,11 @@ export default async function AdminPage() {
           </div>
         </div>
 
-        {/* Criar usuário com senha (admin define email e senha) */}
-        <div className="mt-5 rounded-[20px] border border-emerald-300 bg-emerald-50 p-4">
-          <p className="text-sm font-semibold text-emerald-900">Criar usuário com senha</p>
-          <p className="mt-1 text-xs text-emerald-800">
-            Define email + senha e libera acesso na hora. O usuário entra direto em <code>/login</code> sem signup.
-          </p>
-          <form action={formCreateUserWithPassword} className="mt-3 grid gap-3 sm:grid-cols-[1.4fr_1fr_auto_auto]">
-            <input
-              name="email"
-              type="email"
-              required
-              placeholder="email@exemplo.com"
-              className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm"
-            />
-            <input
-              name="password"
-              type="text"
-              required
-              minLength={10}
-              placeholder={PASSWORD_POLICY_HINT}
-              className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-mono"
-            />
-            <select name="role" defaultValue="VIEWER" className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm">
-              <option value="VIEWER">VIEWER</option>
-              <option value="ADMIN">ADMIN</option>
-            </select>
-            <button type="submit" className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
-              Criar e liberar
-            </button>
-          </form>
-        </div>
+        {/* Criar usuário com senha — Client Component isolado */}
+        <AddWhitelistUserForm />
 
-        {/* Liberar email já existente (sem definir senha) */}
-        <details className="mt-3">
-          <summary className="cursor-pointer text-xs text-muted hover:text-foreground">
-            Apenas liberar acesso (usuário já existe no Supabase)
-          </summary>
-          <form action={formGrantUserAccess} className="mt-2 grid gap-3 rounded-[20px] border border-border bg-surface-strong p-4 sm:grid-cols-[1fr_auto_auto]">
-            <input
-              name="email"
-              type="email"
-              required
-              placeholder="email@exemplo.com"
-              className="rounded-xl border border-border bg-transparent px-4 py-2 text-sm"
-            />
-            <select name="role" defaultValue="VIEWER" className="rounded-xl border border-border bg-transparent px-3 py-2 text-sm">
-              <option value="VIEWER">VIEWER</option>
-              <option value="ADMIN">ADMIN</option>
-            </select>
-            <button type="submit" className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white">
-              Liberar acesso
-            </button>
-          </form>
-        </details>
+        {/* Liberar email já existente — Client Component isolado */}
+        <GrantAccessForm />
 
         <div className="mt-5 overflow-hidden rounded-[20px] border border-border">
           <table className="w-full border-collapse text-left text-sm">
