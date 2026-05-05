@@ -15,6 +15,7 @@ import { scoreMatch } from "@/lib/bob/engine";
 import { buildCriarApostasForRound } from "@/lib/bob/engine/criar-apostas";
 import { loadRoundData } from "@/lib/bob/round-loader";
 import { DEMO_ROUND_LABEL } from "@/lib/bob/demo-matches";
+import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
 import { ApostasClient } from "./apostas-client";
 import type { TicketView } from "./apostas-client";
 
@@ -57,19 +58,16 @@ export default async function ApostasPage({
   const allScored = roundData.matches.map(scoreMatch);
   const apostasRaw = buildCriarApostasForRound(allScored);
 
-  // Mapear para TicketView — escudos vêm do football-data.org (homeCrest/awayCrest)
-  const matchCrestMap = new Map(
-    roundData.matches.map((m) => [m.id, { home: m.homeCrest ?? null, away: m.awayCrest ?? null }])
-  );
+  // ── ESCUDOS DB-FIRST (PRD §9) ─────────────────────────────────────────────
+  const badgeMap = await loadAllBadgesFromDb();
 
   const tickets: TicketView[] = apostasRaw.map((a) => {
-    const crests = matchCrestMap.get(a.matchId);
     return {
       matchId:            a.matchId,
       homeTeam:           a.homeTeam,
       awayTeam:           a.awayTeam,
-      homeCrest:          crests?.home ?? null,
-      awayCrest:          crests?.away ?? null,
+      homeCrest:          resolveBadge(a.homeTeam, badgeMap),
+      awayCrest:          resolveBadge(a.awayTeam, badgeMap),
       competition:        a.competition,
       profile:            a.profile,
       picks:              a.picks,

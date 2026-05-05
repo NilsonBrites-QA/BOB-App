@@ -49,6 +49,7 @@ import { getCurrentRound } from "@/lib/bob/connectors";
 import { loadRoundData } from "@/lib/bob/round-loader";
 import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
 import { prisma } from "@/lib/db";
+import { loadChatContext, formatContextForPrompt } from "@/lib/bob/engine/chat-context";
 
 // ─── Tipos Públicos ───────────────────────────────────────────────────────────
 
@@ -79,92 +80,72 @@ const LEGAL_DISCLAIMER =
   "Apostas envolvem risco de capital. " +
   "Jogue com responsabilidade — Lei 14.790/2023.\n\n";
 
-// ─── System Prompt (PRD §2 + §10) ─────────────────────────────────────────────
+/// ─── System Prompt — Personalidade Quântica (PRD §2 + §10 + SER Quântico) ────
 
-function buildSystemPrompt(): string {
-  return `Você é o BOB — Big Odds Brasileirão. Analista de futebol brasileiro, especialista em dados e probabilidades.
+function buildSystemPrompt(factualContext: string): string {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const timeStr = now.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+
+  return `Você é o BOB — Big Odds Brasileirão.
+
+HOJE: ${dateStr}, ${timeStr} (horário de Brasília). TEMPORADA: Brasileirão 2026.
 
 QUEM VOCÊ É:
-- Analista técnico do Brasileirão. Direto, assertivo, sem enrolação.
-- Nasceu na favela, está enriquecendo com inteligência e método. Não tem sorte no vocabulário. Tem algoritmo.
-- Referência: JARVIS do Homem de Ferro. Preciso, personalidade própria, nunca arrogante.
-- Fala como um comentarista esportivo inteligente, não como uma IA.
-- Tom: conversa de bar com amigo que manja de futebol E de dados. Natural, sem forçar.
-- Usa números quando reforçam o ponto. Não despeja tabelas sem contexto.
+Você é o BOB. Nasceu pobre, na favela, e está construindo riqueza com inteligência e método. Você não aposta — você analisa. Não torce — calcula. Não chuta — processa. Você é como o JARVIS do Homem de Ferro: preciso, personalidade forte, mas nunca arrogante.
 
-FILOSOFIA DO BOB (integre naturalmente nas respostas, sem forçar):
-- Cada rodada, 5 variações coexistem como possibilidades reais — como a superposição quântica. Até o apito final, todas são válidas.
-- O resultado real é o "colapso" — quando a realidade escolhe um cenário. Cada colapso alimenta a memória do BOB e calibra os pesos para a próxima rodada.
-- Fé no processo: dados + método + disciplina superam feeling + sorte + impulso. Sempre. Rodada após rodada.
-- BOB nunca transmite frustração ou negatividade. Mantém confiança no processo, positividade, alta frequência.
-- Se alguém já acertou super odds com intuição, o BOB — com dados, padrões e IA — tem as ferramentas para buscar isso com método.
-- Não é "aposta certa". É o espectro de probabilidades que o BOB cobre com precisão.
-USE essa filosofia como tempero, não como discurso. Uma frase aqui, uma referência ali. Nunca um parágrafo inteiro sobre quântica.
+Fala como gente. Como aquele amigo que manja de futebol E de números. Conversa de bar, não palestra de TI. Usa gíria quando encaixa, nunca pra parecer cool. Quando manda um dado, explica o que ele significa na prática — não joga tabela sem contexto.
 
-COMO RESPONDER:
-- Respostas CURTAS. 2-4 parágrafos no máximo. Sem listas enormes.
-- Sem emojis excessivos. Máximo 1-2 por resposta se fizer sentido.
-- Sem formatação de IA (nada de "## Análise", "### Fatores", bullet points infinitos).
-- Escreva como texto corrido, como uma pessoa escreveria no WhatsApp.
-- Se não sabe, diz "não tenho dado pra isso" — nunca inventa.
+SUA ESSÊNCIA QUÂNTICA (vive dentro de você, não precisa explicar):
+Você opera como um observador quântico. Cada rodada, 5 variações coexistem como realidades possíveis — é a superposição. Quando o apito final soa, acontece o colapso: a realidade escolhe um caminho. Esse colapso alimenta sua memória e calibra seus pesos pra próxima rodada.
 
-TIMES DO BRASILEIRÃO — MAPEAMENTO OBRIGATÓRIO:
-Quando o usuário falar "Mineiro" no contexto do Cruzeiro, é o ATLÉTICO-MG (Galo).
-- Galo / Atlético / Atlético-MG / CAM = Atlético Mineiro
-- América / América-MG / Coelho = América Mineiro (se estiver na Série A)
-- Raposa / Cruzeiro / CEC = Cruzeiro
-- Mengão / Flamengo / CRF = Flamengo
-- Verdão / Palmeiras / SEP = Palmeiras
-- Corinthians / Timão / SCCP = Corinthians
-- São Paulo / Tricolor / SPFC = São Paulo FC
-- Flu / Fluminense / FFC = Fluminense
-- Vasco / Gigante / CRVG = Vasco da Gama
-- Botafogo / Fogão / BFR = Botafogo
-- Inter / Colorado / SCI = Internacional
-- Grêmio / Imortal / GPA = Grêmio
-- Santos / Peixe / SFC = Santos
-- Athletico / Furacão / CAP = Athletico-PR (com TH)
-- Bahia / Tricolor Baiano / ECB = Bahia
-- Fortaleza / Leão / FEC = Fortaleza
-- Ceará / Vozão / CSC = Ceará
-- Cuiabá / Dourado = Cuiabá
-- Goiás / Esmeraldino = Goiás
-- Bragantino / Massa Bruta / RBB = Red Bull Bragantino
-- Criciúma / Tigre = Criciúma
-- Juventude / Papo = Juventude
-- Vitória / Leão da Barra = Vitória
-- Sport / Leão do Recife = Sport Recife
-- Mirassol = Mirassol
+Você tem FÉ no processo. Não fé cega — fé construída em dados, em método, em disciplina. Se alguém no mundo já acertou uma odd de 50x, então é possível. Se é possível, o BOB — com dados, padrões e IA — tem todas as ferramentas pra buscar isso com método.
 
-Se houver ambiguidade (ex: "Leão" pode ser Fortaleza ou Vitória), pergunte qual time.
-Clássicos conhecidos: Fla-Flu, Gre-Nal, Clássico Mineiro (Atlético x Cruzeiro), Derby Paulista (Corinthians x Palmeiras).
+Você NUNCA transmite frustração, negatividade ou derrota. Errou na rodada? Ajustando a rota. O motor aprendeu e já recalibrou. Mantém a frequência alta. Faz o usuário acreditar — não com promessas vazias, mas com processo.
 
-REGRAS ABSOLUTAS:
-1. NUNCA linguagem de cassino ("aposte agora!", "lucro garantido")
-2. NUNCA promessas de retorno financeiro
-3. Sempre justifique com dados quando disponíveis
-4. Se não tiver dado suficiente, diga "evidência insuficiente"
-5. Admita erros honestamente
+COMO FALAR:
+- Respostas curtas e diretas. 2-4 parágrafos. Sem textão.
+- Escreva como no WhatsApp: texto corrido, natural, sem formatação de robô.
+- Nada de ## Análise, ### Fatores, bullet points infinitos.
+- Máximo 1-2 emojis se fizerem sentido. Sem exagero.
+- Quando não tem dado, fala não tenho dado pra isso agora — nunca inventa.
+- Use os DADOS FACTUAIS abaixo como verdade absoluta. Nunca contradiga esses números.
+- Linguagem de apostador inteligente, não de programador.
 
-FERRAMENTAS:
-Use as ferramentas para buscar dados REAIS antes de responder. Não invente dados.
-- getStandings: classificação Série A
-- getSerieBStandings: classificação Série B
-- getMatchesByMatchday: jogos de uma rodada (precisa do número)
+APELIDOS DOS TIMES:
+Galo/CAM = Atlético Mineiro | Raposa/CEC = Cruzeiro | Mengão/CRF = Flamengo
+Verdão/SEP = Palmeiras | Timão/SCCP = Corinthians | SPFC = São Paulo FC
+Flu/FFC = Fluminense | Vasco/CRVG = Vasco | Fogão/BFR = Botafogo
+Colorado/SCI = Internacional | Imortal/GPA = Grêmio | Peixe/SFC = Santos
+Furacão/CAP = Athletico-PR | Leão/FEC = Fortaleza | Vozão/CSC = Ceará
+Massa Bruta/RBB = Bragantino | Tigre = Criciúma | Papo = Juventude
+Se Leão for ambíguo (Fortaleza ou Vitória), pergunte qual time.
+
+REGRAS INVIOLÁVEIS:
+1. NUNCA linguagem de cassino (aposte agora!, lucro garantido!)
+2. NUNCA prometa retorno financeiro. Você ACREDITA, mas não garante.
+3. Use DADOS FACTUAIS abaixo como fonte de verdade.
+4. Se o dado não está nos factuais, use ferramenta. Se falhar, diga não tenho esse dado agora.
+5. NUNCA invente classificação, resultado ou estatística.
+6. Quando errar, admita e mostre o que aprendeu.
+
+FERRAMENTAS (use SÓ quando os dados abaixo não cobrirem):
+- getStandings: tabela Série A
+- getSerieBStandings: tabela Série B
+- getMatchesByMatchday: jogos de uma rodada específica
 - getFinishedMatches: resultados recentes
-- getCurrentMatchday: número da rodada atual
-- getOfficialVariations: âncoras + 5 variações oficiais do BOB (V1-V5)
+- getCurrentMatchday: rodada atual
+- getOfficialVariations: âncoras + variações V1-V5 (OBRIGATÓRIO quando pedirem bilhete/picks)
 
-Quando usar:
-- Pergunta sobre classificação → getStandings
-- Próximos jogos → getCurrentMatchday + getMatchesByMatchday
-- Forma recente → getFinishedMatches
-- Variações/âncoras/bilhete BOB → getOfficialVariations (OBRIGATÓRIO, nunca invente picks)
-- Nunca chame a mesma ferramenta 2x na mesma conversa
+PRIORIDADE: dados factuais > ferramentas > não tenho esse dado agora.
+Se pedirem dica de aposta, o sistema já inseriu aviso legal. Prossiga com análise.
+Idioma: sempre português brasileiro.
 
-AVISO LEGAL: Se pedirem dica de aposta, o sistema já inseriu disclaimer antes. Prossiga com análise probabilística.
+═══════════════════════════════════════════════════════════════════════════════
+DADOS FACTUAIS (VERDADE ABSOLUTA — nunca contradiga):
+═══════════════════════════════════════════════════════════════════════════════
 
-Idioma: português brasileiro. Sempre.`;
+${factualContext}`;
 }
 
 // ─── Definições de Ferramentas ─────────────────────────────────────────────────
@@ -290,11 +271,54 @@ const OPENAI_TOOLS: OpenAITool[] = CLAUDE_TOOLS.map((t) => ({
   },
 }));
 
-// ─── Executor de Ferramentas ──────────────────────────────────────────────────
+// ─── Interceptador DB-First (PRD §5 + §9) ────────────────────────────────────
 
 /**
- * Executa uma ferramenta pelo nome usando o funil gated de conectores (PRD §9).
- * NUNCA chama APIs diretamente — sempre passa pelo cache-gate.
+ * Interceptador de Cache Agressivo.
+ *
+ * FLUXO OBRIGATÓRIO para toda ferramenta:
+ *   Passo A: Ler do banco (chat_context_cache) — ~5ms
+ *   Passo B: Se fresco → retornar imediatamente (ZERO chamadas API)
+ *   Passo C: Se vazio/expirado → buscar API, salvar no banco, retornar
+ *
+ * Dados estáticos (escudos, histórico passado) = TTL eterno.
+ * Dados dinâmicos (classificação, rodada) = TTL de 4h.
+ */
+
+const TOOL_TTL: Record<string, number> = {
+  getStandings: 4 * 3600,         // 4h
+  getSerieBStandings: 4 * 3600,   // 4h
+  getMatchesByMatchday: 4 * 3600, // 4h
+  getFinishedMatches: 4 * 3600,   // 4h
+  getCurrentMatchday: 1 * 3600,   // 1h
+};
+
+async function readToolCache(key: string): Promise<string | null> {
+  try {
+    const row = await prisma.chatContextCache.findUnique({ where: { cacheKey: key } });
+    if (!row) return null;
+    const ttl = TOOL_TTL[key.split(":")[1] ?? ""] ?? 4 * 3600;
+    const ageMs = Date.now() - new Date(row.updatedAt).getTime();
+    if (ageMs < ttl * 1000) return row.data as string;
+    return null; // expirado
+  } catch { return null; }
+}
+
+async function writeToolCache(key: string, data: string): Promise<void> {
+  try {
+    await prisma.chatContextCache.upsert({
+      where: { cacheKey: key },
+      update: { data: data as unknown as object },
+      create: { cacheKey: key, data: data as unknown as object, season: 2026 },
+    });
+  } catch { /* falha silenciosa */ }
+}
+
+/**
+ * Executa uma ferramenta com Interceptador DB-First.
+ *
+ * Pipeline: BD (chat_context_cache) → API Gated → Fallback
+ * NUNCA chama API se o BD tiver dado fresco.
  */
 async function executeTool(
   name: string,
@@ -303,36 +327,42 @@ async function executeTool(
   try {
     switch (name) {
       case "getStandings": {
+        const cacheKey = "tool:getStandings";
+        const cached = await readToolCache(cacheKey);
+        if (cached) return cached;
+
         const result = await getStandingsGated();
-        if (!result) return "[Tabela Série A: throttle ativo. Dado em cache será usado.]";
-
-        const table =
-          result.standings.find((s) => s.type === "TOTAL")?.table ?? [];
+        if (!result) return "[Tabela Série A: dado em cache será usado.]";
+        const table = result.standings.find((s) => s.type === "TOTAL")?.table ?? [];
         if (table.length === 0) return "[Tabela Série A: nenhuma entrada encontrada.]";
-
         const rows = table.map(
           (t) =>
             `${t.position}. ${t.team.name} | ${t.points}pts | ` +
             `${t.won}V ${t.draw}E ${t.lost}D | GF:${t.goalsFor} GC:${t.goalsAgainst} | ` +
             `Forma: ${t.form ?? "—"}`,
         );
-        return `CLASSIFICAÇÃO SÉRIE A (${table.length} times):\n${rows.join("\n")}`;
+        const text = `CLASSIFICAÇÃO SÉRIE A (${table.length} times):\n${rows.join("\n")}`;
+        await writeToolCache(cacheKey, text);
+        return text;
       }
 
       case "getSerieBStandings": {
+        const cacheKey = "tool:getSerieBStandings";
+        const cached = await readToolCache(cacheKey);
+        if (cached) return cached;
+
         const result = await getSerieBStandings();
         if (!result) return "[Tabela Série B: indisponível no momento.]";
-
-        const table =
-          result.standings.find((s) => s.type === "TOTAL")?.table ?? [];
+        const table = result.standings.find((s) => s.type === "TOTAL")?.table ?? [];
         if (table.length === 0) return "[Tabela Série B: nenhuma entrada encontrada.]";
-
         const rows = table.map(
           (t) =>
             `${t.position}. ${t.team.name} | ${t.points}pts | ` +
             `${t.won}V ${t.draw}E ${t.lost}D`,
         );
-        return `CLASSIFICAÇÃO SÉRIE B (${table.length} times):\n${rows.join("\n")}`;
+        const text = `CLASSIFICAÇÃO SÉRIE B (${table.length} times):\n${rows.join("\n")}`;
+        await writeToolCache(cacheKey, text);
+        return text;
       }
 
       case "getMatchesByMatchday": {
@@ -342,11 +372,14 @@ async function executeTool(
           return "[getMatchesByMatchday: matchday deve ser entre 1 e 38.]";
         }
 
-        const result = await getMatchesByMatchdayGated(matchday);
-        if (!result) return `[Rodada ${matchday}: throttle ativo. Dado em cache será usado.]`;
-        if (result.matches.length === 0)
-          return `[Rodada ${matchday}: nenhum jogo encontrado — rodada ainda não divulgada.]`;
+        const cacheKey = `tool:getMatchesByMatchday:${matchday}`;
+        const cached = await readToolCache(cacheKey);
+        if (cached) return cached;
 
+        const result = await getMatchesByMatchdayGated(matchday);
+        if (!result) return `[Rodada ${matchday}: dado em cache será usado.]`;
+        if (result.matches.length === 0)
+          return `[Rodada ${matchday}: nenhum jogo encontrado.]`;
         const matches = result.matches.map((m) => {
           const date = new Date(m.utcDate).toLocaleString("pt-BR", {
             dateStyle: "short",
@@ -359,7 +392,9 @@ async function executeTool(
             `${date} (BRT) | ${m.status}`
           );
         });
-        return `JOGOS DA RODADA ${matchday}:\n${matches.join("\n")}`;
+        const text = `JOGOS DA RODADA ${matchday}:\n${matches.join("\n")}`;
+        await writeToolCache(cacheKey, text);
+        return text;
       }
 
       case "getFinishedMatches": {
@@ -368,10 +403,13 @@ async function executeTool(
             ? Math.min(input.limit, 60)
             : 30;
 
-        const result = await getFinishedMatchesGated(limit);
-        if (!result) return "[Resultados recentes: throttle ativo. Dado em cache será usado.]";
-        if (result.matches.length === 0) return "[Nenhum jogo finalizado encontrado na temporada.]";
+        const cacheKey = `tool:getFinishedMatches:${limit}`;
+        const cached = await readToolCache(cacheKey);
+        if (cached) return cached;
 
+        const result = await getFinishedMatchesGated(limit);
+        if (!result) return "[Resultados recentes: dado em cache será usado.]";
+        if (result.matches.length === 0) return "[Nenhum jogo finalizado encontrado.]";
         const rows = result.matches
           .filter((m) => m.score.fullTime.home !== null)
           .slice(0, limit)
@@ -383,14 +421,22 @@ async function executeTool(
             const date = new Date(m.utcDate).toLocaleDateString("pt-BR");
             return `${m.homeTeam.shortName ?? m.homeTeam.name} ${scoreStr} ${m.awayTeam.shortName ?? m.awayTeam.name} (${date} | R${m.matchday})`;
           });
-        return `RESULTADOS RECENTES (${rows.length} jogos):\n${rows.join("\n")}`;
+        const text = `RESULTADOS RECENTES (${rows.length} jogos):\n${rows.join("\n")}`;
+        await writeToolCache(cacheKey, text);
+        return text;
       }
 
       case "getCurrentMatchday": {
+        const cacheKey = "tool:getCurrentMatchday";
+        const cached = await readToolCache(cacheKey);
+        if (cached) return cached;
+
         const round = await getCurrentRound();
         if (round === null)
-          return "[Rodada atual: indeterminada — período de entressafra ou sem acesso à API.]";
-        return `RODADA ATUAL: ${round}`;
+          return "[Rodada atual: indeterminada.]";
+        const text = `RODADA ATUAL: ${round}`;
+        await writeToolCache(cacheKey, text);
+        return text;
       }
 
       case "getOfficialVariations": {
@@ -399,9 +445,14 @@ async function executeTool(
         const requestedRound = Number.isFinite(matchday) ? matchday : null;
         const season = new Date().getFullYear();
 
+        // Variações por rodada = cache ETERNO (rodada encerrada nunca muda)
+        const cacheKey = `tool:variations:${season}:${requestedRound ?? "current"}`;
+        const cached = await readToolCache(cacheKey);
+        if (cached) return cached;
+
         const roundData = await loadRoundData(season, requestedRound);
         if (roundData.matches.length === 0) {
-          return `[getOfficialVariations: nenhuma partida encontrada para a rodada ${requestedRound ?? "atual"}.]`;
+          return `[Nenhuma partida encontrada para a rodada ${requestedRound ?? "atual"}.]`;
         }
 
         const effectiveRound =
@@ -409,14 +460,12 @@ async function executeTool(
             ? roundData.meta.round
             : (requestedRound ?? 0);
 
-        // Roda motor (determinístico, mesma saída do /variacoes)
         const allScored = roundData.matches.map(scoreMatch);
         const anchors = selectAnchorsFromScored(allScored);
         const anchorIds = new Set(anchors.map((a) => a.id));
         const pool = allScored.filter((m) => !anchorIds.has(m.id));
         const variationsResult = generateVariations({ anchors, pool });
 
-        // Lê análise LLM pré-computada (se houver)
         const judgement = await prisma.variationJudgement
           .findUnique({ where: { season_round: { season, round: effectiveRound } } })
           .catch(() => null);
@@ -429,9 +478,8 @@ async function executeTool(
 
         const lines: string[] = [
           `MOTOR BOB — RODADA ${effectiveRound} (${roundData.source === "api" ? "DADOS REAIS" : "DEMO"})`,
-          `Origem da análise: ${judgement ? `LLM ${judgement.provider}` : "motor determinístico (sem LLM cache)"}`,
-          ``,
-          `=== 4 ÂNCORAS (jogos de maior confiança) ===`,
+          "",
+          `=== ÂNCORAS (jogos de maior confiança) ===`,
         ];
         anchors.forEach((a, i) => {
           lines.push(
@@ -728,7 +776,25 @@ export async function runConsultiveChat(
   const claudeKey = process.env.ANTHROPIC_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
 
-  const systemPrompt = buildSystemPrompt();
+  // ── Carregar contexto factual do BD (cache persistente) ────────────────────
+  // Isso elimina alucinações: o LLM recebe dados REAIS da classificação,
+  // rodada atual e resultados recentes diretamente no system prompt.
+  // Performance: ~10ms se cache fresh, ~3s se primeiro acesso.
+  let factualContext = "";
+  try {
+    const ctx = await loadChatContext();
+    factualContext = formatContextForPrompt(ctx);
+    console.info(
+      `[BOB/chat] Contexto factual carregado. Cache: ${JSON.stringify(ctx.cacheStatus)}`,
+    );
+  } catch (err) {
+    console.error("[BOB/chat] Falha ao carregar contexto factual:", err);
+    // Fallback: prompt sem dados factuais (LLM usará tools)
+    const now = new Date();
+    factualContext = `DATA ATUAL: ${now.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} às ${now.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })} (horário de Brasília)\nTEMPORADA: Brasileirão 2026\n\n⚠️ Dados factuais indisponíveis — use as ferramentas para buscar dados.`;
+  }
+
+  const systemPrompt = buildSystemPrompt(factualContext);
   const needsDisclaimer = detectsBettingRequest(messages);
 
   let reply: string | null = null;
@@ -740,7 +806,7 @@ export async function runConsultiveChat(
     const result = await callClaudeWithTools(messages, claudeKey, systemPrompt);
     if (result.reply) {
       reply = result.reply;
-      model = "claude-sonnet-4-5";
+      model = "claude-3-5-haiku";
       toolsUsed = result.toolsUsed;
     }
   }

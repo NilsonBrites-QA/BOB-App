@@ -310,6 +310,40 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
+// ─── Cache Persistente de Contexto para Chat ─────────────────────────────────
+
+/**
+ * Cache persistente de dados pré-computados para o chat consultivo.
+ * Evita chamadas repetidas às APIs externas e garante que o LLM receba
+ * dados REAIS ao invés de alucinar.
+ *
+ * Tipos de cache (cacheKey):
+ *   - standings_a: classificação Série A (TTL 4h)
+ *   - standings_b: classificação Série B (TTL 4h)
+ *   - current_round: número da rodada atual (TTL 1h)
+ *   - round_matches_{N}: jogos da rodada N (TTL 4h)
+ *   - finished_recent: últimos 60 resultados (TTL 4h)
+ *   - round_analysis_{N}: âncoras + variações (TTL eterno por rodada)
+ *
+ * Política: dados persistem PARA SEMPRE no banco. O TTL controla apenas
+ * quando re-sincronizar com a API. Dados antigos nunca são deletados.
+ */
+model ChatContextCache {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cacheKey  String   @unique @map("cache_key")
+  data      Json     // Dados serializados
+  season    Int?     // Temporada (para filtragem)
+  round     Int?     // Rodada (para filtragem)
+  /// TTL em segundos. null = eterno (nunca expira).
+  ttlSeconds Int?    @map("ttl_seconds")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([cacheKey])
+  @@index([season, round])
+  @@map("chat_context_cache")
+}
+
 // ─── Sprint 4: Simulação Retroativa Cega ─────────────────────────────────────
 
 /**
@@ -777,4 +811,49 @@ model ApiSyncLog {
 
   @@index([source, cacheKey, windowLabel, syncedAt(sort: Desc)], name: "api_sync_log_lookup")
   @@map("api_sync_log")
+}
+
+// ─── Alavancagem (Event Sourcing / Append-Only) ──────────────────────────────
+
+model LeverageEvent {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  cycleId    String   @map("cycle_id") @db.Uuid
+  step       Int
+  result     String   // GREEN | RED | PENDING
+  matchId    String   @map("match_id")
+  homeTeam   String   @map("home_team")
+  awayTeam   String   @map("away_team")
+  pickLabel  String   @map("pick_label")
+  pickOdd    Float    @map("pick_odd")
+  stake      Float
+  payout     Float    @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Asc)])
+  @@index([cycleId, step(sort: Asc)])
+  @@map("leverage_events")
+}
+
+// ─── Reflexão Pós-Rodada (Imutável) ─────────────────────────────────────────
+
+model RoundReflection {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  season            Int
+  round             Int
+  roundId           String?  @map("round_id") @db.Uuid
+  totalPicks        Int      @default(0) @map("total_picks")
+  correctPicks      Int      @default(0) @map("correct_picks")
+  hitRate           Float    @default(0) @map("hit_rate")
+  totalAnchors      Int      @default(0) @map("total_anchors")
+  correctAnchors    Int      @default(0) @map("correct_anchors")
+  anchorHitRate     Float    @default(0) @map("anchor_hit_rate")
+  variationsDetail  Json     @default("[]") @map("variations_detail")
+  anchorsDetail     Json     @default("[]") @map("anchors_detail")
+  bobNarrative      String?  @map("bob_narrative") @db.Text
+  narrativeProvider String?  @map("narrative_provider")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([season, round])
+  @@map("round_reflections")
 }

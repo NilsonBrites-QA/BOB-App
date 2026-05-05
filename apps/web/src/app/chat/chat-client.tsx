@@ -8,9 +8,16 @@
  *
  * Design: terminal analítico denso — não chat bonitinho.
  * Hierarquia: área de conversa domina; input no rodapé fixo.
+ *
+ * ─── Bug Fixes ────────────────────────────────────────────────────────────────
+ *
+ * Bug 5 (histórico compartilhado):
+ *   Antes: estado local useState([]) — zerava a cada mount.
+ *   Agora: carrega histórico individual do BD via GET /api/bob/chat/history
+ *          no useEffect, filtrado por userId (Server Component passa prop).
  */
 
-import { useState, useRef, useEffect, FormEvent } from "react";
+import { useState, useRef, useEffect, FormEvent, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -21,6 +28,10 @@ type Message = {
   model?:  string;
 };
 
+type Props = {
+  userId: string;
+};
+
 const STARTERS = [
   "Como o algoritmo escolhe uma âncora?",
   "Explica a lógica do Value Edge",
@@ -28,21 +39,66 @@ const STARTERS = [
   "Por que o BOB não garante resultados?",
 ];
 
-export function ChatClient() {
+export function ChatClient({ userId }: Props) {
   const [messages, setMessages]     = useState<Message[]>([]);
   const [input,    setInput]        = useState("");
   const [loading,  setLoading]      = useState(false);
   const [error,    setError]        = useState<string | null>(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLTextAreaElement>(null);
   const idRef     = useRef(0);
+
+  // ── Carregar histórico individual do BD ──────────────────────────────────────
+  // Bug 5 fix: cada usuário vê SOMENTE seu próprio histórico.
+  // O endpoint GET /api/bob/chat/history já filtra por userId via auth cookie.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHistory() {
+      try {
+        const res = await fetch("/api/bob/chat/history");
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          messages: Array<{
+            id: string;
+            role: string;
+            content: string;
+            model?: string;
+            createdAt: string;
+          }>;
+        };
+
+        if (cancelled) return;
+
+        if (data.messages && data.messages.length > 0) {
+          const loaded: Message[] = data.messages.map((m, idx) => ({
+            id: idx + 1,
+            role: m.role as "user" | "assistant",
+            content: m.content,
+            model: m.model ?? undefined,
+          }));
+          idRef.current = loaded.length;
+          setMessages(loaded);
+        }
+      } catch {
+        // Falha silenciosa — o chat funciona sem histórico
+        console.warn("[ChatClient] Falha ao carregar histórico");
+      } finally {
+        if (!cancelled) setHistoryLoaded(true);
+      }
+    }
+
+    void loadHistory();
+    return () => { cancelled = true; };
+  }, [userId]);
 
   // Auto-scroll ao receber mensagem nova
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  async function send(text: string) {
+  const send = useCallback(async (text: string) => {
     if (!text.trim() || loading) return;
 
     setError(null);
@@ -58,7 +114,7 @@ export function ChatClient() {
         method:  "POST",
         headers: { "content-type": "application/json" },
         body:    JSON.stringify({
-          messages: history.map((m) => ({ role: m.role, content: m.content })),
+          messages: history.slice(-12).map((m) => ({ role: m.role, content: m.content })),
         }),
       });
 
@@ -79,7 +135,7 @@ export function ChatClient() {
       // Refocar no input após resposta
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }
+  }, [loading, messages]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -99,8 +155,8 @@ export function ChatClient() {
       {/* Área de mensagens */}
       <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
 
-        {/* Estado vazio */}
-        {messages.length === 0 && (
+        {/* Estado vazio — apenas quando histórico já carregou e está vazio */}
+        {historyLoaded && messages.length === 0 && (
           <div className="mx-auto flex max-w-2xl flex-col gap-8 pt-10">
             <div>
               <p className="kicker text-xs text-muted">BOB · V2026</p>
@@ -124,6 +180,20 @@ export function ChatClient() {
                   {s}
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Loading indicator para carregar histórico */}
+        {!historyLoaded && (
+          <div className="mx-auto flex max-w-2xl items-center justify-center pt-20">
+            <div className="flex items-center gap-3 text-sm text-muted">
+              <div className="flex gap-1">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted [animation-delay:0ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted [animation-delay:150ms]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted [animation-delay:300ms]" />
+              </div>
+              Carregando histórico...
             </div>
           </div>
         )}

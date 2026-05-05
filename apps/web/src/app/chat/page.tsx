@@ -39,5 +39,5 @@ export default async function ChatPage() {
     redirect("/login");
   }
 
-  return <ChatClient />;
+  return <ChatClient userId={user.id} />;
 }

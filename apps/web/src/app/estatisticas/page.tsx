@@ -9,6 +9,7 @@ import { DEMO_ROUND_LABEL } from "@/lib/bob/demo-matches";
 import { describeRoundFallback, loadRoundData } from "@/lib/bob/round-loader";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
+import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
 
 type SortKey = "score" | "home" | "odd";
 
@@ -62,7 +63,8 @@ export default async function EstatisticasPage({
 
   const roundData = await loadRoundData(paramSeason, paramRound);
 
-  // Escudos vêm direto do football-data.org (homeCrest/awayCrest no ScoredMatch)
+  // ── ESCUDOS DB-FIRST (PRD §9): uma query carrega todos os escudos do banco ──
+  const badgeMap = await loadAllBadgesFromDb();
 
   const roundLabel = roundData.source === "api" && roundData.meta
     ? `Rodada ${roundData.meta.round} · ${roundData.meta.season}`
@@ -253,8 +255,8 @@ export default async function EstatisticasPage({
                 key={match.id}
                 match={match}
                 breakdown={breakdown}
-                homeBadgeUrl={match.homeCrest ?? null}
-                awayBadgeUrl={match.awayCrest ?? null}
+                homeBadgeUrl={resolveBadge(match.homeTeam, badgeMap)}
+                awayBadgeUrl={resolveBadge(match.awayTeam, badgeMap)}
                 isAnchor={match.isAnchorCandidate}
               />
             ))}
