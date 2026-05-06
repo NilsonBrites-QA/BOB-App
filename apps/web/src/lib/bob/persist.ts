@@ -66,6 +66,8 @@ function convertBeamVariationToLegacy(beamVar: BeamVariation): Variation {
     anchorsTogether: beamVar.anchorPrimaryCount >= 3,
     summary: beamVar.transparencyNotes?.[0] || `${beamVar.legCount} jogos selecionados`,
     picks,
+    oddsClass: beamVar.oddsClass,
+    oddsClassLabel: beamVar.oddsClassLabel,
   };
 }
 

@@ -123,28 +123,46 @@ export type FDTeamsResponse = {
 const BASE = "https://api.football-data.org/v4";
 
 export async function fdFetch<T>(path: string, revalidate: number): Promise<T> {
-  const token = process.env.FOOTBALL_DATA_TOKEN;
-  if (!token) {
+  const raw = (process.env.FOOTBALL_DATA_TOKEN ?? "").replace(/['"]/g, "");
+  const keys = raw.split(",").map((k) => k.trim()).filter(Boolean);
+
+  if (keys.length === 0) {
     throw new Error(
       "FOOTBALL_DATA_TOKEN não configurado. Adicione a variável ao .env.local"
     );
   }
 
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "X-Auth-Token": token },
-    next: { revalidate },
-  });
+  for (let i = 0; i < keys.length; i++) {
+    const token = keys[i]!;
 
-  if (res.status === 429) {
-    throw new Error("football-data.org rate limit atingido (10 req/min). Aguarde e tente novamente.");
+    const res = await fetch(`${BASE}${path}`, {
+      headers: { "X-Auth-Token": token },
+      next: { revalidate },
+    });
+
+    if (res.status === 429 || res.status === 401 || res.status === 403) {
+      const hasNext = i + 1 < keys.length;
+      console.warn(
+        `[Football-Data] Chave ${i + 1}/${keys.length} recusada (${res.status}). ` +
+        (hasNext ? "Tentando próxima..." : "Todas as chaves esgotadas.")
+      );
+      continue;
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `football-data.org erro HTTP ${res.status} em ${path}: ${body.slice(0, 200)}`
+      );
+    }
+
+    return (await res.json()) as T;
   }
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`football-data.org erro HTTP ${res.status} em ${path}: ${body.slice(0, 200)}`);
-  }
-
-  return (await res.json()) as T;
+  throw new Error(
+    `football-data.org: todas as ${keys.length} chave(s) retornaram 429. ` +
+    `Rate limit global atingido — tente novamente em alguns minutos.`
+  );
 }
 
 // ─── Helpers internos: Log de Sync (L1 + L2) ─────────────────────────────────

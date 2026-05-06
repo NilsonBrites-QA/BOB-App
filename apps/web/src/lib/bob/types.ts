@@ -29,6 +29,14 @@ export type VariationPick = {
   isMarginal?: boolean;
 };
 
+/**
+ * Classificação da postura do bilhete com base na odd final.
+ * - 'big-odds':       odd ≥ 1000 — objetivo Big Odds cumprido.
+ * - 'short-multiple': 100 ≤ odd < 1000 — pool insuficiente, mas minimamente aceitável.
+ * - 'below-minimum':  odd < 100 — bilhete NÃO é Big Odds; nunca exibir como "aprovado".
+ */
+export type OddsClass = "big-odds" | "short-multiple" | "below-minimum";
+
 export type Variation = {
   id: string;
   title: string;
@@ -38,6 +46,10 @@ export type Variation = {
   anchorsTogether: boolean;
   summary: string;
   picks: VariationPick[];
+  /** Classificação da postura — definida pelo motor após boostToFloor. */
+  oddsClass: OddsClass;
+  /** Rótulo legível para exibição no UI e nos logs. */
+  oddsClassLabel: string;
 };
 
 export type MemoryLayer = {

@@ -42,6 +42,7 @@
 import {
   getStandingsGated,
   getMatchesByMatchdayGated,
+  getMatchesByMatchday,
   getFinishedMatchesGated,
   getSerieBStandings,
 } from "@/lib/bob/connectors/football-data";
@@ -82,7 +83,11 @@ const LEGAL_DISCLAIMER =
 
 /// ─── System Prompt — Personalidade Quântica (PRD §2 + §10 + SER Quântico) ────
 
-function buildSystemPrompt(factualContext: string, currentRound: number | null): string {
+function buildSystemPrompt(
+  factualContext: string,
+  currentRound: number | null,
+  fixturesList: string | null,
+): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const timeStr = now.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
@@ -92,6 +97,11 @@ function buildSystemPrompt(factualContext: string, currentRound: number | null):
     ? `RODADA OFICIAL ATUAL: ${currentRound}ª rodada do Brasileirão Série A 2026. ` +
       `Esta é a ÚNICA rodada válida. NUNCA mencione outra rodada como "atual" sem verificar com getCurrentMatchday.`
     : `RODADA ATUAL: indeterminada — use a ferramenta getCurrentMatchday antes de responder sobre a rodada.`;
+
+  // Bloco de confrontos: injetado diretamente para evitar que o LLM invente jogos
+  const fixturesBlock = fixturesList
+    ? `\n\nCONFRONTOS DA RODADA ${currentRound ?? "ATUAL"} (VERDADE ABSOLUTA — não invente outros jogos):\n${fixturesList}\nFonte: football-data.org — sincronizado antes desta conversa. Se perguntarem sobre jogos desta rodada, use ESTES dados. Não há outros jogos.`
+    : ``;
 
   return `Você é o BOB — Big Odds Brasileirão.
 
@@ -148,6 +158,7 @@ FERRAMENTAS (use SÓ quando os dados abaixo não cobrirem):
 PRIORIDADE: dados factuais > ferramentas > não tenho esse dado agora.
 Se pedirem dica de aposta, o sistema já inseriu aviso legal. Prossiga com análise.
 Idioma: sempre português brasileiro.
+${fixturesBlock}
 
 ═══════════════════════════════════════════════════════════════════════════════
 DADOS FACTUAIS (VERDADE ABSOLUTA — nunca contradiga):
@@ -790,6 +801,7 @@ export async function runConsultiveChat(
   // Performance: ~10ms se cache fresh, ~3s se primeiro acesso.
   let factualContext = "";
   let currentRound: number | null = null;
+  let fixturesList: string | null = null;
   try {
     const ctx = await loadChatContext();
     factualContext = formatContextForPrompt(ctx);
@@ -799,12 +811,46 @@ export async function runConsultiveChat(
     );
   } catch (err) {
     console.error("[BOB/chat] Falha ao carregar contexto factual:", err);
-    // Fallback: prompt sem dados factuais (LLM usará tools)
     const now = new Date();
     factualContext = `DATA ATUAL: ${now.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })} às ${now.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })} (horário de Brasília)\nTEMPORADA: Brasileirão 2026\n\n⚠️ Dados factuais indisponíveis — use as ferramentas para buscar dados.`;
   }
 
-  const systemPrompt = buildSystemPrompt(factualContext, currentRound);
+  // ── Pre-fetch dos confrontos da rodada atual ──────────────────────────────
+  // Injeta a lista de jogos diretamente no system prompt como texto plano,
+  // eliminando a dependência do LLM decidir chamar getMatchesByMatchday.
+  if (currentRound !== null) {
+    try {
+      // Tenta gated primeiro; se throttle ativo, cai pro raw (ISR cache Next.js)
+      const matchRes =
+        await getMatchesByMatchdayGated(currentRound) ??
+        await getMatchesByMatchday(currentRound);
+      if (matchRes.matches.length > 0) {
+        const lines = matchRes.matches.map((m) => {
+          const home = m.homeTeam.shortName || m.homeTeam.name;
+          const away = m.awayTeam.shortName || m.awayTeam.name;
+          const date = m.utcDate
+            ? new Date(m.utcDate).toLocaleString("pt-BR", {
+                timeZone: "America/Sao_Paulo",
+                weekday: "short", day: "2-digit", month: "2-digit",
+                hour: "2-digit", minute: "2-digit",
+              })
+            : "data a confirmar";
+          const status = m.status === "FINISHED"
+            ? ` (encerrado: ${m.score?.fullTime?.home ?? "?"}-${m.score?.fullTime?.away ?? "?"})`
+            : m.status === "IN_PLAY" ? " (em andamento)"
+            : "";
+          return `• ${home} x ${away} — ${date}${status}`;
+        });
+        fixturesList = lines.join("\n");
+        console.info(`[BOB/chat] ${matchRes.matches.length} confrontos da rodada ${currentRound} injetados no prompt.`);
+      }
+    } catch (err) {
+      console.warn("[BOB/chat] Falha ao pré-carregar confrontos da rodada:", err);
+      // Não é crítico — LLM ainda pode usar a tool getMatchesByMatchday
+    }
+  }
+
+  const systemPrompt = buildSystemPrompt(factualContext, currentRound, fixturesList);
   const needsDisclaimer = detectsBettingRequest(messages);
 
 

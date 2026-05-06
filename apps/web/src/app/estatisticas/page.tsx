@@ -66,6 +66,12 @@ export default async function EstatisticasPage({
   // ── ESCUDOS DB-FIRST (PRD §9): uma query carrega todos os escudos do banco ──
   const badgeMap = await loadAllBadgesFromDb();
 
+  // Fallback: crests direto da API para times que ainda não estão em team_assets
+  for (const m of roundData.matches) {
+    if (m.homeCrest) badgeMap.set(m.homeTeam, badgeMap.get(m.homeTeam) ?? m.homeCrest);
+    if (m.awayCrest) badgeMap.set(m.awayTeam, badgeMap.get(m.awayTeam) ?? m.awayCrest);
+  }
+
   const roundLabel = roundData.source === "api" && roundData.meta
     ? `Rodada ${roundData.meta.round} · ${roundData.meta.season}`
     : DEMO_ROUND_LABEL;

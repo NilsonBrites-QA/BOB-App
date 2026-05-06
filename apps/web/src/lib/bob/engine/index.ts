@@ -58,6 +58,10 @@ export type VariationsResult = {
     anchorPrimaryCount: number;
     legs: TicketLeg[];
     transparencyNotes: string[];
+    /** Classificação da postura Big Odds da variação. */
+    oddsClass: "big-odds" | "short-multiple" | "below-minimum";
+    /** Rótulo legível para UI e logs. */
+    oddsClassLabel: string;
   }>;
 };
 
@@ -110,6 +114,8 @@ export function generateVariations(
     logProbabilityMass: Math.log(probMass || 1e-10),
     legCount: v.picks.length,
     anchorPrimaryCount: v.picks.filter((p) => p.isAnchor).length,
+    oddsClass: v.oddsClass,
+    oddsClassLabel: v.oddsClassLabel,
     legs: v.picks.map((p) => {
       const cleanP = 1 / p.odd;
       return {

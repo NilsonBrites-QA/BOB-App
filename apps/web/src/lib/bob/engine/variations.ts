@@ -24,7 +24,7 @@
  */
 
 import { type ScoredMatch } from "./scoring";
-import { type Variation, type VariationPick } from "../types";
+import { type Variation, type VariationPick, type OddsClass } from "../types";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -120,6 +120,30 @@ const ODD_CEILINGS: Record<string, number> = {
 
 /** Mínimo absoluto de jogos por variação (RN Big Odds) */
 const MIN_PICKS_PER_VARIATION = 5;
+
+/** Odd combinada alvo Big Odds (PRD §3 — alvo ≥ 1000). */
+const BIG_ODDS_TARGET = 1000;
+
+/** Mínimo absoluto abaixo do qual o bilhete não é Big Odds por nenhuma definição. */
+const BIG_ODDS_MIN_ABSOLUTE = 100;
+
+const ODDS_CLASS_LABELS: Record<OddsClass, string> = {
+  "big-odds":      "Big Odds (alvo ≥ 1000×)",
+  "short-multiple": "Múltipla Curta de Proteção (100×–999×) — pool insuficiente para Big Odds",
+  "below-minimum": "Abaixo do Mínimo (< 100×) — NÃO é Big Odds",
+};
+
+function classifyOdd(combinedOdd: number): { oddsClass: OddsClass; oddsClassLabel: string } {
+  let oddsClass: OddsClass;
+  if (combinedOdd >= BIG_ODDS_TARGET) {
+    oddsClass = "big-odds";
+  } else if (combinedOdd >= BIG_ODDS_MIN_ABSOLUTE) {
+    oddsClass = "short-multiple";
+  } else {
+    oddsClass = "below-minimum";
+  }
+  return { oddsClass, oddsClassLabel: ODDS_CLASS_LABELS[oddsClass] };
+}
 
 /**
  * Eleva a odd projetada até o piso mínimo E garante mín 5 jogos.
@@ -401,6 +425,7 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     summary:
       "Leitura de rodada mais limpa, cortando jogos com contexto nebuloso para preservar a força estrutural.",
     picks: v1Picks,
+    ...classifyOdd(projectedOdd(v1Picks)),
   };
 
   // ── V2: Equilíbrio (3 âncoras + empates + fills, ~9 jogos) ───────────────
@@ -427,6 +452,7 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     summary:
       "Aposta em empate onde o confronto tem tendência a travar o valor esperado e ainda sustenta as âncoras centrais.",
     picks: v2Picks,
+    ...classifyOdd(projectedOdd(v2Picks)),
   };
 
   // ── V3: Lógica Pura (4 âncoras + 5 fills, ~9 jogos) ──────────────────────
@@ -459,6 +485,7 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     summary:
       "Variação central do método: todos os favoritos principais vencem e a leitura da rodada confirma o recorte mais racional.",
     picks: v3Picks,
+    ...classifyOdd(projectedOdd(v3Picks)),
   };
 
   // ── V4: Curta de pressão (3 âncoras + 4 fills, ~7 jogos) ──────────────
@@ -496,6 +523,7 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     summary:
       "Remove parte dos confrontos mais sujos da rodada e força um pacote mais agressivo em valor por seleção.",
     picks: v4Picks,
+    ...classifyOdd(projectedOdd(v4Picks)),
   };
 
   // ── V5: Extrema (2–3 âncoras + empates e azarões, ~10 jogos) ─────────────
@@ -526,6 +554,7 @@ export function generateVariations({ anchors, pool }: VariationInput): Variation
     summary:
       "Variação de estresse do método, preservando o eixo das âncoras mas aceitando mais travas e um desenho mais raro.",
     picks: v5Picks,
+    ...classifyOdd(projectedOdd(v5Picks)),
   };
 
   return [v1, v2, v3, v4, v5];

@@ -217,7 +217,7 @@ export default async function DashboardPage({
     const anchorIds = new Set(anchors.map((anchor) => anchor.id));
     const pool = allScored.filter((match) => !anchorIds.has(match.id));
     const variationsResult = generateVariations({ anchors, pool });
-    variations = (variationsResult.variations || []).map(convertBeamToLegacy);
+    variations = ((variationsResult.variations ?? []) as BeamVariation[]).map(convertBeamToLegacy);
     allScoredCount = allScored.length;
 
     anchorsForDisplay = anchors.map((a) => ({

@@ -62,42 +62,64 @@ async function afFetch<T>(
   path: string,
   revalidate: number
 ): Promise<AFResponse<T>> {
-  const key = process.env.API_FOOTBALL_KEY;
-  if (!key) {
+  const raw = (process.env.API_FOOTBALL_KEY ?? "").replace(/['"]/g, "");
+  const keys = raw.split(",").map((k) => k.trim()).filter(Boolean);
+
+  if (keys.length === 0) {
     throw new Error(
       "API_FOOTBALL_KEY não configurado. Adicione a variável ao .env.local"
     );
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { "x-apisports-key": key },
-    next: { revalidate },
-  });
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]!;
 
-  const remaining = res.headers.get("x-ratelimit-requests-remaining");
-  if (remaining !== null && parseInt(remaining, 10) < 10) {
-    console.warn(`[API-Football] Atenção: apenas ${remaining} requisições restantes hoje.`);
+    const res = await fetch(`${BASE_URL}${path}`, {
+      headers: { "x-apisports-key": key },
+      next: { revalidate },
+    });
+
+    const remaining = res.headers.get("x-ratelimit-requests-remaining");
+    if (remaining !== null && parseInt(remaining, 10) < 10) {
+      console.warn(
+        `[API-Football] Chave ${i + 1}: apenas ${remaining} requisições restantes hoje.`
+      );
+    }
+
+    if (res.status === 429 || res.status === 401 || res.status === 403) {
+      const hasNext = i + 1 < keys.length;
+      console.warn(
+        `[API-Football] Chave ${i + 1}/${keys.length} recusada (${res.status}). ` +
+        (hasNext ? "Tentando próxima..." : "Todas as chaves esgotadas.")
+      );
+      continue;
+    }
+
+    if (!res.ok) {
+      throw new Error(
+        `API-Football erro HTTP ${res.status} em ${path}. Restantes: ${remaining ?? "?"}`
+      );
+    }
+
+    const data = (await res.json()) as AFResponse<T>;
+
+    // A API retorna HTTP 200 mesmo em erro — verificar corpo
+    if (
+      !Array.isArray(data.errors) &&
+      Object.keys(data.errors as Record<string, string>).length > 0
+    ) {
+      throw new Error(
+        `API-Football erro de API em ${path}: ${JSON.stringify(data.errors)}`
+      );
+    }
+
+    return data;
   }
 
-  if (!res.ok) {
-    throw new Error(
-      `API-Football erro HTTP ${res.status} em ${path}. Restantes: ${remaining ?? "?"}`
-    );
-  }
-
-  const data = (await res.json()) as AFResponse<T>;
-
-  // A API retorna HTTP 200 mesmo em erro — verificar corpo
-  if (
-    !Array.isArray(data.errors) &&
-    Object.keys(data.errors as Record<string, string>).length > 0
-  ) {
-    throw new Error(
-      `API-Football erro de API em ${path}: ${JSON.stringify(data.errors)}`
-    );
-  }
-
-  return data;
+  throw new Error(
+    `API-Football: todas as ${keys.length} chave(s) retornaram 429. ` +
+    `Rate limit global atingido — tente novamente amanhã.`
+  );
 }
 
 // ─── Helpers internos: Log de Sync (L1 + L2) ────────────────────────────────

@@ -79,13 +79,31 @@ export const ANCHOR_PRIMARY_MIN_COVERAGE = 3;
 
 // ─── Constantes Internas ──────────────────────────────────────────────────────
 
+/**
+ * Odd mínima absoluta abaixo da qual o bilhete é classificado como "Abaixo do Mínimo".
+ * Um bilhete < 100 não é Big Odds por nenhuma definição razoável.
+ */
+export const BIG_ODDS_MIN_ABSOLUTE = 100.0;
+
+/**
+ * Rótulos humanos para cada categoria de postura do bilhete.
+ * Usados no UI de Variações e nos logs de auditoria.
+ */
+export const BIG_ODDS_POSTURE_LABELS = {
+  "big-odds":      "Big Odds (alvo ≥ 1000×)",
+  "short-multiple": "Múltipla Curta de Proteção (100×–999×)",
+  "below-minimum": "Abaixo do Mínimo (< 100×) — pool insuficiente",
+} as const;
+
+/** Tipo da postura do bilhete. */
+export type OddsClass = keyof typeof BIG_ODDS_POSTURE_LABELS;
+
 /** Epsilon para evitar log(0) em probabilidades muito pequenas. */
 const PROB_EPSILON = 1e-9;
 
 /**
  * Penalidade em logProb aplicada a pernas já utilizadas em variações anteriores.
  * Suave o suficiente para não bloquear, forte o suficiente para diversificar.
- * 0.10 ≈ reduz a "atratividade" de uma perna repeated em ~10%.
  */
 const REUSE_PENALTY = 0.10;
 
@@ -185,6 +203,19 @@ export type Variation = {
   anchorPrimaryCount: number;
   /** Número total de pernas selecionadas (7–10). */
   legCount: number;
+  /**
+   * Classificação da postura do bilhete com base na odd final.
+   *
+   * - 'big-odds':       odd ≥ BEAM_TARGET_ODD_DEFAULT (1000) — objetivo cumprido.
+   * - 'short-multiple': 100 ≤ odd < 1000 — pool insuficiente, mas minimamente aceitável.
+   * - 'below-minimum':  odd < 100 — não deve ser apresentado como Big Odds.
+   *
+   * PRD §3: o motor NUNCA exibe um bilhete abaixo de BIG_ODDS_MIN_ABSOLUTE (100)
+   * como "aprovado" sem sinalização explícita de postura.
+   */
+  oddsClass: OddsClass;
+  /** Rótulo humano correspondente a `oddsClass`. */
+  oddsClassLabel: string;
   /**
    * Notas de transparência operacional — PRD §10.
    * Descreve picks contrarian, cercamentos e alertas de contexto.
@@ -663,19 +694,42 @@ export function generateVariations(
       );
     }
 
+    // ── Classificação da postura Big Odds ─────────────────────────────────────
+    const finalCombinedOdd = Math.exp(best.logOdd);
+    let oddsClass: OddsClass;
+    if (finalCombinedOdd >= BEAM_TARGET_ODD_DEFAULT) {
+      oddsClass = "big-odds";
+    } else if (finalCombinedOdd >= BIG_ODDS_MIN_ABSOLUTE) {
+      oddsClass = "short-multiple";
+      warnings.push(
+        `${vid}: Postura "Múltipla Curta de Proteção" — odd ${finalCombinedOdd.toFixed(0)}× ` +
+        `(alvo: ${targetOdd.toFixed(0)}×). Pool desta rodada insuficiente para Big Odds.`
+      );
+    } else {
+      oddsClass = "below-minimum";
+      warnings.push(
+        `${vid}: ⚠ ABAIXO DO MÍNIMO — odd ${finalCombinedOdd.toFixed(2)}× ` +
+        `(mínimo aceitável: ${BIG_ODDS_MIN_ABSOLUTE.toFixed(0)}×, alvo: ${targetOdd.toFixed(0)}×). ` +
+        `Este bilhete NÃO é Big Odds. Pool crítico — revisar jogos da rodada.`
+      );
+    }
+
     // ── Montar Variation de saída ──────────────────────────────────────────────
     variations.push({
       id:                 vid,
       legs:               best.legs.map(toTicketLeg),
-      combinedOdd:        Math.exp(best.logOdd),
+      combinedOdd:        finalCombinedOdd,
       logCombinedOdd:     best.logOdd,
       probabilityMass:    Math.exp(best.logProb),
       logProbabilityMass: best.logProb,
       anchorPrimaryCount,
       legCount:           best.legs.length,
+      oddsClass,
+      oddsClassLabel:     BIG_ODDS_POSTURE_LABELS[oddsClass],
       transparencyNotes:  notes,
     });
   }
+
 
   // ── Passo 4: Validação PRD §3 — cobertura mínima de picks primários ──────────
   const fullPrimaryCoverage = variations.filter(

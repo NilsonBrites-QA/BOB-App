@@ -142,6 +142,8 @@ export const variations: Variation[] = [
     anchorsTogether: true,
     summary:
       "Leitura de rodada mais limpa, cortando jogos com contexto mais nebuloso para preservar força estrutural.",
+    oddsClass: "big-odds",
+    oddsClassLabel: "Big Odds (alvo ≥ 1000×)",
     picks: [
       { match: "Flamengo x Juventude", result: "1", odd: 1.44, isAnchor: true },
       { match: "Palmeiras x Vitória", result: "1", odd: 1.55, isAnchor: true },
@@ -162,6 +164,8 @@ export const variations: Variation[] = [
     anchorsTogether: false,
     summary:
       "Aposta em empate onde o confronto tem tendência a travar o valor esperado e ainda sustenta as âncoras centrais.",
+    oddsClass: "big-odds",
+    oddsClassLabel: "Big Odds (alvo ≥ 1000×)",
     picks: [
       { match: "Flamengo x Juventude", result: "1", odd: 1.44, isAnchor: true },
       { match: "Palmeiras x Vitória", result: "1", odd: 1.55, isAnchor: true },
@@ -183,6 +187,8 @@ export const variations: Variation[] = [
     anchorsTogether: true,
     summary:
       "Variação central do método: todos os favoritos principais vencem e a leitura da rodada confirma o recorte mais racional.",
+    oddsClass: "big-odds",
+    oddsClassLabel: "Big Odds (alvo ≥ 1000×)",
     picks: [
       { match: "Flamengo x Juventude", result: "1", odd: 1.44, isAnchor: true },
       { match: "Palmeiras x Vitória", result: "1", odd: 1.55, isAnchor: true },
@@ -204,6 +210,8 @@ export const variations: Variation[] = [
     anchorsTogether: false,
     summary:
       "Remove parte dos confrontos mais sujos da rodada e força um pacote mais agressivo em valor por seleção.",
+    oddsClass: "short-multiple",
+    oddsClassLabel: "Múltipla Curta de Proteção (100×–999×) — pool insuficiente para Big Odds",
     picks: [
       { match: "Flamengo x Juventude", result: "1", odd: 1.44, isAnchor: true },
       { match: "Palmeiras x Vitória", result: "1", odd: 1.55, isAnchor: true },
@@ -223,6 +231,8 @@ export const variations: Variation[] = [
     anchorsTogether: false,
     summary:
       "Variação de estresse do método, preservando o eixo das âncoras mas aceitando mais travas e um desenho mais raro.",
+    oddsClass: "big-odds",
+    oddsClassLabel: "Big Odds (alvo ≥ 1000×)",
     picks: [
       { match: "Flamengo x Juventude", result: "1", odd: 1.44, isAnchor: true },
       { match: "Palmeiras x Vitória", result: "1", odd: 1.55, isAnchor: true },

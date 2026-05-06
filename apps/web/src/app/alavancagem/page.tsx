@@ -77,8 +77,14 @@ export default async function AlavancagemPage() {
   // ── Selecionar picks autônomos ──────────────────────────────────────────────
   const rawPicks = selectLeveragePicks(allScored, state.currentStep);
 
-  // ── Hidratar escudos (DB-first) ─────────────────────────────────────────────
+  // ── Hidratar escudos (DB-first) ───────────────────────────────────────────
   const badgeMap = await loadAllBadgesFromDb();
+
+  // Fallback: crests direto da API para times que ainda não estão em team_assets
+  for (const m of roundData.matches) {
+    if (m.homeCrest) badgeMap.set(m.homeTeam, badgeMap.get(m.homeTeam) ?? m.homeCrest);
+    if (m.awayCrest) badgeMap.set(m.awayTeam, badgeMap.get(m.awayTeam) ?? m.awayCrest);
+  }
   const hydratedPicks = rawPicks?.map((p) => ({
     ...p,
     homeBadge: resolveBadge(p.homeTeam, badgeMap),

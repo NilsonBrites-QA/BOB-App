@@ -248,13 +248,9 @@ function splitMatch(s: string): { home: string; away: string } {
 async function renderFromDb(args: {
   season: number;
   dbRound: DbRound;
+  badgeMap: Map<string, string | null>;
 }) {
-  const { season, dbRound } = args;
-
-  // ── CORREÇÃO: Escudos carregados do banco (DB-first, PRD §9) ──
-  // Antes: homeBadge/awayBadge eram null — TeamShield mostrava só iniciais.
-  // Agora: uma query carrega todos os escudos da tabela team_assets.
-  const badgeMap = await loadAllBadgesFromDb();
+  const { season, dbRound, badgeMap } = args;
 
   // Variações
   const variations: VariationView[] = dbRound.variations.map((v) => {
@@ -378,7 +374,14 @@ export default async function VariacoesPage({
 
   const roundData = await loadRoundData(season, round);
 
-  // ── DB-FIRST: variações congeladas (Fase A1) ──────────────────────────────
+  // ── Escudos: DB-first + fallback com crests direto da API ──────────────────
+  const badgeMap = await loadAllBadgesFromDb();
+  for (const m of roundData.matches) {
+    if (m.homeCrest) badgeMap.set(m.homeTeam, badgeMap.get(m.homeTeam) ?? m.homeCrest);
+    if (m.awayCrest) badgeMap.set(m.awayTeam, badgeMap.get(m.awayTeam) ?? m.awayCrest);
+  }
+
+  // ── DB-FIRST: variações congeladas (Fase A1) ────────────────────────────────
   // Se a rodada já foi DELIVERED (admin clicou "Aprovar e entregar" ou cron rodou),
   // lemos as variações salvas — IMUTÁVEIS — em vez de recalcular a cada visita.
   // Isto resolve a sensação de "as variações ficam mudando sozinhas".
@@ -389,21 +392,16 @@ export default async function VariacoesPage({
     : null;
 
   if (dbRound && dbRound.status === "DELIVERED" && dbRound.variations.length > 0) {
-    // renderFromDb agora é async (carrega escudos do banco)
     return await renderFromDb({
       season,
       dbRound: dbRound as DbRound,
+      badgeMap,
     });
   }
-  // ── Fim do branch DB-first ────────────────────────────────────────────────
+  // ── Fim do branch DB-first ────────────────────────────────────────
 
   // Run engine
   const allScored = roundData.matches.map(scoreMatch);
-
-  // ── CORREÇÃO: Escudos do banco (DB-first, PRD §9) ──
-  // Antes: crestMap usava URLs da API externa (homeCrest/awayCrest) → rate-limit, escudos sumiam.
-  // Agora: uma query carrega todos os escudos da tabela team_assets.
-  const badgeMap = await loadAllBadgesFromDb();
 
   const anchors = selectAnchorsFromScored(allScored);
   const anchorIds = new Set(anchors.map((a) => a.id));
