@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
 import { isForbiddenForOfficialGeneration, normalizeDataSource } from "@/lib/bob/data/source-policy";
+import { loadOfficialRoundData, resolveOfficialRoundContext } from "@/lib/bob/round-loader";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -138,6 +139,12 @@ export async function GET(request: Request) {
 
   console.info(`[BOB/Diagnostics] variation_pipeline_check season=${season} round=${round}`);
 
+  const roundContext = await resolveOfficialRoundContext({ season, round });
+  const officialRoundData = roundContext.ok ? await loadOfficialRoundData(roundContext) : null;
+  const datasetMatchesCount = officialRoundData?.matches.length ?? 0;
+  const resolvedRound = roundContext.ok ? roundContext.round : null;
+  const resolvedSeason = roundContext.season;
+
   const roundRow = await prisma.round.findFirst({
     where: {
       season: { year: season },
@@ -161,6 +168,15 @@ export async function GET(request: Request) {
     console.info(`[BOB/Diagnostics] blockingProblems=${blockingProblems.join(",")}`);
     return NextResponse.json({
       identification: { season, round, generatedAt: null, generationVersion: null, engineVersion: null, status: "not_found" },
+      roundContext: {
+        roundContextValid: roundContext.ok,
+        requestedRound: round,
+        resolvedRound,
+        resolvedSeason,
+        datasetMatchesCount,
+        uiRoundMismatch: false,
+        pipelineRoundMismatch: false,
+      },
       result: { officialPipelineValid: false, blockingProblems, warnings: [], nextRecommendedAction: "Gere e entregue a rodada oficial antes de validar o pipeline." },
     }, { status: 404 });
   }
@@ -197,6 +213,14 @@ export async function GET(request: Request) {
   const anchorScoreEvent = events.find((event) => event.type === "ANCHOR_SCORE_CALCULATED");
   const anchorsSelectedEvent = events.find((event) => event.type === "ANCHORS_SELECTED");
   const variationsGeneratedEvent = events.find((event) => event.type === "VARIATIONS_GENERATED");
+  const pipelineRounds = [
+    numberOrNull(snapshot?.round),
+    numberOrNull(snapshot?.roundId),
+    ...events.map((event) => eventRound(event.content)),
+  ].filter((value): value is number => value !== null);
+  const roundContextValid = roundContext.ok && resolvedRound === round && resolvedSeason === season;
+  const uiRoundMismatch = Boolean(roundRow.number !== resolvedRound || roundRow.season.year !== resolvedSeason);
+  const pipelineRoundMismatch = pipelineRounds.length > 0 && pipelineRounds.some((eventRoundValue) => eventRoundValue !== resolvedRound);
 
   const featureBuilderPresent = Boolean(featureEvent || featureCoverage.length > 0);
   const matchIntelligencePresent = Boolean(intelligenceEvent);
@@ -329,6 +353,8 @@ export async function GET(request: Request) {
 
   const blockingProblems: string[] = [];
   if (!snapshot) blockingProblems.push("snapshot_not_found");
+  if (!roundContextValid || uiRoundMismatch || pipelineRoundMismatch) blockingProblems.push("round_context_mismatch");
+  if (datasetMatchesCount === 0) blockingProblems.push("missing_round_dataset");
   if (hasForbiddenSource) blockingProblems.push(`forbidden_source_found:${forbiddenSourcesFound.join(",")}`);
   if (!featureBuilderPresent) blockingProblems.push("feature_builder_missing");
   if (!matchIntelligencePresent) blockingProblems.push("match_intelligence_missing");
@@ -368,6 +394,15 @@ export async function GET(request: Request) {
       sourcesUsed: usedSources,
       hasForbiddenSource,
       forbiddenSourcesFound,
+    },
+    roundContext: {
+      roundContextValid,
+      requestedRound: round,
+      resolvedRound,
+      resolvedSeason,
+      datasetMatchesCount,
+      uiRoundMismatch,
+      pipelineRoundMismatch,
     },
     featureBuilder: {
       featureBuilderPresent,

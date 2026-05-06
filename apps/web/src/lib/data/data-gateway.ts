@@ -29,6 +29,10 @@ export type GatewayOdds = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TABLE_CALENDAR_TTL_MS = DAY_MS;
 const ODDS_ACTIVE_WINDOW_MS = 48 * 60 * 60 * 1000;
+const UNKNOWN_NUMBER = Number.NaN;
+const UNKNOWN_BOOLEAN = undefined as unknown as boolean;
+
+type CachedBetMatch = Prisma.BetMatchGetPayload<{ include: { odds: true } }>;
 
 export async function recordMemoryEvent(type: string, content: Record<string, unknown>, source?: string) {
   try {
@@ -79,6 +83,91 @@ function isFresh(date: Date | null | undefined, ttlMs: number) {
 
 function isFinished(status: string | null | undefined) {
   return status === "FINISHED" || status === "FT" || status === "AET" || status === "PEN";
+}
+
+function activeOdd(match: CachedBetMatch, option: "HOME" | "DRAW" | "AWAY") {
+  return match.odds.find((odd) =>
+    odd.market === "RESULT_1X2" &&
+    odd.isActive &&
+    odd.option.toUpperCase() === option &&
+    odd.odd > 1,
+  )?.odd ?? 0;
+}
+
+function cachedMatchToInput(match: CachedBetMatch): MatchInput {
+  return {
+    id: match.externalId || match.id,
+    match: `${match.homeTeam} x ${match.awayTeam}`,
+    homeTeam: match.homeTeam,
+    awayTeam: match.awayTeam,
+    homePosition: UNKNOWN_NUMBER,
+    awayPosition: UNKNOWN_NUMBER,
+    homeNeedsWin: UNKNOWN_BOOLEAN,
+    awayNeedsWin: UNKNOWN_BOOLEAN,
+    homeForm: [],
+    awayForm: [],
+    homeHomePoints: UNKNOWN_NUMBER,
+    awayAwayPoints: UNKNOWN_NUMBER,
+    homeGoalsScored5: UNKNOWN_NUMBER,
+    homeGoalsConceded5: UNKNOWN_NUMBER,
+    awayGoalsScored5: UNKNOWN_NUMBER,
+    awayGoalsConceded5: UNKNOWN_NUMBER,
+    h2hHomeWinRate: UNKNOWN_NUMBER,
+    homeAbsenceRate: UNKNOWN_NUMBER,
+    awayAbsenceRate: UNKNOWN_NUMBER,
+    homeBigGameAhead: UNKNOWN_BOOLEAN,
+    awayBigGameAhead: UNKNOWN_BOOLEAN,
+    homeOdd: activeOdd(match, "HOME"),
+    drawOdd: activeOdd(match, "DRAW"),
+    awayOdd: activeOdd(match, "AWAY"),
+    homeOddDropped: false,
+    scheduledAt: match.scheduledAt.toISOString(),
+    status: match.status,
+    homeCrest: match.homeCrest,
+    awayCrest: match.awayCrest,
+  };
+}
+
+export async function getCachedRoundDataset(
+  season: number,
+  round: number,
+): Promise<DataGatewayResult<MatchInput[]>> {
+  if (!Number.isInteger(round) || round < 1 || round > 38) {
+    return {
+      ok: false,
+      data: [],
+      source: "insufficient",
+      stale: false,
+      confidencePenalty: 1,
+      reason: "invalid_round_context",
+    };
+  }
+
+  const cachedMatches = await prisma.betMatch.findMany({
+    where: { season, round },
+    orderBy: { scheduledAt: "asc" },
+    include: { odds: true },
+  });
+
+  if (cachedMatches.length === 0) {
+    return {
+      ok: false,
+      data: [],
+      source: "database",
+      stale: false,
+      confidencePenalty: 1,
+      reason: "missing_round_dataset",
+    };
+  }
+
+  return {
+    ok: true,
+    data: cachedMatches.map(cachedMatchToInput),
+    source: "database",
+    stale: false,
+    confidencePenalty: 0,
+    reason: "database-round-available",
+  };
 }
 
 export async function getMarketOdds(
@@ -184,6 +273,7 @@ export async function getRoundDataset(
     orderBy: { scheduledAt: "asc" },
     include: { odds: true },
   });
+  const cachedMatchInputs = cachedMatches.map(cachedMatchToInput);
 
   const completeHistorical = cachedMatches.length > 0 && cachedMatches.every((m) => isFinished(m.status));
   const freshCalendar = cachedMatches.length > 0 && isFresh(recentSync?.syncedAt, TABLE_CALENDAR_TTL_MS);
@@ -198,7 +288,7 @@ export async function getRoundDataset(
     });
     return {
       ok: true,
-      data: null,
+      data: cachedMatchInputs,
       source: "database",
       stale: false,
       confidencePenalty: 0,
@@ -237,7 +327,7 @@ export async function getRoundDataset(
     if (cachedMatches.length > 0) {
       return {
         ok: true,
-        data: null,
+        data: cachedMatchInputs,
         source: "stale_valid",
         stale: true,
         confidencePenalty: 0.35,

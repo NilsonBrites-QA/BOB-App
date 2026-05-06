@@ -155,6 +155,7 @@ export async function buildOfficialVariationsPipeline(args: {
   sourceSnapshotIds?: string[];
 }): Promise<OfficialVariationPipelineResult> {
   const source = String(args.source ?? "insufficient");
+  const receivedRound = args.round ?? null;
   const block = async (
     reason: string,
     extra?: {
@@ -164,16 +165,24 @@ export async function buildOfficialVariationsPipeline(args: {
       confidencePenalty?: number;
       missingFeatures?: string[];
       sourceSnapshotIds?: string[];
+      logReason?: "insufficient_data" | "missing_round_dataset" | "invalid_round_context";
     },
   ): Promise<OfficialVariationPipelineResult> => {
     const missing = extra?.missingFeatures ?? ["valid_real_source"];
-    console.warn(`[BOB/Variacoes] blocked reason=insufficient_data missing=${missing.join(",")} round=${args.round ?? "unknown"} detail=${reason}`);
+    if (extra?.logReason === "invalid_round_context") {
+      console.warn(`[BOB/Variacoes] blocked reason=invalid_round_context received_round=${receivedRound ?? "missing"}`);
+    } else if (extra?.logReason === "missing_round_dataset") {
+      console.warn(`[BOB/Variacoes] blocked reason=missing_round_dataset round=${args.round ?? "unknown"}`);
+    } else {
+      console.warn(`[BOB/Variacoes] blocked reason=insufficient_data missing=${missing.join(",")} round=${args.round ?? "unknown"} detail=${reason}`);
+    }
     await recordMemoryEvent("OFFICIAL_VARIATIONS_BLOCKED_INSUFFICIENT_DATA", {
       round: args.round,
       source,
       status: "insufficient_data",
       reason,
       missingFeatures: missing,
+      logReason: extra?.logReason ?? "insufficient_data",
       engineVersion: ENGINE_VERSION,
       generationVersion: GENERATION_VERSION,
     }, source);
@@ -195,8 +204,22 @@ export async function buildOfficialVariationsPipeline(args: {
     };
   };
 
+  if (!Number.isInteger(args.round) || Number(args.round) < 1 || Number(args.round) > 38) {
+    return block("invalid_round_context", {
+      missingFeatures: ["valid_round_context"],
+      logReason: "invalid_round_context",
+    });
+  }
+
   if (isForbiddenForOfficialGeneration(source)) {
     return block(`invalid-source:${source}`, { missingFeatures: ["valid_real_source"] });
+  }
+
+  if (args.matches.length === 0) {
+    return block("missing_round_dataset", {
+      missingFeatures: ["round_dataset"],
+      logReason: "missing_round_dataset",
+    });
   }
 
   const featureResult = buildMatchFeatures({ matches: args.matches, source, sourceSnapshotIds: args.sourceSnapshotIds });

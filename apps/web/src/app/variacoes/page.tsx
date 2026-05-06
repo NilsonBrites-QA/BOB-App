@@ -9,7 +9,7 @@ import type {
   JudgeResult,
 } from "@/lib/bob/engine/variation-judge";
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
-import { describeRoundFallback, loadRoundData } from "@/lib/bob/round-loader";
+import { loadOfficialRoundData, resolveOfficialRoundContext } from "@/lib/bob/round-loader";
 import { loadDeliveredRound } from "@/lib/bob/persist";
 import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
 import { DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
@@ -354,11 +354,24 @@ async function renderFromDb(args: {
   );
 }
 
-function renderInsufficientData(reason: string) {
+function renderInsufficientData(
+  reason: string,
+  context?: {
+    season: number;
+    round: number | null;
+    source: string;
+    fixturesCount?: number;
+    firstMatchAt?: string | null;
+  },
+) {
+  const hasRealRound = Boolean(context?.round && context.round > 0);
+  const { label: firstMatch, cutoff } = hasRealRound
+    ? formatFirstMatch(context?.firstMatchAt ?? null)
+    : { label: DEMO_FIRST_MATCH, cutoff: DEMO_CUTOFF };
   const audit: AuditView = {
     status: "APPROVED_WITH_ALERTS",
     passed: false,
-    alerts: ["dados insuficientes para geração responsável"],
+    alerts: [reason === "missing_round_dataset" ? "dados da rodada não conectados ao motor" : "dados insuficientes para geração responsável"],
     warnings: [reason],
     checks: [
       { label: "Dataset real da rodada disponível", ok: false },
@@ -367,14 +380,18 @@ function renderInsufficientData(reason: string) {
   };
 
   const roundView: RoundView = {
-    label: DEMO_ROUND_LABEL,
-    source: "demo",
-    firstMatch: DEMO_FIRST_MATCH,
-    cutoff: DEMO_CUTOFF,
-    totalMatches: 0,
+    label: hasRealRound ? `Rodada ${context!.round} · ${context!.season}` : DEMO_ROUND_LABEL,
+    source: context && context.source !== "demo" ? "api" : "demo",
+    firstMatch,
+    cutoff,
+    totalMatches: context?.fixturesCount ?? 0,
     difficulty: "hard",
-    difficultyLabel: "Dados insuficientes",
-    bobMessage: "É possível. Vamos construir a rota com os dados — mas esta geração foi bloqueada porque o dataset real ainda não está completo.",
+    difficultyLabel: reason === "missing_round_dataset" ? "Dados da rodada não conectados ao motor" : "Dados insuficientes",
+    bobMessage: reason === "invalid_round_context"
+      ? "Geração oficial bloqueada: a rodada recebida é inválida para o motor."
+      : reason === "missing_round_dataset"
+        ? "Geração oficial bloqueada: a rodada foi resolvida, mas o dataset dessa rodada ainda não está disponível para o motor."
+        : "Geração oficial bloqueada: o dataset real ainda não tem cobertura suficiente para uma geração responsável.",
     aiProvider: "none",
   };
 
@@ -407,13 +424,51 @@ export default async function VariacoesPage({
   if (!dbUser?.active) redirect("/login");
 
   const params = await searchParams;
-  const season = params.season ? parseInt(params.season, 10) : new Date().getFullYear();
-  const round = params.round ? parseInt(params.round, 10) : null;
+  const parsedSeason = params.season ? parseInt(params.season, 10) : new Date().getFullYear();
+  const season = Number.isInteger(parsedSeason) && parsedSeason >= 2000 ? parsedSeason : new Date().getFullYear();
+  const requestedRound = params.round ? parseInt(params.round, 10) : null;
+  const roundContext = await resolveOfficialRoundContext({ season, round: requestedRound });
 
-  const roundData = await loadRoundData(season, round);
+  if (!roundContext.ok) {
+    console.warn(`[BOB/Variacoes] blocked reason=invalid_round_context received_round=${roundContext.receivedRound ?? "missing"}`);
+    return renderInsufficientData("invalid_round_context", {
+      season,
+      round: null,
+      source: roundContext.source,
+      fixturesCount: 0,
+      firstMatchAt: null,
+    });
+  }
+
+  console.info(
+    `[BOB/Variacoes] round_context season=${roundContext.season} round=${roundContext.round} source=${roundContext.source} fixtures=${roundContext.fixturesCount}`,
+  );
+
+  const roundData = await loadOfficialRoundData(roundContext);
+  console.info(
+    `[BOB/Variacoes] dataset_loaded round=${roundContext.round} matches=${roundData.matches.length} source=${roundData.source}`,
+  );
 
   if (!isRealDataSource(roundData.source)) {
-    return renderInsufficientData(roundData.fallbackReason ? describeRoundFallback(roundData.fallbackReason) : "Fonte de dados insuficiente para geração oficial.");
+    console.warn(`[BOB/Variacoes] blocked reason=missing_round_dataset round=${roundContext.round}`);
+    return renderInsufficientData("missing_round_dataset", {
+      season: roundContext.season,
+      round: roundContext.round,
+      source: roundData.source,
+      fixturesCount: roundContext.fixturesCount,
+      firstMatchAt: roundContext.firstMatchAt,
+    });
+  }
+
+  if (roundData.matches.length === 0) {
+    console.warn(`[BOB/Variacoes] blocked reason=missing_round_dataset round=${roundContext.round}`);
+    return renderInsufficientData("missing_round_dataset", {
+      season: roundContext.season,
+      round: roundContext.round,
+      source: roundData.source,
+      fixturesCount: 0,
+      firstMatchAt: roundContext.firstMatchAt,
+    });
   }
 
   // ── Escudos: DB-first + fallback com crests direto da API ──────────────────
@@ -427,32 +482,34 @@ export default async function VariacoesPage({
   // Se a rodada já foi DELIVERED (admin clicou "Aprovar e entregar" ou cron rodou),
   // lemos as variações salvas — IMUTÁVEIS — em vez de recalcular a cada visita.
   // Isto resolve a sensação de "as variações ficam mudando sozinhas".
-  const effectiveRoundForDb =
-    roundData.source === "api" && roundData.meta ? roundData.meta.round : (round ?? 0);
-  const dbRound = effectiveRoundForDb > 0
-    ? await loadDeliveredRound(season, effectiveRoundForDb).catch(() => null)
-    : null;
+  const effectiveRoundForDb = roundContext.round;
+  const dbRound = await loadDeliveredRound(roundContext.season, effectiveRoundForDb).catch(() => null);
 
   if (dbRound && dbRound.status === "DELIVERED" && dbRound.variations.length > 0) {
     return await renderFromDb({
-      season,
+      season: roundContext.season,
       dbRound: dbRound as DbRound,
       badgeMap,
     });
   }
   // ── Fim do branch DB-first ────────────────────────────────────────
 
-  const effectiveRound =
-    roundData.meta ? roundData.meta.round : (round ?? 0);
+  const effectiveRound = roundContext.round;
   const pipeline = await buildOfficialVariationsPipeline({
     matches: roundData.matches,
     source: roundData.source,
     round: effectiveRound,
-    sourceSnapshotIds: [`round:${season}:${effectiveRound}:${roundData.source}`],
+    sourceSnapshotIds: [`round:${roundContext.season}:${effectiveRound}:${roundData.source}`],
   });
 
   if (!pipeline.ok || !pipeline.variationsResult) {
-    return renderInsufficientData(pipeline.reason ?? "Dados insuficientes para gerar as 5 Variações oficiais.");
+    return renderInsufficientData(pipeline.reason ?? "Dados insuficientes para gerar as 5 Variações oficiais.", {
+      season: roundContext.season,
+      round: roundContext.round,
+      source: roundData.source,
+      fixturesCount: roundData.matches.length,
+      firstMatchAt: roundContext.firstMatchAt,
+    });
   }
 
   const allScored = roundData.matches.map(scoreMatch);
@@ -462,7 +519,7 @@ export default async function VariacoesPage({
   // ── Camada cognitiva: LER do DB (pré-computado pelo cron) ──
   // LLM NUNCA roda no SSR. O cron /api/cron/judge-variations popula a tabela.
   const judgement = await prisma.variationJudgement
-    .findUnique({ where: { season_round: { season, round: effectiveRound } } })
+    .findUnique({ where: { season_round: { season: roundContext.season, round: effectiveRound } } })
     .catch(() => null);
 
   let enrichments: VariationEnrichment[];
@@ -566,13 +623,11 @@ export default async function VariacoesPage({
 
   // Round info
   const difficulty = analyzeRoundDifficulty(allScored);
-  const { label: firstMatch, cutoff } = roundData.source === "api" && roundData.meta
+  const { label: firstMatch, cutoff } = roundData.meta
     ? formatFirstMatch(roundData.meta.firstMatchAt)
     : { label: DEMO_FIRST_MATCH, cutoff: DEMO_CUTOFF };
 
-  const roundLabel = roundData.source === "api" && roundData.meta
-    ? `Rodada ${roundData.meta.round} · ${roundData.meta.season}`
-    : DEMO_ROUND_LABEL;
+  const roundLabel = `Rodada ${roundContext.round} · ${roundContext.season}`;
 
   const difficultyLabel =
     difficulty.difficulty === "easy" ? "Rodada favorável" :
