@@ -813,6 +813,16 @@ model ApiSyncLog {
   @@map("api_sync_log")
 }
 
+model ApiCacheLock {
+  cacheKey    String   @id @map("cache_key") @db.Text
+  lockedUntil DateTime @map("locked_until") @db.Timestamptz(6)
+  owner       String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("api_cache_locks")
+}
+
 // ─── Alavancagem (Event Sourcing / Append-Only) ──────────────────────────────
 
 model LeverageEvent {

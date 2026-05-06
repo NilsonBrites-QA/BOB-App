@@ -2,17 +2,19 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
-import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
+import { scoreMatch } from "@/lib/bob/engine";
 import type {
   VariationEnrichment,
   VariationReplacement,
   JudgeResult,
 } from "@/lib/bob/engine/variation-judge";
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
-import { loadRoundData } from "@/lib/bob/round-loader";
+import { describeRoundFallback, loadRoundData } from "@/lib/bob/round-loader";
 import { loadDeliveredRound } from "@/lib/bob/persist";
 import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
 import { DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
+import { isRealDataSource } from "@/lib/bob/data/source-policy";
+import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-variation-pipeline";
 import { VariacoesClient } from "./variacoes-client";
 import type { VariationView, AnchorView, AuditView, RoundView, VariationLeg } from "./variacoes-client";
 
@@ -337,14 +339,50 @@ async function renderFromDb(args: {
       `Variações entregues e congeladas (versão ${
         (dbRound as { version?: number }).version ?? 1
       }). Para regerar, peça ao admin.`,
-    aiProvider:    "heuristic",
+    aiProvider:    "none",
   };
+
+  console.info(`[BOB/Variacoes] source=cache status=loaded_snapshot round=${dbRound.number} version=${(dbRound as { version?: number }).version ?? 1}`);
 
   return (
     <VariacoesClient
       round={roundView}
       anchors={anchorsView}
       variations={variations}
+      audit={audit}
+    />
+  );
+}
+
+function renderInsufficientData(reason: string) {
+  const audit: AuditView = {
+    status: "APPROVED_WITH_ALERTS",
+    passed: false,
+    alerts: ["dados insuficientes para geração responsável"],
+    warnings: [reason],
+    checks: [
+      { label: "Dataset real da rodada disponível", ok: false },
+      { label: "Geração oficial bloqueada", ok: true },
+    ],
+  };
+
+  const roundView: RoundView = {
+    label: DEMO_ROUND_LABEL,
+    source: "demo",
+    firstMatch: DEMO_FIRST_MATCH,
+    cutoff: DEMO_CUTOFF,
+    totalMatches: 0,
+    difficulty: "hard",
+    difficultyLabel: "Dados insuficientes",
+    bobMessage: "É possível. Vamos construir a rota com os dados — mas esta geração foi bloqueada porque o dataset real ainda não está completo.",
+    aiProvider: "none",
+  };
+
+  return (
+    <VariacoesClient
+      round={roundView}
+      anchors={[]}
+      variations={[]}
       audit={audit}
     />
   );
@@ -374,6 +412,10 @@ export default async function VariacoesPage({
 
   const roundData = await loadRoundData(season, round);
 
+  if (!isRealDataSource(roundData.source)) {
+    return renderInsufficientData(roundData.fallbackReason ? describeRoundFallback(roundData.fallbackReason) : "Fonte de dados insuficiente para geração oficial.");
+  }
+
   // ── Escudos: DB-first + fallback com crests direto da API ──────────────────
   const badgeMap = await loadAllBadgesFromDb();
   for (const m of roundData.matches) {
@@ -400,26 +442,32 @@ export default async function VariacoesPage({
   }
   // ── Fim do branch DB-first ────────────────────────────────────────
 
-  // Run engine
-  const allScored = roundData.matches.map(scoreMatch);
+  const effectiveRound =
+    roundData.meta ? roundData.meta.round : (round ?? 0);
+  const pipeline = await buildOfficialVariationsPipeline({
+    matches: roundData.matches,
+    source: roundData.source,
+    round: effectiveRound,
+    sourceSnapshotIds: [`round:${season}:${effectiveRound}:${roundData.source}`],
+  });
 
-  const anchors = selectAnchorsFromScored(allScored);
-  const anchorIds = new Set(anchors.map((a) => a.id));
-  const pool = allScored.filter((m) => !anchorIds.has(m.id));
-  const variationsResult = generateVariations({ anchors, pool });
+  if (!pipeline.ok || !pipeline.variationsResult) {
+    return renderInsufficientData(pipeline.reason ?? "Dados insuficientes para gerar as 5 Variações oficiais.");
+  }
+
+  const allScored = roundData.matches.map(scoreMatch);
+  const anchors = pipeline.anchors;
+  const variationsResult = pipeline.variationsResult;
 
   // ── Camada cognitiva: LER do DB (pré-computado pelo cron) ──
   // LLM NUNCA roda no SSR. O cron /api/cron/judge-variations popula a tabela.
-  const effectiveRound =
-    roundData.source === "api" && roundData.meta ? roundData.meta.round : (round ?? 0);
-
   const judgement = await prisma.variationJudgement
     .findUnique({ where: { season_round: { season, round: effectiveRound } } })
     .catch(() => null);
 
   let enrichments: VariationEnrichment[];
   let replacements: VariationReplacement[] = [];
-  let aiProvider: JudgeResult["provider"] = "heuristic";
+  let aiProvider: RoundView["aiProvider"] = "none";
 
   if (judgement) {
     const payload = judgement.payload as unknown as {
@@ -430,10 +478,10 @@ export default async function VariacoesPage({
     replacements = payload.replacements ?? [];
     aiProvider = judgement.provider as JudgeResult["provider"];
     console.log(
-      `[BOB/Variacoes] análise pré-computada: ${aiProvider} (${replacements.filter((r) => r.approved).length}/${replacements.length} subs aprovadas)`,
+      `[BOB/Variacoes] source=cache status=loaded_judgement provider=${aiProvider} round=${effectiveRound} approved_replacements=${replacements.filter((r) => r.approved).length}/${replacements.length}`,
     );
   } else {
-    // Fallback instantâneo (sem LLM, sem latência)
+    // Enriquecimento diagnóstico instantâneo: não escolhe picks nem gera Variações.
     enrichments = variationsResult.variations.map((v) =>
       quickHeuristicEnrichment({
         id: v.id,
@@ -443,7 +491,7 @@ export default async function VariacoesPage({
       }),
     );
     console.log(
-      `[BOB/Variacoes] sem análise pré-computada — usando heurística rápida. Rode /api/cron/judge-variations.`,
+      `[BOB/Variacoes] source=diagnostic status=missing_judgement round=${effectiveRound} enrichment=deterministic_text_only`,
     );
   }
 
@@ -533,7 +581,7 @@ export default async function VariacoesPage({
 
   const roundView: RoundView = {
     label: roundLabel,
-    source: roundData.source,
+    source: isRealDataSource(roundData.source) ? "api" : "demo",
     firstMatch,
     cutoff,
     totalMatches: allScored.length,

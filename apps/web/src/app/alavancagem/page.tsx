@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 import { scoreMatch } from "@/lib/bob/engine/scoring";
 import { loadRoundData } from "@/lib/bob/round-loader";
 import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
+import { isRealDataSource } from "@/lib/bob/data/source-policy";
+import { createLeveragePick } from "@/lib/bob/leverage/leverage-engine";
 import {
   LEVERAGE_TOTAL_STEPS,
   deriveState,
@@ -72,10 +74,24 @@ export default async function AlavancagemPage() {
   // ── Carregar jogos da rodada para montar o bilhete do dia ───────────────────
   const season = new Date().getFullYear();
   const roundData = await loadRoundData(season, null);
-  const allScored = roundData.matches.map(scoreMatch);
+  const canGenerateOfficial = isRealDataSource(roundData.source);
+  const leverageDecision = canGenerateOfficial
+    ? await createLeveragePick({
+        matches: roundData.matches,
+        source: roundData.source,
+        step: state.currentStep,
+        sourceSnapshotIds: [`round:${season}:current:${roundData.source}`],
+      })
+    : { ok: false, decision: null };
+  const allScored = canGenerateOfficial ? roundData.matches.map(scoreMatch) : [];
 
   // ── Selecionar picks autônomos ──────────────────────────────────────────────
-  const rawPicks = selectLeveragePicks(allScored, state.currentStep);
+  const rawPicks = leverageDecision.ok && leverageDecision.decision
+    ? selectLeveragePicks(
+        allScored.filter((match) => match.id === leverageDecision.decision?.selectedPick.matchId),
+        state.currentStep,
+      )
+    : null;
 
   // ── Hidratar escudos (DB-first) ───────────────────────────────────────────
   const badgeMap = await loadAllBadgesFromDb();

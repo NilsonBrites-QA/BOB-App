@@ -59,12 +59,15 @@ function saveAnchorPref(matchId: string, pref: AnchorPref) {
 
 export function AnchorCard({ anchor, badgeUrl, awayBadgeUrl }: AnchorCardProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [pref, setPref] = useState<AnchorPref>(null);
+  const [pref, setPref] = useState<AnchorPref>(() =>
+    typeof window === "undefined" ? null : loadAnchorPref(anchor.id),
+  );
   const isMarginal = anchor.isMarginalAnchor === true;
 
   // Carregar preferência salva após mount (sem SSR mismatch)
   useEffect(() => {
-    setPref(loadAnchorPref(anchor.id));
+    const timer = setTimeout(() => setPref(loadAnchorPref(anchor.id)), 0);
+    return () => clearTimeout(timer);
   }, [anchor.id]);
 
   function togglePref(next: "accepted" | "rejected") {

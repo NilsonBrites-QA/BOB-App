@@ -28,10 +28,14 @@
 
 import { unstable_cache } from "next/cache";
 import { demoMatches } from "@/lib/bob/demo-matches";
-import { fetchRoundMatchInputs, getCurrentRound } from "@/lib/bob/connectors";
-import type { FetchRoundResult } from "@/lib/bob/connectors";
+import {
+  getGatewayCurrentRound,
+  getGatewayRoundDataset,
+  type GatewayRoundResult,
+} from "@/lib/data/sports-data-gateway";
 import type { MatchInput } from "@/lib/bob/engine/scoring";
 import { prisma } from "@/lib/db";
+import { getRoundDataset } from "@/lib/data/data-gateway";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -51,17 +55,17 @@ export type RoundResolution = {
 
 export type LoadedRoundData =
   | {
-      source: "api";
+      source: "api" | "database" | "cache" | "cache_hit" | "stale_valid" | "persisted_snapshot";
       fallbackReason: null;
       matches: MatchInput[];
-      assets: FetchRoundResult["assets"];
-      meta: FetchRoundResult["meta"];
+      assets: GatewayRoundResult["assets"];
+      meta: GatewayRoundResult["meta"];
     }
   | {
-      source: "demo";
+      source: "demo" | "mock" | "fallback_fake" | "synthetic" | "empty" | "insufficient";
       fallbackReason: RoundFallbackReason;
       matches: MatchInput[];
-      assets: FetchRoundResult["assets"];
+      assets: GatewayRoundResult["assets"];
       meta: null;
     };
 
@@ -127,8 +131,8 @@ async function getLastKnownRoundFromDb(season: number): Promise<number | null> {
  * Cada nível só é tentado se o anterior falhar.
  *
  * L1 (API Gated):
- *   - Chama getCurrentRound() do connectors/index.ts
- *   - Internamente usa detectNextOpenRound() + ponteiro getCurrentMatchday()
+ *   - Chama getGatewayCurrentRound() do Data Gateway
+ *   - Internamente usa o orquestrador autorizado de calendário
  *   - Consumo gated: football-data.org com cache ISR de 1h
  *   - Se o cache-gate bloquear (throttle 24h), Next.js serve do edge cache
  *
@@ -146,12 +150,12 @@ async function getLastKnownRoundFromDb(season: number): Promise<number | null> {
  */
 export async function resolveCurrentRound(season: number): Promise<RoundResolution> {
   // ── L1: API Gated (detectNextOpenRound + ponteiro FD) ──
-  // getCurrentRound() já implementa a lógica de drift detection.
+  // getGatewayCurrentRound() já implementa a lógica de drift detection no caminho autorizado.
   // O cache ISR do Next.js (1h) evita chamadas repetidas à API.
   // Se o token não está configurado, pula direto para L2.
   if (process.env.FOOTBALL_DATA_TOKEN) {
     try {
-      const apiRound = await getCurrentRound();
+      const apiRound = await getGatewayCurrentRound();
       if (apiRound !== null) {
         console.info(`[RoundLoader/L1] Rodada resolvida pela API: ${apiRound}`);
         return {
@@ -210,7 +214,7 @@ const fetchAndSerialize = unstable_cache(
     }
 
     // ── TAREFA 2: Resolução autônoma com cascata L1→L2→L3 ──
-    // Antes: `round ?? getCurrentRound()` — sem fallback DB, quebrava em demo.
+    // Antes: `round ?? getGatewayCurrentRound()` — sem fallback DB, quebrava em demo.
     // Agora: resolveCurrentRound() tenta API → banco → demo, nunca falha.
     let resolvedRound: number;
     let calendarInterrupted = false;
@@ -233,8 +237,22 @@ const fetchAndSerialize = unstable_cache(
       calendarInterrupted = resolution.resolvedBy === "database";
     }
 
+    const gatewayResult = await getRoundDataset(season, resolvedRound);
+    if (gatewayResult.ok && gatewayResult.source !== "api") {
+      return {
+        source: gatewayResult.source,
+        fallbackReason: null,
+        matches: gatewayResult.data ?? [],
+        assetsEntries: [],
+        meta: null,
+      };
+    }
+
     try {
-      const result = await fetchRoundMatchInputs(season, resolvedRound);
+      const result = await getGatewayRoundDataset(season, resolvedRound);
+      if (!result) {
+        throw new Error("insufficient:gateway-round-dataset");
+      }
 
       // Se a rodada foi resolvida pelo banco (L2), os dados do pipeline
       // podem estar parcialmente stale. A meta reflete isso para a UI.
@@ -281,7 +299,7 @@ export async function loadRoundData(
   const serialized = await fetchAndSerialize(season, round);
   // Reconstrói Map a partir das entries serializadas
   const assets = new Map(
-    serialized.assetsEntries as Array<[string, FetchRoundResult["assets"] extends Map<string, infer V> ? V : never]>,
+    serialized.assetsEntries as Array<[string, GatewayRoundResult["assets"] extends Map<string, infer V> ? V : never]>,
   );
   if (serialized.source === "api") {
     return {
@@ -290,6 +308,21 @@ export async function loadRoundData(
       matches: serialized.matches,
       assets,
       meta: serialized.meta!,
+    };
+  }
+  if (
+    serialized.source === "database" ||
+    serialized.source === "cache" ||
+    serialized.source === "cache_hit" ||
+    serialized.source === "stale_valid" ||
+    serialized.source === "persisted_snapshot"
+  ) {
+    return {
+      source: serialized.source,
+      fallbackReason: null,
+      matches: serialized.matches,
+      assets,
+      meta: serialized.meta as GatewayRoundResult["meta"],
     };
   }
   return {

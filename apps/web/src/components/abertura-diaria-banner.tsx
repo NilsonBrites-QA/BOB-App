@@ -16,23 +16,26 @@ const TTL_MS      = 24 * 60 * 60 * 1000; // 24h
 type Props = { message: string };
 
 export function AberturaDiariaBanner({ message }: Props) {
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
+  const [visible, setVisible] = useState(() => {
+    if (typeof window === "undefined") return false;
     try {
       const last = localStorage.getItem(STORAGE_KEY);
-      const now  = Date.now();
+      const now = Date.now();
       if (!last || now - parseInt(last, 10) > TTL_MS) {
-        setVisible(true);
         localStorage.setItem(STORAGE_KEY, String(now));
-        // Auto-dismiss após 8s
-        const t = setTimeout(() => setVisible(false), 8000);
-        return () => clearTimeout(t);
+        return true;
       }
     } catch {
-      // localStorage indisponível
+      return false;
     }
-  }, []);
+    return false;
+  });
+
+  useEffect(() => {
+    if (!visible) return;
+    const timer = setTimeout(() => setVisible(false), 8000);
+    return () => clearTimeout(timer);
+  }, [visible]);
 
   if (!visible) return null;
 

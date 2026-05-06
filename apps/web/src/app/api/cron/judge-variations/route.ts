@@ -17,9 +17,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
 import { judgeVariations, type VariationSnapshot } from "@/lib/bob/engine/variation-judge";
 import { loadRoundData } from "@/lib/bob/round-loader";
+import { isRealDataSource } from "@/lib/bob/data/source-policy";
+import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-variation-pipeline";
 
 export const runtime = "nodejs";
 export const maxDuration = 60; // permite até 60s de execução (LLM pode demorar)
@@ -49,6 +50,13 @@ export async function GET(req: NextRequest) {
     // ── Carregar dados da rodada ────────────────────────────────────────────
     const roundData = await loadRoundData(season, requestedRound);
 
+    if (!isRealDataSource(roundData.source)) {
+      return NextResponse.json(
+        { ok: false, reason: "official-generation-blocked-invalid-source", source: roundData.source, season, round: requestedRound },
+        { status: 200 },
+      );
+    }
+
     if (roundData.matches.length === 0) {
       return NextResponse.json(
         { ok: false, reason: "no-matches", season, round: requestedRound },
@@ -59,12 +67,23 @@ export async function GET(req: NextRequest) {
     const effectiveRound =
       roundData.source === "api" && roundData.meta ? roundData.meta.round : (requestedRound ?? 0);
 
-    // ── Rodar motor ──────────────────────────────────────────────────────────
-    const allScored = roundData.matches.map(scoreMatch);
-    const anchors = selectAnchorsFromScored(allScored);
-    const anchorIds = new Set(anchors.map((a) => a.id));
-    const pool = allScored.filter((m) => !anchorIds.has(m.id));
-    const variationsResult = generateVariations({ anchors, pool });
+    const pipeline = await buildOfficialVariationsPipeline({
+      matches: roundData.matches,
+      source: roundData.source,
+      round: effectiveRound,
+      sourceSnapshotIds: [`round:${season}:${effectiveRound}:${roundData.source}`],
+    });
+
+    if (!pipeline.ok || !pipeline.variationsResult) {
+      return NextResponse.json(
+        { ok: false, reason: pipeline.reason ?? "official-pipeline-blocked", source: roundData.source, season, round: effectiveRound },
+        { status: 200 },
+      );
+    }
+
+    const anchors = pipeline.anchors;
+    const pool = pipeline.anchorSelection?.allRanked.filter((m) => !anchors.some((a) => a.id === m.id)) ?? [];
+    const variationsResult = pipeline.variationsResult;
 
     // ── Snapshots para o juiz ───────────────────────────────────────────────
     const snapshots: VariationSnapshot[] = variationsResult.variations.map((v) => ({

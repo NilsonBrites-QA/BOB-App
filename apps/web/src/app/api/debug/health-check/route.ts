@@ -1,10 +1,21 @@
 import { NextResponse } from "next/server";
+import {
+  getGatewayOddsDiagnostics,
+  getGatewayStandings,
+  validateApiCacheLocksTable,
+} from "@/lib/data/sports-data-gateway";
 
 /**
  * Endpoint de diagnóstico para verificar status das APIs e variáveis de ambiente
  * GET /api/debug/health-check
  */
-export async function GET() {
+export async function GET(req: Request) {
+  const authHeader = req.headers.get("Authorization");
+  const secret = process.env.CRON_SECRET;
+  if (!secret || authHeader !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const checks = {
     timestamp: new Date().toISOString(),
     environment: {
@@ -73,35 +84,24 @@ export async function GET() {
   return NextResponse.json({
     ...checks,
     connectivity: connectivityTests,
-    allEnvVarsPresent: Object.values(checks.envVars).every((v: any) => {
-      if (v.exists !== undefined) return v.exists;
-      if (v.url && v.key) return v.url.exists && v.key.exists;
+    allEnvVarsPresent: Object.values(checks.envVars).every((v) => {
+      if ("exists" in v) return v.exists;
+      if ("url" in v && "key" in v) return v.url.exists && v.key.exists;
       return true;
     }),
   });
 }
 
 async function testAPIs() {
-  const results: Record<string, { success: boolean; status?: number; error?: string; latencyMs: number }> = {};
+  const results: Record<string, { success: boolean; status?: string; error?: string; latencyMs: number }> = {};
 
-  // Testar football-data.org
   try {
     const start = Date.now();
-    const fdRes = await fetch(
-      "https://api.football-data.org/v4/competitions/BSA/standings",
-      {
-        headers: {
-          "X-Auth-Token": process.env.FOOTBALL_DATA_TOKEN || "",
-        },
-        // Abortar após 5 segundos
-        signal: AbortSignal.timeout(5000),
-      }
-    );
+    const standings = await getGatewayStandings();
     results.footballData = {
-      success: fdRes.ok,
-      status: fdRes.status,
+      success: Boolean(standings),
+      status: standings ? "gateway_ok" : "gateway_insufficient",
       latencyMs: Date.now() - start,
-      error: fdRes.ok ? undefined : await fdRes.text().catch(() => "Unknown error"),
     };
   } catch (e) {
     results.footballData = {
@@ -111,23 +111,13 @@ async function testAPIs() {
     };
   }
 
-  // Testar API-Football
   try {
     const start = Date.now();
-    const afRes = await fetch(
-      `https://v3.football.api-sports.io/status`,
-      {
-        headers: {
-          "x-apisports-key": process.env.API_FOOTBALL_KEY || "",
-        },
-        signal: AbortSignal.timeout(5000),
-      }
-    );
+    const locksOk = await validateApiCacheLocksTable();
     results.apiFootball = {
-      success: afRes.ok,
-      status: afRes.status,
+      success: locksOk,
+      status: locksOk ? "guard_lock_ok" : "guard_lock_unavailable",
       latencyMs: Date.now() - start,
-      error: afRes.ok ? undefined : await afRes.text().catch(() => "Unknown error"),
     };
   } catch (e) {
     results.apiFootball = {
@@ -137,23 +127,14 @@ async function testAPIs() {
     };
   }
 
-  // Testar OddsPapi
   try {
     const start = Date.now();
-    const opRes = await fetch(
-      `https://api.odds-papi.com/v1/status`,
-      {
-        headers: {
-          "Authorization": `Bearer ${process.env.ODDSPAPI_KEY || ""}`,
-        },
-        signal: AbortSignal.timeout(5000),
-      }
-    );
+    const odds = await getGatewayOddsDiagnostics();
+    const oddspapi = odds.oddspapi as { status?: string } | undefined;
     results.oddspapi = {
-      success: opRes.ok,
-      status: opRes.status,
+      success: oddspapi?.status === "OK",
+      status: oddspapi?.status ?? "UNKNOWN",
       latencyMs: Date.now() - start,
-      error: opRes.ok ? undefined : await opRes.text().catch(() => "Unknown error"),
     };
   } catch (e) {
     results.oddspapi = {

@@ -12,9 +12,8 @@
  */
 
 import { NextResponse }  from "next/server";
-import { fetchRoundMatchInputs } from "@/lib/bob/connectors";
-import { scoreMatch, selectAnchorsFromScored } from "@/lib/bob/engine";
-import { generateVariations } from "@/lib/bob/engine";
+import { getGatewayRoundDataset } from "@/lib/data/sports-data-gateway";
+import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-variation-pipeline";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -42,7 +41,9 @@ export async function GET(request: Request) {
 
   try {
     // ── Pipeline de dados ────────────────────────────────────────────────────
-    const { matches, meta } = await fetchRoundMatchInputs(season, round);
+    const dataset = await getGatewayRoundDataset(season, round);
+    const matches = dataset?.matches ?? [];
+    const meta = dataset?.meta ?? { season, round, warning: "Gateway sem dados para esta rodada." };
 
     if (matches.length === 0) {
       return NextResponse.json(
@@ -56,18 +57,27 @@ export async function GET(request: Request) {
       );
     }
 
-    // ── Motor de scoring ─────────────────────────────────────────────────────
-    const allScored  = matches.map(scoreMatch);
-    const anchors    = selectAnchorsFromScored(allScored);
-    const anchorIds  = new Set(anchors.map((a) => a.id));
-    const pool       = allScored.filter((m) => !anchorIds.has(m.id));
-
-    // ── Variações ────────────────────────────────────────────────────────────
-    const variationsResult = generateVariations({ anchors, pool });
-    const variations = variationsResult.variations || [];
+    // ── Motor Oficial de Variações ───────────────────────────────────────────
+    const pipeline = await buildOfficialVariationsPipeline({
+      matches,
+      source: "api",
+      round,
+      sourceSnapshotIds: [`api-bob-round:${season}:${round}:gateway`],
+    });
+    if (!pipeline.ok || !pipeline.variationsResult) {
+      return NextResponse.json(
+        {
+          anchors: [],
+          variations: [],
+          allScored: [],
+          meta: { ...meta, status: pipeline.status, warning: pipeline.reason ?? "Dados insuficientes para gerar Variações oficiais." },
+        },
+        { status: 200 },
+      );
+    }
 
     return NextResponse.json(
-      { anchors, variations, allScored, meta },
+      { anchors: pipeline.anchors, variations: pipeline.variationsResult.variations, allScored: pipeline.anchorSelection?.allRanked ?? [], meta },
       {
         status: 200,
         headers: {

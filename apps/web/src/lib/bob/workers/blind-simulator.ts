@@ -15,13 +15,13 @@
  *
  * O que este módulo adiciona:
  *   1. Coleta os resultados REAIS da rodada passada (para o Pós-Mortem).
- *   2. Executa o motor cego com os dados pré-jogo (via fetchRoundMatchInputs).
+ *   2. Executa o motor cego com os dados pré-jogo (via Data Gateway).
  *   3. Cruza as variações geradas com os resultados reais → Pós-Mortem.
  *   4. Monta um Payload estruturado para envio à LLM (Reflexão — Passo 2 da Fase 3).
  *
  * ─── Anti-Leakage (Limitação documentada da Fase 3) ─────────────────────────
  *
- * `fetchRoundMatchInputs()` computa forme e classificação com dados ATUAIS do
+ * O Data Gateway computa forma e classificação com dados ATUAIS do
  * banco. Para rodadas recentes, isso cria leakage potencial: a forma calculada
  * já inclui o resultado da rodada simuada.
  *
@@ -34,7 +34,7 @@
  *
  * ─── Relação com o Pipeline da Fase 2 ────────────────────────────────────────
  *
- *   fetchRoundMatchInputs()  → MatchInput[] (pré-jogo, sem resultado)
+ *   getGatewayRoundDataset() → MatchInput[] (pré-jogo, sem resultado)
  *   selectAnchorsV2()        → AnchorSelectionResult (4 âncoras)
  *   generateVariations()     → VariationsResult (5 bilhetes)
  *   [blind-simulator.ts]      → cruzamento com resultados reais → SimulationReport
@@ -42,15 +42,8 @@
  * PRD §7 | Fase 3 | Output consumido pela LLM (Passo 2) e pelo backtesting cron
  */
 
-import {
-  fetchRoundMatchInputs,
-} from "../connectors";
-// Raw (sem gate): para um worker de backtesting queremos os dados reais da rodada
-// independente do throttle de 24h. O gate é para produção, não para simulação histórica.
-import {
-  getMatchesByMatchday,
-} from "../connectors/football-data";
-import type { FDMatch } from "../connectors/football-data";
+import { getGatewayMatchesByMatchday, getGatewayRoundDataset } from "@/lib/data/sports-data-gateway";
+import type { FDMatch } from "@/lib/data/sports-data-gateway";
 
 import {
   selectAnchorsV2,
@@ -302,12 +295,7 @@ function parseActualOutcome(match: FDMatch): ActualOutcome | null {
 // ─── Extração de Resultados Reais ─────────────────────────────────────────────
 
 /**
- * Busca os resultados reais dos jogos de uma rodada passada via football-data.org.
- *
- * Usa `getMatchesByMatchday()` RAW (sem gate de throttle):
- *   — Correto para um worker de backtesting que precisa dos dados históricos
- *     independente do intervalo de 24h do cache-gate.
- *   — O gate de throttle é para o motor de produção, não para simulação histórica.
+ * Busca os resultados reais dos jogos de uma rodada passada via Data Gateway.
  *
  * Retorna apenas jogos com resultado conhecido (FINISHED).
  * `matchId` == `FDMatch.id.toString()` == `MatchInput.id` — chave de cruzamento.
@@ -319,7 +307,11 @@ async function fetchActualResults(
 
   let matches: FDMatch[];
   try {
-    const response = await getMatchesByMatchday(round);
+    const response = await getGatewayMatchesByMatchday(round);
+    if (!response) {
+      warnings.push(`Sinal interrompido: sem resultados reais cacheados para a Rodada ${round}.`);
+      return { results: [], warnings };
+    }
     matches = response.matches;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -569,8 +561,7 @@ function buildLLMPayload(
  * Executa a simulação cega de uma rodada passada.
  *
  * Pipeline:
- *   1. [PARALELO] Busca dados pré-jogo (fetchRoundMatchInputs) E resultados reais
- *      (getMatchesByMatchday raw). As duas chamadas não dependem uma da outra.
+ *   1. [PARALELO] Busca dados pré-jogo E resultados reais pelo Data Gateway.
  *   2. Executa o motor Fase 2 com os dados pré-jogo (cego por design do MatchInput).
  *   3. Cruza variações geradas × resultados reais → Pós-Mortem.
  *   4. Monta PostMortemLLMPayload (pronto para Passo 2: LLM Reflexão).
@@ -596,10 +587,10 @@ export async function simulateRound(
   // ── Passo 1: Busca paralela — dados pré-jogo + resultados reais ────────────
   //
   // As duas fontes são INDEPENDENTES: não há dependência de dados entre elas.
-  // fetchRoundMatchInputs: lê standings, forma, odds, clima → MatchInput[]
-  // fetchActualResults:    lê placares finais → MatchActualResult[]
+  // getGatewayRoundDataset: lê standings, forma, odds, clima → MatchInput[]
+  // fetchActualResults:     lê placares finais → MatchActualResult[]
   const [roundData, actualFetch] = await Promise.all([
-    fetchRoundMatchInputs(season, round).catch((err) => {
+    getGatewayRoundDataset(season, round).catch((err) => {
       const msg = err instanceof Error ? err.message : String(err);
       warnings.push(
         `Sinal interrompido: falha ao buscar dados pré-jogo da Rodada ${round}/${season}. ` +

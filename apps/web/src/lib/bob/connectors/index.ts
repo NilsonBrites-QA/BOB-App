@@ -298,15 +298,18 @@ export async function fetchRoundMatchInputs(
   const [standingsRes, matchesRes, finishedRes, oddsMap] = await Promise.all([
     getStandingsGated().then((r) => {
       if (r) gatedHits.standings = true;
-      return r ?? getStandings();
+      if (!r) throw new Error("insufficient:standings-gated-cache-valid-no-db-read");
+      return r;
     }),
     getMatchesByMatchdayGated(round).then((r) => {
       if (r) gatedHits.matchday = true;
-      return r ?? getMatchesByMatchday(round);
+      if (!r) throw new Error("insufficient:matchday-gated-cache-valid-no-db-read");
+      return r;
     }),
     getFinishedMatchesGated(200).then((r) => {
       if (r) gatedHits.finished = true;
-      return r ?? getFinishedMatches(200);
+      if (!r) throw new Error("insufficient:finished-gated-cache-valid-no-db-read");
+      return r;
     }),
     // ── Odds em cascata (3 fontes) ──────────────────────────────────────────
     // 1. The Odds API (theOddsApi.com) — FONTE PRIMÁRIA
@@ -329,7 +332,7 @@ export async function fetchRoundMatchInputs(
       console.info("[Odds] OddsPapi vazio — caindo pra API-Football");
       const af = await getOddsByRoundFromApiFootball(season, round).catch(() => null);
       if (af && af.size > 0) return af;
-      console.warn("[Odds] Todas as fontes falharam — usando fallback sintético");
+      console.warn("[Odds] Todas as fontes falharam — odds insuficientes, sem fallback sintético");
       return new Map();
     })(),
   ]);
@@ -484,42 +487,9 @@ export async function fetchRoundMatchInputs(
       drawOdd = realOdds.drawOdd;
       awayOdd = realOdds.awayOdd;
     } else {
-      // ── Fallback sintético calibrado (última opção quando todas as APIs falham) ─
-      // Modelo baseado em dados reais do Brasileirão:
-      //   - Vantagem do mandante media: ~10% (fator home_bias)
-      //   - Diferença de posição na tabela: maior influência
-      //   - Fator de forma recente (últimos 5 jogos)
-      //   - Margem média das casas: ~5% (total implícita ~1.05)
-      //
-      // IMPORTANTE: Este fallback só dispara quando TODAS as APIs de odds falharam.
-      // Substitua configurando THE_ODDS_API_KEY no Vercel para ter odds reais.
-
-      const posDiff = homeSt && awaySt ? (awayPos - homePos) : 0; // positivo = mandante mais forte
-
-      // Fator base de equilíbrio (0.5 = neutro, >0.5 = mandante favorito)
-      const rawStrength = Math.max(0.1, Math.min(0.9, 0.52 + posDiff * 0.018));
-
-      // Forma recente influencia ±5%
-      const homeFormFactor = homeForm.reduce((s, r) => s + (r === "W" ? 0.01 : r === "L" ? -0.008 : 0), 0);
-      const awayFormFactor = awayForm.reduce((s, r) => s + (r === "W" ? 0.008 : r === "L" ? -0.01 : 0), 0);
-
-      const adjustedStrength = Math.max(0.1, Math.min(0.9, rawStrength + homeFormFactor - awayFormFactor));
-
-      // Probabilidades implícitas antes da margem
-      const pHome = adjustedStrength;
-      const pAway = (1 - adjustedStrength) * 0.65;
-      const pDraw = Math.max(0.1, 1 - pHome - pAway);
-
-      // Aplicar margem da casa (~5%) e converter para odds decimais
-      const margin = 1.05;
-      homeOdd = Math.round((margin / pHome) * 100) / 100;
-      awayOdd = Math.round((margin / pAway) * 100) / 100;
-      drawOdd = Math.round((margin / pDraw) * 100) / 100;
-
-      // Clamp para ranges realistas do Brasileirão
-      homeOdd = Math.max(1.20, Math.min(5.50, homeOdd));
-      awayOdd = Math.max(1.35, Math.min(7.00, awayOdd));
-      drawOdd = Math.max(2.80, Math.min(4.20, drawOdd));
+      homeOdd = 0;
+      drawOdd = 0;
+      awayOdd = 0;
     }
 
     // ── F6 — Ausências (API-Football) ────────────────────────────────────

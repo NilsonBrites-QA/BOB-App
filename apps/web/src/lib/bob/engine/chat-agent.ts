@@ -11,7 +11,7 @@
  *   ✗ NÃO importa scoreMatch, selectAnchors, generateVariations
  *   ✗ NÃO acessa blind-simulator.ts nem reflection-agent.ts
  *   ✗ NÃO recalcula Âncoras nem recria as 5 Variações
- *   ✓ Acessa dados APENAS via funil gated (connectors/football-data.ts)
+ *   ✓ Acessa dados esportivos APENAS via Data Gateway/cache layer
  *   ✓ É o único ponto de entrada do agente consultivo
  *
  * ─── Arquitetura do Motor ─────────────────────────────────────────────────────
@@ -29,8 +29,8 @@
  *   getStandings         — Tabela da Série A (via getStandingsGated)
  *   getSerieBStandings   — Tabela da Série B (via getSerieBStandings raw)
  *   getMatchesByMatchday — Jogos de uma rodada (via getMatchesByMatchdayGated)
- *   getFinishedMatches   — Resultados recentes (via getFinishedMatchesGated)
- *   getCurrentMatchday   — Rodada em andamento (via getCurrentRound do index)
+ *   getFinishedMatches   — Resultados recentes (via Data Gateway)
+ *   getCurrentMatchday   — Rodada em andamento (via Data Gateway)
  *
  * ─── Disclaimer Legal (PRD §12) ──────────────────────────────────────────────
  *
@@ -40,15 +40,13 @@
  */
 
 import {
-  getStandingsGated,
-  getMatchesByMatchdayGated,
-  getMatchesByMatchday,
-  getFinishedMatchesGated,
-  getSerieBStandings,
-} from "@/lib/bob/connectors/football-data";
-import { getCurrentRound } from "@/lib/bob/connectors";
-import { loadRoundData } from "@/lib/bob/round-loader";
-import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
+  getGatewayCurrentRound,
+  getGatewayFinishedMatches,
+  getGatewayMatchesByMatchday,
+  getGatewaySerieBStandings,
+  getGatewayStandings,
+} from "@/lib/data/sports-data-gateway";
+import { loadDeliveredRound } from "@/lib/bob/persist";
 import { prisma } from "@/lib/db";
 import { loadChatContext, formatContextForPrompt } from "@/lib/bob/engine/chat-context";
 
@@ -350,7 +348,7 @@ async function executeTool(
         const cached = await readToolCache(cacheKey);
         if (cached) return cached;
 
-        const result = await getStandingsGated();
+        const result = await getGatewayStandings();
         if (!result) return "[Tabela Série A: dado em cache será usado.]";
         const table = result.standings.find((s) => s.type === "TOTAL")?.table ?? [];
         if (table.length === 0) return "[Tabela Série A: nenhuma entrada encontrada.]";
@@ -370,7 +368,7 @@ async function executeTool(
         const cached = await readToolCache(cacheKey);
         if (cached) return cached;
 
-        const result = await getSerieBStandings();
+        const result = await getGatewaySerieBStandings();
         if (!result) return "[Tabela Série B: indisponível no momento.]";
         const table = result.standings.find((s) => s.type === "TOTAL")?.table ?? [];
         if (table.length === 0) return "[Tabela Série B: nenhuma entrada encontrada.]";
@@ -395,7 +393,7 @@ async function executeTool(
         const cached = await readToolCache(cacheKey);
         if (cached) return cached;
 
-        const result = await getMatchesByMatchdayGated(matchday);
+        const result = await getGatewayMatchesByMatchday(matchday);
         if (!result) return `[Rodada ${matchday}: dado em cache será usado.]`;
         if (result.matches.length === 0)
           return `[Rodada ${matchday}: nenhum jogo encontrado.]`;
@@ -426,7 +424,7 @@ async function executeTool(
         const cached = await readToolCache(cacheKey);
         if (cached) return cached;
 
-        const result = await getFinishedMatchesGated(limit);
+        const result = await getGatewayFinishedMatches(limit);
         if (!result) return "[Resultados recentes: dado em cache será usado.]";
         if (result.matches.length === 0) return "[Nenhum jogo finalizado encontrado.]";
         const rows = result.matches
@@ -450,7 +448,7 @@ async function executeTool(
         const cached = await readToolCache(cacheKey);
         if (cached) return cached;
 
-        const round = await getCurrentRound();
+        const round = await getGatewayCurrentRound();
         if (round === null)
           return "[Rodada atual: indeterminada.]";
         const text = `RODADA ATUAL: ${round}`;
@@ -469,21 +467,13 @@ async function executeTool(
         const cached = await readToolCache(cacheKey);
         if (cached) return cached;
 
-        const roundData = await loadRoundData(season, requestedRound);
-        if (roundData.matches.length === 0) {
-          return `[Nenhuma partida encontrada para a rodada ${requestedRound ?? "atual"}.]`;
+        const effectiveRound = requestedRound ?? await getGatewayCurrentRound();
+        if (!effectiveRound) return "[Variações oficiais indisponíveis: rodada atual indeterminada.]";
+
+        const delivered = await loadDeliveredRound(season, effectiveRound).catch(() => null);
+        if (!delivered || delivered.status !== "DELIVERED" || delivered.variations.length === 0) {
+          return `[Variações oficiais indisponíveis para a rodada ${effectiveRound}: nenhum snapshot entregue e congelado foi encontrado.]`;
         }
-
-        const effectiveRound =
-          roundData.source === "api" && roundData.meta
-            ? roundData.meta.round
-            : (requestedRound ?? 0);
-
-        const allScored = roundData.matches.map(scoreMatch);
-        const anchors = selectAnchorsFromScored(allScored);
-        const anchorIds = new Set(anchors.map((a) => a.id));
-        const pool = allScored.filter((m) => !anchorIds.has(m.id));
-        const variationsResult = generateVariations({ anchors, pool });
 
         const judgement = await prisma.variationJudgement
           .findUnique({ where: { season_round: { season, round: effectiveRound } } })
@@ -496,32 +486,27 @@ async function executeTool(
         const enrichmentMap = new Map(enrichments.map((e) => [e.variationId, e]));
 
         const lines: string[] = [
-          `MOTOR BOB — RODADA ${effectiveRound} (${roundData.source === "api" ? "DADOS REAIS" : "DEMO"})`,
+          `MOTOR BOB — RODADA ${effectiveRound} (SNAPSHOT OFICIAL)`,
           "",
           `=== ÂNCORAS (jogos de maior confiança) ===`,
         ];
-        anchors.forEach((a, i) => {
+        delivered.anchors.forEach((a: { team: string; opponent: string; score: number }, i: number) => {
           lines.push(
-            `${i + 1}. ${a.homeTeam} x ${a.awayTeam} — score ${a.score} — ${a.suggestedResult === "1" ? a.homeTeam : a.suggestedResult === "2" ? a.awayTeam : "Empate"} @${(a.suggestedResult === "1" ? a.homeOdd : a.suggestedResult === "2" ? a.awayOdd : a.drawOdd).toFixed(2)}`,
+            `${i + 1}. ${a.team} x ${a.opponent} — score ${Number(a.score).toFixed(1)}`,
           );
         });
 
         lines.push(``, `=== 5 VARIAÇÕES OFICIAIS ===`);
-        for (const v of variationsResult.variations) {
-          const e = enrichmentMap.get(v.id);
-          lines.push(``, `${v.id} | odd combinada ${v.combinedOdd.toFixed(0)}× | ${v.legCount} jogos`);
+        for (const v of delivered.variations) {
+          const e = enrichmentMap.get(v.code);
+          lines.push(``, `${v.code} | odd combinada ${Number(v.projectedOdd).toFixed(0)}× | ${v.gameCount} jogos`);
           if (e) {
             lines.push(`  Análise LLM: ${e.bobNarrative}`);
             lines.push(`  Insight: ${e.keyInsight} (confiança ${e.confidence})`);
           }
-          v.legs.forEach((leg, i) => {
-            const label =
-              leg.pickOutcome === "Home"
-                ? leg.homeTeam
-                : leg.pickOutcome === "Away"
-                  ? leg.awayTeam
-                  : "Empate";
-            lines.push(`    ${i + 1}. ${leg.match}: ${label} @${leg.pickOdd.toFixed(2)}${leg.isAnchor ? " [âncora]" : ""}`);
+          v.picks.forEach((pick: { match: string; result: string; odd: number; isAnchor: boolean }, i: number) => {
+            const label = pick.result === "HOME" ? "Mandante" : pick.result === "AWAY" ? "Visitante" : "Empate";
+            lines.push(`    ${i + 1}. ${pick.match}: ${label} @${Number(pick.odd).toFixed(2)}${pick.isAnchor ? " [âncora]" : ""}`);
           });
         }
 
@@ -820,11 +805,8 @@ export async function runConsultiveChat(
   // eliminando a dependência do LLM decidir chamar getMatchesByMatchday.
   if (currentRound !== null) {
     try {
-      // Tenta gated primeiro; se throttle ativo, cai pro raw (ISR cache Next.js)
-      const matchRes =
-        await getMatchesByMatchdayGated(currentRound) ??
-        await getMatchesByMatchday(currentRound);
-      if (matchRes.matches.length > 0) {
+      const matchRes = await getGatewayMatchesByMatchday(currentRound);
+      if (matchRes && matchRes.matches.length > 0) {
         const lines = matchRes.matches.map((m) => {
           const home = m.homeTeam.shortName || m.homeTeam.name;
           const away = m.awayTeam.shortName || m.awayTeam.name;

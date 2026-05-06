@@ -15,7 +15,7 @@ import { AddWhitelistUserForm, GrantAccessForm } from "./whitelist-forms";
 import { isPrimaryAdmin } from "@/lib/auth/config";
 import { getSimulationProgress } from "@/lib/bob/engine/blind-simulation";
 import { RoundControlPanel } from "./round-control-panel";
-import { getCurrentRound } from "@/lib/bob/connectors";
+import { getGatewayCurrentRound } from "@/lib/data/sports-data-gateway";
 
 export default async function AdminPage() {
   const cookieStore = await cookies();
@@ -59,7 +59,7 @@ export default async function AdminPage() {
 
   // ── Dados do painel de controle de rodadas (Fase A1) ──────────────────────
   const detectedSeason = new Date().getFullYear();
-  const detectedRound = await getCurrentRound().catch(() => null);
+  const detectedRound = await getGatewayCurrentRound().catch(() => null);
 
   // Últimas rodadas no DB (todas versões — incluindo SUPERSEDED — para auditoria)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

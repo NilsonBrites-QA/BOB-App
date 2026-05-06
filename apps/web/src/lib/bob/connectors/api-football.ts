@@ -41,6 +41,7 @@ import { prisma } from "@/lib/db";
 import { checkApiFootball, recordSync, type WindowName } from "./cache-gate";
 import { matchKey } from "./oddspapi";
 import type { OddsMap, FixtureOdds } from "./oddspapi";
+import { blockCircuit, fetchJsonWithTimeout, isCircuitBlocked } from "@/lib/bob/data/external-guard";
 
 import type {
   AFResponse,
@@ -73,44 +74,39 @@ async function afFetch<T>(
 
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i]!;
+    const providerKey = `api-football:key-${i + 1}`;
+    if (isCircuitBlocked(providerKey)) continue;
 
-    const res = await fetch(`${BASE_URL}${path}`, {
-      headers: { "x-apisports-key": key },
-      next: { revalidate },
-    });
-
-    const remaining = res.headers.get("x-ratelimit-requests-remaining");
-    if (remaining !== null && parseInt(remaining, 10) < 10) {
-      console.warn(
-        `[API-Football] Chave ${i + 1}: apenas ${remaining} requisições restantes hoje.`
-      );
-    }
-
-    if (res.status === 429 || res.status === 401 || res.status === 403) {
-      const hasNext = i + 1 < keys.length;
-      console.warn(
-        `[API-Football] Chave ${i + 1}/${keys.length} recusada (${res.status}). ` +
-        (hasNext ? "Tentando próxima..." : "Todas as chaves esgotadas.")
-      );
+    let data: AFResponse<T>;
+    try {
+      data = await fetchJsonWithTimeout<AFResponse<T>>({
+        url: `${BASE_URL}${path}`,
+        init: {
+          headers: { "x-apisports-key": key },
+          next: { revalidate },
+        },
+        timeoutMs: 10_000,
+        providerKey,
+        cacheKey: `APIFOOTBALL-${path}`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("api-lock-held") || message.includes("api-lock-skipped")) {
+        throw err;
+      }
+      if (message.includes("auth-blocked") || message.includes("rate-limited") || message.includes("circuit-open")) {
+        continue;
+      }
       continue;
     }
-
-    if (!res.ok) {
-      throw new Error(
-        `API-Football erro HTTP ${res.status} em ${path}. Restantes: ${remaining ?? "?"}`
-      );
-    }
-
-    const data = (await res.json()) as AFResponse<T>;
 
     // A API retorna HTTP 200 mesmo em erro — verificar corpo
     if (
       !Array.isArray(data.errors) &&
       Object.keys(data.errors as Record<string, string>).length > 0
     ) {
-      throw new Error(
-        `API-Football erro de API em ${path}: ${JSON.stringify(data.errors)}`
-      );
+      blockCircuit(providerKey, "temporary_error");
+      continue;
     }
 
     return data;

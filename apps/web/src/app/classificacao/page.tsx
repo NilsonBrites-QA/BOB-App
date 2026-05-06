@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PageHero } from "@/components/page-hero";
 import { SectionCard } from "@/components/section-card";
-import { getStandings } from "@/lib/bob/connectors/football-data";
+import { getGatewayStandings } from "@/lib/data/sports-data-gateway";
 import { calcTeamOdds } from "@/lib/bob/engine/standings-odds";
 import type { TeamOdds, TitleProb, RelegProb } from "@/lib/bob/engine/standings-odds";
 import { createClient } from "@/utils/supabase/server";
@@ -116,12 +116,12 @@ export default async function ClassificacaoPage() {
     redirect("/login");
   }
 
-  type StandingsType = Awaited<ReturnType<typeof getStandings>>;
+  type StandingsType = Awaited<ReturnType<typeof getGatewayStandings>>;
   let standingsData: StandingsType | null = null;
   let fetchError = false;
 
   try {
-    standingsData = await getStandings();
+    standingsData = await getGatewayStandings();
   } catch {
     fetchError = true;
   }

@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
         
         const matchOdds = odds.get(`${match.homeTeam}:${match.awayTeam}`);
         
-        if (matchOdds && matchOdds.source !== "mock") {
+        if (matchOdds) {
           // Salvar odds no banco
           await Promise.all([
             // Home

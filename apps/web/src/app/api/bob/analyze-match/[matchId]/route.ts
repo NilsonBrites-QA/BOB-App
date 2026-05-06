@@ -7,8 +7,8 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { calculateMatchProbabilities, scoreMarketsForProfile, type ProfileSlug } from "@/lib/bob/bet-analyzer/engine";
-import { generateAISuggestions } from "@/lib/bob/bet-analyzer/ai-suggestions";
+import { calculateMatchProbabilities, scoreMarketsForProfile, type ProfileScore, type ProfileSlug } from "@/lib/bob/bet-analyzer/engine";
+import { generateAISuggestions, type MatchSuggestions } from "@/lib/bob/bet-analyzer/ai-suggestions";
 import type { MatchInput } from "@/lib/bob/engine/scoring";
 
 export async function GET(
@@ -20,7 +20,6 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const season = parseInt(searchParams.get("season") || "2026", 10);
 
-    // TODO: Reativar quando migration for aplicada
     // 1. Buscar análise existente
     // const existingAnalysis = await prisma.matchAnalysis.findFirst({
     //   where: { matchId, season },
@@ -42,15 +41,16 @@ export async function GET(
     //   });
     // }
 
-    // 2. Buscar dados da partida (usar dados existentes do sistema)
-    // Por enquanto, retornar mock para demonstração
-    // Na implementação completa, buscar de Round/Match do sistema existente
+    // 2. Buscar dados reais da partida em memória/banco
     const matchData = await getMatchData(matchId, season);
     
     if (!matchData) {
       return NextResponse.json(
-        { error: "Partida não encontrada" },
-        { status: 404 }
+        {
+          error: "dados insuficientes para geração responsável",
+          reason: "A partida não possui snapshot estatístico real no banco. O BOB não cria análise com dados inventados.",
+        },
+        { status: 422 }
       );
     }
 
@@ -58,7 +58,8 @@ export async function GET(
     const probabilities = calculateMatchProbabilities(matchData);
 
     // 4. Perfis mockados (TODO: buscar do banco quando migration for aplicada)
-    const mockProfiles = [
+    type MockProfile = { id: string; slug: ProfileSlug; name: string; riskLevel: string };
+    const mockProfiles: MockProfile[] = [
       { id: "1", slug: "conservador", name: "Conservador", riskLevel: "baixo" },
       { id: "2", slug: "moderado", name: "Moderado", riskLevel: "medio" },
       { id: "3", slug: "agressivo", name: "Agressivo", riskLevel: "alto" },
@@ -66,7 +67,7 @@ export async function GET(
     ];
 
     // 5. Gerar sugestões para cada perfil
-    const suggestionsByProfile: Record<string, any> = {};
+    const suggestionsByProfile: Record<string, { profile: MockProfile; suggestions: MatchSuggestions; topScores: ProfileScore[] }> = {};
     
     for (const profile of mockProfiles) {
       const profileSlug = profile.slug as ProfileSlug;
@@ -144,68 +145,18 @@ async function getMatchData(matchId: string, season: number): Promise<MatchInput
   
   const round = seasonData?.rounds[0];
 
-  if (!round) {
-    // Retornar mock para demonstração
-    return createMockMatch(matchId);
-  }
+  if (!round) return null;
 
   // Encontrar a partida nas picks
   for (const variation of round.variations) {
     for (const pick of variation.picks) {
       if (pick.fixtureId === matchId || pick.id === matchId) {
-        // Converter pick para MatchInput
-        return convertPickToMatchInput(pick);
+        return null;
       }
     }
   }
 
-  // Se não encontrou, retornar mock
-  return createMockMatch(matchId);
-}
-
-function createMockMatch(matchId: string): MatchInput {
-  // Mock para demonstração
-  return {
-    id: matchId,
-    match: `Time A x Time B`,
-    homeTeam: "Time A",
-    awayTeam: "Time B",
-    homePosition: 5,
-    awayPosition: 12,
-    homeNeedsWin: true,
-    awayNeedsWin: false,
-    homeForm: ["W", "D", "W", "L", "W"],
-    awayForm: ["L", "L", "D", "W", "L"],
-    homeForm10: ["W", "D", "W", "L", "W", "W", "D", "L", "W", "D"],
-    awayForm10: ["L", "L", "D", "W", "L", "D", "L", "W", "D", "L"],
-    homeMomentum: 0.6,
-    awayMomentum: -0.4,
-    motivationHome: 0.8,
-    motivationAway: 0.3,
-    isClassico: false,
-    homeHomePoints: 12,
-    awayAwayPoints: 4,
-    homeGoalsScored5: 12,
-    homeGoalsConceded5: 5,
-    awayGoalsScored5: 6,
-    awayGoalsConceded5: 14,
-    h2hHomeWinRate: 0.6,
-    homeAbsenceRate: 0.1,
-    awayAbsenceRate: 0.2,
-    homeBigGameAhead: false,
-    awayBigGameAhead: false,
-    homeOdd: 1.75,
-    drawOdd: 3.40,
-    awayOdd: 4.50,
-    homeOddDropped: false,
-    scheduledAt: new Date().toISOString(),
-  };
-}
-
-function convertPickToMatchInput(pick: any): MatchInput {
-  // Converter pick do banco para MatchInput
-  // Implementação simplificada
-  return createMockMatch(pick.fixtureId || pick.id);
+  return null;
 }
 
 // TODO: Reativar quando migration for aplicada

@@ -1,5 +1,5 @@
 /**
- * BOB — Conector OddsPapi v4 (Betano, EstrelaBet, bet365, Betnacional, etc.)
+ * BOB — Connector OddsPapi v4 (Betano, EstrelaBet, bet365, Betnacional, etc.)
  *
  * OddsPapi agrega bookmakers brasileiros e globais via API unificada.
  * Endpoint principal: GET /v4/odds
@@ -10,14 +10,16 @@
  *   betplay      — mercado BR
  *   estrelabet   — mercado BR
  *   bet365       — global, alta liquidez
- *   pinnacle     — odds sharp, sem margem
+ *   pinnacle     — sharp market (margem baixa)
  *
  * Documentação: https://oddspapi.io/pt/docs
  *
  * Chave: process.env.ODDSPAPI_KEY
  */
 
-const BASE_URL = "https://api.oddspapi.io/v4";
+import { fetchJsonWithTimeout } from "@/lib/bob/data/external-guard";
+
+const BASE_URL = "https://api.oddspapi.com/v4";
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
 
@@ -263,16 +265,13 @@ export async function getOddsByTournament(
     try {
       const url = `${BASE_URL}/odds?apiKey=${key}&bookmakers=${bookmaker}&sportId=${SOCCER_SPORT_ID}`;
 
-      const res = await fetch(url, {
-        next: { revalidate: 10800 }, // cache ISR 3h
+      const json = await fetchJsonWithTimeout<OddsApiResponse>({
+        url,
+        init: { next: { revalidate: 10800 } },
+        timeoutMs: 8_000,
+        providerKey: `oddspapi:${bookmaker}`,
+        cacheKey: `ODDSPAPI-${tournamentId}-${bookmaker}`,
       });
-
-      if (!res.ok) {
-        console.warn(`[OddsPapi/${bookmaker}] HTTP ${res.status}`);
-        continue;
-      }
-
-      const json = (await res.json()) as OddsApiResponse;
       const fixtures = json.data ?? [];
 
       if (!Array.isArray(fixtures) || fixtures.length === 0) {
@@ -321,6 +320,6 @@ export async function getOddsByTournament(
     }
   }
 
-  console.warn("[OddsPapi] Nenhum bookmaker retornou dados. Usando fallback sintético.");
+  console.warn("[OddsPapi] Nenhum bookmaker retornou dados. Retornando insufficient sem fallback sintético.");
   return map;
 }

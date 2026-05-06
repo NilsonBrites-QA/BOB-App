@@ -19,6 +19,7 @@
 
 import type { OddsMap, FixtureOdds } from "./oddspapi";
 import { matchKey } from "./oddspapi";
+import { fetchJsonWithTimeout } from "@/lib/bob/data/external-guard";
 
 const BASE_URL = "https://api.the-odds-api.com/v4";
 
@@ -164,31 +165,13 @@ export async function getOddsFromTheOddsApi(): Promise<OddsMap> {
     const bookmakersParam = PREFERRED_BOOKMAKERS.join(",");
     const url = `${BASE_URL}/sports/${SPORT_KEY}/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal&bookmakers=${bookmakersParam}`;
 
-    const res = await fetch(url, {
-      next: { revalidate: 10800 }, // cache 3h (odds pré-jogo não mudam muito)
+    const events = await fetchJsonWithTimeout<TheOddsEvent[]>({
+      url,
+      init: { next: { revalidate: 10800 } },
+      timeoutMs: 8_000,
+      providerKey: "the-odds-api:main",
+      cacheKey: "THEODDS-BSA-h2h",
     });
-
-    // ── Log da quota (500/mês gratuitos) ──────────────────────────────────
-    const remaining  = res.headers.get("x-requests-remaining") ?? "?";
-    const used       = res.headers.get("x-requests-used") ?? "?";
-    console.info(`[TheOddsAPI] Créditos: ${used} usados, ${remaining} restantes`);
-
-    if (res.status === 401) {
-      console.error("[TheOddsAPI] Chave inválida ou não autorizada.");
-      return map;
-    }
-
-    if (res.status === 429) {
-      console.warn("[TheOddsAPI] Quota atingida (500/mês). Usando fallback.");
-      return map;
-    }
-
-    if (!res.ok) {
-      console.warn(`[TheOddsAPI] HTTP ${res.status}`);
-      return map;
-    }
-
-    const events = (await res.json()) as TheOddsEvent[];
 
     if (!Array.isArray(events)) {
       console.warn("[TheOddsAPI] Resposta inesperada (não é array)");
@@ -243,9 +226,12 @@ export async function listAvailableSports(): Promise<Array<{ key: string; title:
   if (!apiKey) return [];
 
   try {
-    const res = await fetch(`${BASE_URL}/sports/?apiKey=${apiKey}`);
-    if (!res.ok) return [];
-    const data = await res.json() as Array<{ key: string; title: string; active: boolean }>;
+    const data = await fetchJsonWithTimeout<Array<{ key: string; title: string; active: boolean }>>({
+      url: `${BASE_URL}/sports/?apiKey=${apiKey}`,
+      timeoutMs: 8_000,
+      providerKey: "the-odds-api:main",
+      cacheKey: "THEODDS-sports",
+    });
     return data.filter((s) => s.key.includes("brazil") || s.title.toLowerCase().includes("brazil"));
   } catch {
     return [];

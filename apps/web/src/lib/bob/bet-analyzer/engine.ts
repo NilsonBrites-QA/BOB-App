@@ -324,10 +324,10 @@ function calculateOverUnderProbabilities(
   };
   
   // Probabilidades acumuladas
-  let p0orLess = poisson(totalExpected, 0);
-  let p1orLess = p0orLess + poisson(totalExpected, 1);
-  let p2orLess = p1orLess + poisson(totalExpected, 2);
-  let p3orLess = p2orLess + poisson(totalExpected, 3);
+  const p0orLess = poisson(totalExpected, 0);
+  const p1orLess = p0orLess + poisson(totalExpected, 1);
+  const p2orLess = p1orLess + poisson(totalExpected, 2);
+  const p3orLess = p2orLess + poisson(totalExpected, 3);
   
   return {
     over1_5: 1 - p1orLess,

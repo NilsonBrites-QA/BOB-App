@@ -10,9 +10,10 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
-import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
 import { judgeVariations, type VariationSnapshot } from "@/lib/bob/engine/variation-judge";
 import { loadRoundData } from "@/lib/bob/round-loader";
+import { isRealDataSource } from "@/lib/bob/data/source-policy";
+import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-variation-pipeline";
 
 async function requireAdmin() {
   const cookieStore = await cookies();
@@ -51,6 +52,9 @@ export async function recalcVariationJudgement(
 
   try {
     const roundData = await loadRoundData(season, round);
+    if (!isRealDataSource(roundData.source)) {
+      return { ok: false, error: `Geração oficial bloqueada: fonte inválida (${roundData.source})` };
+    }
     if (roundData.matches.length === 0) {
       return { ok: false, error: "Sem partidas para a rodada solicitada" };
     }
@@ -58,11 +62,18 @@ export async function recalcVariationJudgement(
     const effectiveRound =
       roundData.source === "api" && roundData.meta ? roundData.meta.round : (round ?? 0);
 
-    const allScored = roundData.matches.map(scoreMatch);
-    const anchors = selectAnchorsFromScored(allScored);
-    const anchorIds = new Set(anchors.map((a) => a.id));
-    const pool = allScored.filter((m) => !anchorIds.has(m.id));
-    const variationsResult = generateVariations({ anchors, pool });
+    const pipeline = await buildOfficialVariationsPipeline({
+      matches: roundData.matches,
+      source: roundData.source,
+      round: effectiveRound,
+      sourceSnapshotIds: [`round:${season}:${effectiveRound}:${roundData.source}`],
+    });
+    if (!pipeline.ok || !pipeline.variationsResult) {
+      return { ok: false, error: pipeline.reason ?? "Pipeline oficial bloqueou a geração" };
+    }
+    const anchors = pipeline.anchors;
+    const pool = pipeline.anchorSelection?.allRanked.filter((m) => !anchors.some((a) => a.id === m.id)) ?? [];
+    const variationsResult = pipeline.variationsResult;
 
     const snapshots: VariationSnapshot[] = variationsResult.variations.map((v) => ({
       id: v.id,

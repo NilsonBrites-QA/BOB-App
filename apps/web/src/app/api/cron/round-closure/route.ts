@@ -20,10 +20,9 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getFinishedMatchesGated, getFinishedMatches } from "@/lib/bob/connectors/football-data";
+import { getGatewayFinishedMatches, type FDMatch } from "@/lib/data/sports-data-gateway";
 import { llmCascade } from "@/lib/bob/ai/llm-cascade";
 import { resolveActiveSeasonYear } from "@/lib/bob/season";
-import type { FDMatch } from "@/lib/bob/connectors/football-data";
 
 // ─── Tipos internos ──────────────────────────────────────────────────────────
 
@@ -261,18 +260,7 @@ export async function GET(request: Request) {
     }
 
     // ── 4. Buscar resultados reais ────────────────────────────────────────
-    let finishedMatches: FDMatch[] = [];
-    const gated = await getFinishedMatchesGated(200);
-    if (gated) {
-      finishedMatches = gated.matches;
-    } else {
-      try {
-        const fallback = await getFinishedMatches(200);
-        finishedMatches = fallback.matches;
-      } catch {
-        /* continua com o que tiver */
-      }
-    }
+    const finishedMatches = (await getGatewayFinishedMatches(200))?.matches ?? [];
 
     if (finishedMatches.length === 0) {
       return NextResponse.json({

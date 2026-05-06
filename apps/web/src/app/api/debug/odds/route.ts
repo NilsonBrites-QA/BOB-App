@@ -8,68 +8,18 @@
  */
 
 import { NextResponse } from "next/server";
-import { getOddsFromTheOddsApi, listAvailableSports } from "@/lib/bob/connectors/the-odds-api";
-import { getOddsByTournament, TOURNAMENT_SERIE_A } from "@/lib/bob/connectors/oddspapi";
+import { getGatewayOddsDiagnostics } from "@/lib/data/sports-data-gateway";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: Request) {
-  // Endpoint de diagnóstico — dados de odds são públicos
-  // Nenhuma autenticação necessária (apenas leitura de dados de mercado)
-  const results: Record<string, unknown> = {
-    generatedAt: new Date().toISOString(),
-  };
-
-  // ── The Odds API ───────────────────────────────────────────────────────────
-  const toaStart = Date.now();
-  try {
-    const map = await getOddsFromTheOddsApi();
-    const games = Array.from(map.entries())
-      .filter(([k]) => k.includes("|"))
-      .map(([k, v]) => {
-        const [home, away] = k.split("|");
-        return { home, away, H: v.homeOdd, X: v.drawOdd, A: v.awayOdd, source: v.source };
-      });
-
-    results.theOddsApi = {
-      status:    map.size > 0 ? "✅ OK" : "⚠️ Vazio",
-      games:     games.length,
-      latencyMs: Date.now() - toaStart,
-      sample:    games.slice(0, 5),   // primeiros 5 jogos
-      all:       games,               // lista completa
-    };
-  } catch (err) {
-    results.theOddsApi = { status: "❌ Erro", error: String(err) };
+export async function GET(req: Request) {
+  const authHeader = req.headers.get("Authorization");
+  const secret = process.env.CRON_SECRET;
+  if (!secret || authHeader !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // ── OddsPapi ───────────────────────────────────────────────────────────────
-  const opStart = Date.now();
-  try {
-    const map = await getOddsByTournament(TOURNAMENT_SERIE_A);
-    const games = Array.from(map.entries())
-      .filter(([k]) => k.includes("|"))
-      .map(([k, v]) => {
-        const [home, away] = k.split("|");
-        return { home, away, H: v.homeOdd, X: v.drawOdd, A: v.awayOdd };
-      });
-
-    results.oddspapi = {
-      status:    map.size > 0 ? "✅ OK" : "⚠️ Vazio",
-      games:     games.length,
-      latencyMs: Date.now() - opStart,
-      sample:    games.slice(0, 5),
-    };
-  } catch (err) {
-    results.oddspapi = { status: "❌ Erro", error: String(err) };
-  }
-
-  // ── Sport keys disponíveis no The Odds API (para diagnóstico) ──────────────
-  try {
-    const sports = await listAvailableSports();
-    results.availableSports = sports;
-  } catch {
-    results.availableSports = [];
-  }
+  const results: Record<string, unknown> = await getGatewayOddsDiagnostics();
 
   // ── Status das env vars (sem expor valores) ────────────────────────────────
   results.envVars = {

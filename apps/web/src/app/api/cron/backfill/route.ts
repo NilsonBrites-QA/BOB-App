@@ -23,51 +23,10 @@
  */
 
 import { NextResponse }   from "next/server";
-import {
-  getStandings,
-  getFixturesByRound,
-  getTeamLastFixtures,
-  getH2H,
-  getInjuriesByDate,
-  getOdds,
-} from "@/lib/bob/connectors/api-football";
-import { normalizeMatchInputs } from "@/lib/bob/connectors/normalize";
-import { scoreMatch, selectAnchors } from "@/lib/bob/engine";
-import { generateVariations } from "@/lib/bob/engine";
+import { getGatewayBackfillRoundDataset } from "@/lib/data/sports-data-gateway";
 import { saveRound, markPickResult } from "@/lib/bob/persist";
 import { prisma } from "@/lib/db";
-
-import type { AFFixtureItem, AFInjuryItem, AFOddsItem } from "@/lib/bob/connectors/api-football-types";
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function uniqueTeamIds(fixtures: AFFixtureItem[]): number[] {
-  const ids = new Set<number>();
-  for (const f of fixtures) {
-    ids.add(f.teams.home.id);
-    ids.add(f.teams.away.id);
-  }
-  return Array.from(ids);
-}
-
-function uniqueDates(fixtures: AFFixtureItem[]): string[] {
-  const dates = new Set<string>();
-  for (const f of fixtures) {
-    const date = f.fixture.date.split("T")[0];
-    if (date) dates.add(date);
-  }
-  return Array.from(dates);
-}
-
-/** Converte resultado de um fixture encerrado em PickResult string */
-function realResult(fixture: AFFixtureItem): "HOME" | "DRAW" | "AWAY" | null {
-  const h = fixture.goals.home;
-  const a = fixture.goals.away;
-  if (h === null || a === null) return null;
-  if (h > a) return "HOME";
-  if (h < a) return "AWAY";
-  return "DRAW";
-}
+import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-variation-pipeline";
 
 /** Converte PickResult → string de resultado do pick ("1"/"X"/"2") para comparação */
 function pickResultToString(result: string): "HOME" | "DRAW" | "AWAY" {
@@ -133,99 +92,27 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 4. Buscar dados da API-Football (fixtures + pipeline completo)
-    const [standingsRes, fixturesRes] = await Promise.all([
-      getStandings(season),
-      getFixturesByRound(season, round),
-    ]);
+    // 4. Buscar dados via Data Gateway autorizado (cache + lock + cooldown)
+    const backfill = await getGatewayBackfillRoundDataset(season, round);
 
-    const roundFixtures = fixturesRes.response;
-
-    if (roundFixtures.length === 0) {
+    if (backfill.fixtureCount === 0) {
       return NextResponse.json(
         { error: `Nenhuma fixture encontrada para ${season}/rodada ${round}.` },
         { status: 404 },
       );
     }
 
-    // Exigir que TODOS os jogos da rodada estejam encerrados (FT/AET/PEN)
-    const completedStatuses = new Set(["FT", "AET", "PEN", "AWD"]);
-    const allCompleted = roundFixtures.every((f) =>
-      completedStatuses.has(f.fixture.status.short),
-    );
-
-    if (!allCompleted) {
+    if (!backfill.completed) {
       return NextResponse.json(
         {
           error: `Rodada ${season}/${round} ainda não foi completamente encerrada. Tente novamente após o término de todos os jogos.`,
-          pending: roundFixtures
-            .filter((f) => !completedStatuses.has(f.fixture.status.short))
-            .map((f) => `${f.teams.home.name} x ${f.teams.away.name} [${f.fixture.status.short}]`),
+          pending: backfill.pending,
         },
         { status: 409 },
       );
     }
 
-    // Construir mapa de resultado real: fixtureId → resultado
-    const realResultMap = new Map<number, "HOME" | "DRAW" | "AWAY">();
-    for (const f of roundFixtures) {
-      const result = realResult(f);
-      if (result) realResultMap.set(f.fixture.id, result);
-    }
-
-    // 5. Demais dados em paralelo
-    const standingsData = standingsRes.response[0];
-    const standings     = standingsData?.league?.standings?.[0] ?? [];
-    const teamIds       = uniqueTeamIds(roundFixtures);
-    const matchDates    = uniqueDates(roundFixtures);
-
-    const [teamLastFixturesArr, h2hArr, injuriesArr, oddsArr] = await Promise.all([
-      Promise.all(
-        teamIds.map((id) =>
-          getTeamLastFixtures(id, season, 10).then((r) => ({ id, fixtures: r.response })),
-        ),
-      ),
-      Promise.all(
-        roundFixtures.map((f) =>
-          getH2H(f.teams.home.id, f.teams.away.id, 10).then((r) => ({
-            key: `${f.teams.home.id}-${f.teams.away.id}`,
-            fixtures: r.response,
-          })),
-        ),
-      ),
-      Promise.all(matchDates.map((date) => getInjuriesByDate(season, date))).then(
-        (results) => results.flatMap((r): AFInjuryItem[] => r.response),
-      ),
-      Promise.all(
-        roundFixtures.map((f) =>
-          getOdds(f.fixture.id)
-            .then((r) => ({ id: f.fixture.id, data: r.response[0] as AFOddsItem | undefined }))
-            .catch(() => ({ id: f.fixture.id, data: undefined as AFOddsItem | undefined })),
-        ),
-      ),
-    ]);
-
-    const teamLastFixtures: Record<number, AFFixtureItem[]> = {};
-    for (const { id, fixtures } of teamLastFixturesArr) {
-      teamLastFixtures[id] = fixtures;
-    }
-
-    const h2hByKey: Record<string, AFFixtureItem[]> = {};
-    for (const { key, fixtures } of h2hArr) {
-      h2hByKey[key] = fixtures;
-    }
-
-    const oddsMap: Record<number, AFOddsItem> = {};
-    for (const { id, data } of oddsArr) {
-      if (data) oddsMap[id] = data;
-    }
-
-    // 6. Normalizar — modo backfill (aceita FT fixtures)
-    const matches = normalizeMatchInputs(
-      { roundFixtures, standings, teamLastFixtures, h2hByKey, teamStats: {}, injuries: injuriesArr, oddsMap },
-      round,
-      true, // includeCompleted
-    );
+    const matches = backfill.matches;
 
     if (matches.length === 0) {
       return NextResponse.json(
@@ -234,23 +121,28 @@ export async function GET(request: Request) {
       );
     }
 
-    // 7. Motor de scoring
-    const allScored  = matches.map(scoreMatch);
-    const anchors    = selectAnchors(matches);
-    const anchorIds  = new Set(anchors.map((a) => a.id));
-    const pool       = allScored.filter((m) => !anchorIds.has(m.id));
-    const variationsResult = generateVariations({ anchors, pool });
-    
-    // Extrair array de variações do resultado (compatibilidade com beam-search)
-    const variations = variationsResult.variations || [];
+    // 7. Motor oficial de Variações
+    const pipeline = await buildOfficialVariationsPipeline({
+      matches,
+      source: "api",
+      round,
+      sourceSnapshotIds: [`backfill:${season}:${round}:gateway`],
+    });
+    if (!pipeline.ok || !pipeline.variationsResult) {
+      return NextResponse.json(
+        { error: pipeline.reason ?? "Pipeline oficial bloqueou geração.", status: pipeline.status, round, season },
+        { status: 409 },
+      );
+    }
 
     // 8. Persistir no banco
     const { roundDbId } = await saveRound({
       season,
       round,
-      anchors,
-      variations,
+      anchors: pipeline.anchors,
+      variations: pipeline.variationsResult.variations,
       source: "api",
+      officialSnapshot: pipeline.snapshot ?? undefined,
     });
 
     // 9. Marcar resultados reais nos picks
@@ -266,8 +158,7 @@ export async function GET(request: Request) {
       for (const variation of roundDb.variations) {
         for (const pick of variation.picks) {
           if (!pick.fixtureId) continue;
-          const fixtureIdNum = parseInt(pick.fixtureId, 10);
-          const actual = realResultMap.get(fixtureIdNum);
+          const actual = backfill.realResults.get(pick.fixtureId);
           if (!actual) continue;
 
           const predicted = pickResultToString(pick.result);
@@ -292,9 +183,9 @@ export async function GET(request: Request) {
       season,
       round,
       roundDbId,
-      matchesScored:    allScored.length,
-      anchorsFound:     anchors.length,
-      variationsCreated: variations.length,
+      matchesScored:    matches.length,
+      anchorsFound:     pipeline.anchors.length,
+      variationsCreated: pipeline.variationsResult.variations.length,
       picksMarked:      markedCount,
       timestamp:        new Date().toISOString(),
     });

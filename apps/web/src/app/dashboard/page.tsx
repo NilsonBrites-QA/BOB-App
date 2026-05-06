@@ -4,7 +4,7 @@ import { ReflectionCard, ReflectionCardSkeleton } from "@/components/reflection-
 import { GlossarySection } from "@/components/glossary";
 import { AberturaDiariaBanner } from "@/components/abertura-diaria-banner";
 import { PageHero } from "@/components/page-hero";
-import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
+import { scoreMatch } from "@/lib/bob/engine";
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
 import { detectZebras, type ZebraOpportunity } from "@/lib/bob/engine/zebra-detector";
 import { demoMatches, DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
@@ -15,6 +15,7 @@ import { loadDeliveredRound } from "@/lib/bob/persist";
 import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
 import type { Variation } from "@/lib/bob/types";
 import type { Variation as BeamVariation, TicketLeg } from "@/lib/bob/engine/beam-search";
+import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-variation-pipeline";
 
 // ISR de 5 min: leitura do DB é instantânea (~30ms).
 // Variações congeladas NUNCA mudam entre requests.
@@ -214,20 +215,26 @@ export default async function DashboardPage({
     console.log(`[Dashboard] Sem rodada congelada — gerando variações on-the-fly (não oficial)`);
 
     const filteredMatches = roundData.matches.filter((match) => !excludedIds.has(match.id));
-    const allScored = filteredMatches.map(scoreMatch);
-    const anchors = selectAnchorsFromScored(allScored);
-    const anchorIds = new Set(anchors.map((anchor) => anchor.id));
-    const pool = allScored.filter((match) => !anchorIds.has(match.id));
-    const variationsResult = generateVariations({ anchors, pool });
-    variations = ((variationsResult.variations ?? []) as BeamVariation[]).map(convertBeamToLegacy);
-    allScoredCount = allScored.length;
-
-    anchorsForDisplay = anchors.map((a) => ({
-      ...a,
-      reasons: a.reasons ?? [],
-      homeCrest: resolveBadge(a.homeTeam, badgeMap),
-      awayCrest: resolveBadge(a.awayTeam, badgeMap),
-    }));
+    const pipeline = await buildOfficialVariationsPipeline({
+      matches: filteredMatches,
+      source: roundData.source,
+      round: effectiveRound,
+      sourceSnapshotIds: [`dashboard:${paramSeason}:${effectiveRound}:${roundData.source}`],
+    });
+    if (pipeline.ok && pipeline.variationsResult) {
+      variations = (pipeline.variationsResult.variations as BeamVariation[]).map(convertBeamToLegacy);
+      anchorsForDisplay = pipeline.anchors.map((a) => ({
+        ...a,
+        reasons: a.reasons ?? [],
+        homeCrest: resolveBadge(a.homeTeam, badgeMap),
+        awayCrest: resolveBadge(a.awayTeam, badgeMap),
+      }));
+    } else {
+      console.info(`[Dashboard] Motor oficial bloqueado: ${pipeline.reason ?? pipeline.status}`);
+      variations = [];
+      anchorsForDisplay = [];
+    }
+    allScoredCount = filteredMatches.length;
 
     roundLabel = roundData.source === "api" && roundData.meta
       ? `Rodada ${roundData.meta.round} · ${roundData.meta.season}`
