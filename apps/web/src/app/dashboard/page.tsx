@@ -45,6 +45,8 @@ function convertBeamToLegacy(beamVar: BeamVariation): Variation {
       odd: leg.pickOdd,
       isAnchor: leg.isAnchor,
     })),
+    oddsClass: beamVar.oddsClass,
+    oddsClassLabel: beamVar.oddsClassLabel,
   };
 }
 
