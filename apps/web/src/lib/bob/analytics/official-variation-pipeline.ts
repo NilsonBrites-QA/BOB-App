@@ -7,10 +7,16 @@ import { isForbiddenForOfficialGeneration, type OfficialDataSource } from "@/lib
 import { buildMatchFeatures } from "./feature-builder";
 import { createMatchIntelligence } from "./match-intelligence";
 import { calculateAnalyticsAnchorScore } from "./anchor-score";
+import {
+  reviewOfficialVariationPackageWithLLM,
+  type VariationCognitiveReview,
+  type VariationCognitiveReviewInput,
+} from "@/lib/bob/llm/variation-cognitive-review";
 
-const ENGINE_VERSION = "official-variations-v2";
-const GENERATION_VERSION = "big-odds-official-v2";
+const ENGINE_VERSION = "official-variations-v3";
+const GENERATION_VERSION = "big-odds-official-v3";
 const VALID_SOURCES = ["api", "database", "db", "cache", "cache_hit", "persisted_snapshot", "stale_valid", "stale"];
+const BIG_ODDS_MIN_ACCEPTABLE = 900;
 
 export type OfficialVariationPipelineResult = {
   ok: boolean;
@@ -26,6 +32,14 @@ export type OfficialVariationPipelineResult = {
   engineVersion: typeof ENGINE_VERSION;
   generationVersion: typeof GENERATION_VERSION;
   snapshot: Record<string, unknown> | null;
+  llmReview: VariationCognitiveReview | null;
+  deliveryState?:
+    | "generated_now"
+    | "blocked_missing_data"
+    | "blocked_llm_rejected"
+    | "blocked_llm_unavailable"
+    | "approved_with_warnings"
+    | "invalid_round_context";
   reason?: string;
 };
 
@@ -89,6 +103,10 @@ function buildVariationSnapshot(
   });
 }
 
+function getOddsSnapshots(featureResult: ReturnType<typeof buildMatchFeatures>) {
+  return featureResult.features.flatMap((feature) => feature.features.oddsSnapshots?.value ?? []);
+}
+
 function buildSnapshot(args: {
   round?: number | null;
   source: string;
@@ -96,6 +114,7 @@ function buildSnapshot(args: {
   featureResult: ReturnType<typeof buildMatchFeatures>;
   anchorSelection: ReturnType<typeof calculateAnalyticsAnchorScore>;
   variationsResult: ReturnType<typeof generateBeamSearchVariations>;
+  llmReview: VariationCognitiveReview;
 }) {
   const featureCoverageByMatch = new Map(args.featureResult.features.map((feature) => [
     feature.matchId,
@@ -119,6 +138,9 @@ function buildSnapshot(args: {
     ...new Set([
       ...args.featureResult.missingFeatures.map((feature) => `missing:${feature}`),
       ...args.variationsResult.meta.warnings,
+      ...args.llmReview.dataRequests
+        .filter((request) => request.priority === "critical")
+        .map((request) => `critical_data_requested:${request.scope}`),
     ]),
   ];
 
@@ -135,7 +157,7 @@ function buildSnapshot(args: {
     sourceSnapshotIds: args.sourceSnapshotIds,
     anchors,
     variations,
-    oddsSnapshots: args.featureResult.features.flatMap((feature) => feature.features.oddsSnapshots?.value ?? []),
+    oddsSnapshots: getOddsSnapshots(args.featureResult),
     featureCoverage: args.featureResult.features.map((feature) => ({
       matchId: feature.matchId,
       dataCoverageScore: formatCoverage(feature.dataCoverageScore),
@@ -143,15 +165,89 @@ function buildSnapshot(args: {
     })),
     riskFlags,
     engineVersion: ENGINE_VERSION,
-    explanation: `Variações geradas por Feature Builder, Match Intelligence, Anchor Score e Beam Search com cobertura média ${formatCoverage(args.featureResult.dataCoverageScore)}.`,
-    status: "generated",
+    explanation: `Variações geradas por Feature Builder, Match Intelligence, Anchor Score, Beam Search e revisão cognitiva LLM com cobertura média ${formatCoverage(args.featureResult.dataCoverageScore)}.`,
+    llmReview: args.llmReview,
+    llmApprovalStatus: args.llmReview.approvalStatus,
+    status: args.llmReview.approvalStatus,
   };
+}
+
+function buildReviewInput(args: {
+  matches: MatchInput[];
+  source: string;
+  round: number;
+  season?: number | null;
+  roundContext?: VariationCognitiveReviewInput["roundContext"];
+  featureResult: ReturnType<typeof buildMatchFeatures>;
+  intelligence: ReturnType<typeof createMatchIntelligence>;
+  anchorSelection: ReturnType<typeof calculateAnalyticsAnchorScore>;
+  variationsResult: ReturnType<typeof generateBeamSearchVariations>;
+}) {
+  return {
+    roundContext: args.roundContext ?? {
+      season: args.season ?? new Date().getFullYear(),
+      round: args.round,
+      competition: "BSA",
+      source: args.source,
+      reason: "pipeline_context",
+      fixturesCount: args.matches.length,
+      firstKickoffAt: args.matches.map((match) => match.scheduledAt).filter(Boolean).sort()[0] ?? null,
+      roundMode: null,
+    },
+    matches: args.matches,
+    featureResult: args.featureResult,
+    intelligenceResult: args.intelligence,
+    anchorSelection: args.anchorSelection,
+    variationsResult: args.variationsResult,
+    oddsSnapshots: getOddsSnapshots(args.featureResult),
+    missingFeatures: args.featureResult.missingFeatures,
+    dataCoverage: args.featureResult.dataCoverageScore,
+    riskFlags: [
+      ...new Set([
+        ...args.featureResult.missingFeatures.map((feature) => `missing:${feature}`),
+        ...args.variationsResult.meta.warnings,
+      ]),
+    ],
+    memoryContext: null,
+    engineVersion: ENGINE_VERSION,
+  } satisfies VariationCognitiveReviewInput;
+}
+
+async function recordLlmMemoryEvent(
+  type: string,
+  args: {
+    season?: number | null;
+    round: number;
+    matches: MatchInput[];
+    variationsResult: ReturnType<typeof generateBeamSearchVariations>;
+    review?: VariationCognitiveReview;
+    source: string;
+    inputSnapshotId: string;
+  },
+) {
+  await recordMemoryEvent(type, {
+    roundId: args.round,
+    season: args.season ?? null,
+    matchIds: args.matches.map((match) => match.id),
+    variationIds: args.variationsResult.variations.map((variation) => variation.id),
+    provider: args.review?.provider ?? "cascade",
+    model: args.review?.model ?? null,
+    promptVersion: args.review?.promptVersion ?? "variation-cognitive-review-v1",
+    inputSnapshotId: args.inputSnapshotId,
+    output: args.review ?? null,
+    dataRequests: args.review?.dataRequests ?? [],
+    approved: args.review?.approved ?? false,
+    confidence: args.review?.confidence ?? 0,
+    createdAt: new Date().toISOString(),
+  }, args.source);
 }
 
 export async function buildOfficialVariationsPipeline(args: {
   matches: MatchInput[];
   source: OfficialDataSource;
   round?: number | null;
+  season?: number | null;
+  roundContext?: VariationCognitiveReviewInput["roundContext"];
   sourceSnapshotIds?: string[];
 }): Promise<OfficialVariationPipelineResult> {
   const source = String(args.source ?? "insufficient");
@@ -165,6 +261,8 @@ export async function buildOfficialVariationsPipeline(args: {
       confidencePenalty?: number;
       missingFeatures?: string[];
       sourceSnapshotIds?: string[];
+      llmReview?: VariationCognitiveReview | null;
+      deliveryState?: OfficialVariationPipelineResult["deliveryState"];
       logReason?: "insufficient_data" | "missing_round_dataset" | "invalid_round_context";
     },
   ): Promise<OfficialVariationPipelineResult> => {
@@ -182,6 +280,8 @@ export async function buildOfficialVariationsPipeline(args: {
       status: "insufficient_data",
       reason,
       missingFeatures: missing,
+      llmReview: extra?.llmReview ?? null,
+      deliveryState: extra?.deliveryState ?? "blocked_missing_data",
       logReason: extra?.logReason ?? "insufficient_data",
       engineVersion: ENGINE_VERSION,
       generationVersion: GENERATION_VERSION,
@@ -200,6 +300,8 @@ export async function buildOfficialVariationsPipeline(args: {
       engineVersion: ENGINE_VERSION,
       generationVersion: GENERATION_VERSION,
       snapshot: null,
+      llmReview: extra?.llmReview ?? null,
+      deliveryState: extra?.deliveryState ?? "blocked_missing_data",
       reason,
     };
   };
@@ -208,8 +310,10 @@ export async function buildOfficialVariationsPipeline(args: {
     return block("invalid_round_context", {
       missingFeatures: ["valid_round_context"],
       logReason: "invalid_round_context",
+      deliveryState: "invalid_round_context",
     });
   }
+  const officialRound = Number(args.round);
 
   if (isForbiddenForOfficialGeneration(source)) {
     return block(`invalid-source:${source}`, { missingFeatures: ["valid_real_source"] });
@@ -316,7 +420,9 @@ export async function buildOfficialVariationsPipeline(args: {
     anchorSelection as unknown as BeamAnchorSelectionResult,
     args.matches,
   );
-  const invalidVariations = variationsResult.variations.filter((variation) => variation.oddsClass !== "big-odds" || variation.legCount < 5);
+  const invalidVariations = variationsResult.variations.filter((variation) =>
+    variation.combinedOdd < BIG_ODDS_MIN_ACCEPTABLE || variation.legCount < 5,
+  );
   const fingerprints = variationsResult.variations.map((variation) =>
     variation.legs.map((leg) => `${leg.matchId}:${leg.pickOutcome}`).sort().join("|"),
   );
@@ -334,23 +440,154 @@ export async function buildOfficialVariationsPipeline(args: {
       confidencePenalty: featureResult.confidencePenalty,
       missingFeatures: [
         ...featureResult.missingFeatures,
-        ...invalidVariations.map((variation) => `${variation.id}:${variation.oddsClass}`),
+        ...invalidVariations.map((variation) =>
+          variation.combinedOdd < BIG_ODDS_MIN_ACCEPTABLE
+            ? `${variation.id}:big_odds_threshold_not_reached`
+            : `${variation.id}:${variation.oddsClass}`,
+        ),
         ...(hasDuplicateTickets ? ["duplicate_tickets"] : []),
       ],
       sourceSnapshotIds: featureResult.sourceSnapshotIds,
     });
   }
 
+  const inputSnapshotId = `round:${args.season ?? "unknown"}:${officialRound}:candidate:${ENGINE_VERSION}`;
+  await recordLlmMemoryEvent("LLM_VARIATION_REVIEW_STARTED", {
+    season: args.season,
+    round: officialRound,
+    matches: args.matches,
+    variationsResult,
+    source,
+    inputSnapshotId,
+  });
+  const llmReview = await reviewOfficialVariationPackageWithLLM(buildReviewInput({
+    matches: args.matches,
+    source,
+    round: officialRound,
+    season: args.season,
+    roundContext: args.roundContext,
+    featureResult,
+    intelligence,
+    anchorSelection,
+    variationsResult,
+  }));
+
+  if (llmReview.approvalStatus === "llm_unavailable") {
+    await recordLlmMemoryEvent("LLM_REVIEW_UNAVAILABLE", {
+      season: args.season,
+      round: officialRound,
+      matches: args.matches,
+      variationsResult,
+      review: llmReview,
+      source,
+      inputSnapshotId,
+    });
+    return block("missing_llm_review", {
+      anchors: anchorSelection.anchors,
+      anchorSelection,
+      dataCoverageScore: featureResult.dataCoverageScore,
+      confidencePenalty: featureResult.confidencePenalty,
+      missingFeatures: [...featureResult.missingFeatures, "missing_llm_review"],
+      sourceSnapshotIds: featureResult.sourceSnapshotIds,
+      llmReview,
+      deliveryState: "blocked_llm_unavailable",
+    });
+  }
+
+  await recordLlmMemoryEvent("LLM_VARIATION_REVIEW_COMPLETED", {
+    season: args.season,
+    round: officialRound,
+    matches: args.matches,
+    variationsResult,
+    review: llmReview,
+    source,
+    inputSnapshotId,
+  });
+  if (llmReview.dataRequests.length > 0) {
+    await recordLlmMemoryEvent("LLM_DATA_REQUESTED", {
+      season: args.season,
+      round: officialRound,
+      matches: args.matches,
+      variationsResult,
+      review: llmReview,
+      source,
+      inputSnapshotId,
+    });
+  }
+
+  const criticalDataRequested = llmReview.dataRequests.some((request) => request.priority === "critical");
+  if (!llmReview.approved || llmReview.approvalStatus === "rejected" || criticalDataRequested) {
+    const eventType = llmReview.approvalStatus === "rejected"
+      ? "LLM_VARIATION_REVIEW_REJECTED"
+      : "LLM_DATA_REQUESTED";
+    await recordLlmMemoryEvent(eventType, {
+      season: args.season,
+      round: officialRound,
+      matches: args.matches,
+      variationsResult,
+      review: llmReview,
+      source,
+      inputSnapshotId,
+    });
+    await recordLlmMemoryEvent("OFFICIAL_VARIATIONS_REJECTED_BY_LLM", {
+      season: args.season,
+      round: officialRound,
+      matches: args.matches,
+      variationsResult,
+      review: llmReview,
+      source,
+      inputSnapshotId,
+    });
+    return block(criticalDataRequested ? "critical_data_requested_by_llm" : "llm_review_rejected", {
+      anchors: anchorSelection.anchors,
+      anchorSelection,
+      dataCoverageScore: featureResult.dataCoverageScore,
+      confidencePenalty: featureResult.confidencePenalty,
+      missingFeatures: [
+        ...featureResult.missingFeatures,
+        ...(criticalDataRequested ? ["critical_data_requested_by_llm"] : ["llm_review_rejected"]),
+        ...llmReview.rejectedBecause,
+      ],
+      sourceSnapshotIds: featureResult.sourceSnapshotIds,
+      llmReview,
+      deliveryState: "blocked_llm_rejected",
+    });
+  }
+
+  await recordLlmMemoryEvent("OFFICIAL_VARIATIONS_APPROVED_BY_LLM", {
+    season: args.season,
+    round: officialRound,
+    matches: args.matches,
+    variationsResult,
+    review: llmReview,
+    source,
+    inputSnapshotId,
+  });
+  for (const note of llmReview.memoryNotes) {
+    await recordMemoryEvent("MEMORY_NOTE_CREATED", {
+      roundId: officialRound,
+      season: args.season ?? null,
+      note,
+      provider: llmReview.provider,
+      model: llmReview.model,
+      promptVersion: llmReview.promptVersion,
+      inputSnapshotId,
+      createdAt: new Date().toISOString(),
+    }, source);
+  }
+
   const snapshot = buildSnapshot({
-    round: args.round,
+    round: officialRound,
     source,
     sourceSnapshotIds: featureResult.sourceSnapshotIds,
     featureResult,
     anchorSelection,
     variationsResult,
+    llmReview,
   });
   await recordMemoryEvent("VARIATIONS_GENERATED", {
     round: args.round,
+    season: args.season ?? null,
     source,
     method: "beam_search",
     engineVersion: ENGINE_VERSION,
@@ -376,5 +613,7 @@ export async function buildOfficialVariationsPipeline(args: {
     engineVersion: ENGINE_VERSION,
     generationVersion: GENERATION_VERSION,
     snapshot,
+    llmReview,
+    deliveryState: llmReview.approvalStatus === "approved_with_warnings" ? "approved_with_warnings" : "generated_now",
   };
 }

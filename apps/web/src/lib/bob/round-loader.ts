@@ -78,11 +78,21 @@ export type OfficialRoundContext =
       season: number;
       round: number;
       competition: "BSA";
-      source: "query_params" | "detected_open_matches" | "provider_cache" | "database";
+      source: "query_params" | "detected_open_matches" | "provider_cache" | "database" | "current_round_or_upcoming_matches";
       reason: string;
       fixturesCount: number;
       requestedRound: number | null;
       firstMatchAt: string | null;
+      firstKickoffAt: string | null;
+      staleOpenMatchesIgnored: number;
+      candidateRounds: Array<{
+        round: number;
+        fixturesCount: number;
+        firstKickoffAt: string | null;
+        source: "database" | "provider_cache" | "current_round_cache";
+        roundMode: "current" | "future" | "past";
+      }>;
+      roundMode: "current" | "future" | "past";
     }
   | {
       ok: false;
@@ -95,6 +105,16 @@ export type OfficialRoundContext =
       requestedRound: number | null;
       receivedRound: number | null;
       firstMatchAt: null;
+      firstKickoffAt: null;
+      staleOpenMatchesIgnored: number;
+      candidateRounds: Array<{
+        round: number;
+        fixturesCount: number;
+        firstKickoffAt: string | null;
+        source: "database" | "provider_cache" | "current_round_cache";
+        roundMode: "current" | "future" | "past";
+      }>;
+      roundMode: null;
     };
 
 export function describeRoundFallback(reason: RoundFallbackReason): string {
@@ -160,6 +180,8 @@ const OPEN_BET_MATCH_STATUSES = [
 
 const PROVIDER_OPEN_MATCHES_CACHE_KEY =
   "provider:football-data:/competitions/BSA/matches?status=SCHEDULED,TIMED,IN_PLAY,PAUSED,POSTPONED&limit=200";
+const PROVIDER_STANDINGS_CACHE_KEY = "provider:football-data:/competitions/BSA/standings";
+const ROUND_STALE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const UNKNOWN_NUMBER = Number.NaN;
 const UNKNOWN_BOOLEAN = undefined as unknown as boolean;
@@ -172,6 +194,80 @@ function isOpenFdStatus(status: string | null | undefined) {
   return ["SCHEDULED", "TIMED", "IN_PLAY", "PAUSED", "POSTPONED"].includes(String(status ?? ""));
 }
 
+function parseKickoffTime(value: string | Date | null | undefined): number | null {
+  if (!value) return null;
+  const time = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function classifyRoundMode(kickoffs: Array<string | Date | null | undefined>): "current" | "future" | "past" {
+  const now = Date.now();
+  const staleCutoff = now - ROUND_STALE_WINDOW_MS;
+  const times = kickoffs
+    .map(parseKickoffTime)
+    .filter((time): time is number => time !== null)
+    .sort((a, b) => a - b);
+  if (times.length === 0) return "future";
+  if (times.every((time) => time < staleCutoff)) return "past";
+  if (times.some((time) => time >= staleCutoff && time <= now + ROUND_STALE_WINDOW_MS)) return "current";
+  return "future";
+}
+
+function firstRelevantKickoff(kickoffs: Array<string | Date | null | undefined>) {
+  const staleCutoff = Date.now() - ROUND_STALE_WINDOW_MS;
+  const times = kickoffs
+    .map(parseKickoffTime)
+    .filter((time): time is number => time !== null)
+    .filter((time) => time >= staleCutoff)
+    .sort((a, b) => a - b);
+  return times[0] ?? Number.POSITIVE_INFINITY;
+}
+
+type OfficialRoundCandidate = {
+  round: number;
+  fixturesCount: number;
+  firstKickoffAt: string | null;
+  kickoffDates: string[];
+  source: "database" | "provider_cache" | "current_round_cache";
+  reason: string;
+  roundMode: "current" | "future" | "past";
+};
+
+function publicCandidate(candidate: OfficialRoundCandidate) {
+  return {
+    round: candidate.round,
+    fixturesCount: candidate.fixturesCount,
+    firstKickoffAt: candidate.firstKickoffAt,
+    source: candidate.source,
+    roundMode: candidate.roundMode,
+  };
+}
+
+function selectBestRoundCandidate(candidates: OfficialRoundCandidate[]) {
+  const viable = candidates.filter((candidate) => {
+    if (candidate.roundMode !== "past") return true;
+    console.info(
+      `[BOB/RoundContext] ignored_stale_round round=${candidate.round} firstKickoff=${candidate.firstKickoffAt ?? "unknown"} reason=past_open_matches`,
+    );
+    return false;
+  });
+  const currentRoundCandidate = viable.find((candidate) => candidate.source === "current_round_cache");
+  if (currentRoundCandidate) return currentRoundCandidate;
+  return viable
+    .slice()
+    .sort((a, b) => {
+      const aTime = firstRelevantKickoff(a.kickoffDates);
+      const bTime = firstRelevantKickoff(b.kickoffDates);
+      if (aTime !== bTime) return aTime - bTime;
+      const sourcePriority: Record<OfficialRoundCandidate["source"], number> = {
+        database: 0,
+        provider_cache: 1,
+        current_round_cache: 2,
+      };
+      return sourcePriority[a.source] - sourcePriority[b.source];
+    })[0] ?? null;
+}
+
 async function getCachedFixtureSummary(season: number, round: number) {
   const dbMatches = await prisma.betMatch.findMany({
     where: { season, round },
@@ -180,22 +276,26 @@ async function getCachedFixtureSummary(season: number, round: number) {
   }).catch(() => []);
 
   if (dbMatches.length > 0) {
+    const kickoffDates = dbMatches.map((match) => match.scheduledAt.toISOString());
     return {
       count: dbMatches.length,
-      firstMatchAt: dbMatches[0]?.scheduledAt.toISOString() ?? null,
+      firstMatchAt: kickoffDates[0] ?? null,
+      kickoffDates,
       source: "database" as const,
     };
   }
 
   const providerMatches = await getProviderCachedMatchesForRound(season, round);
+  const kickoffDates = providerMatches.map((match) => match.utcDate).filter((date): date is string => Boolean(date)).sort();
   return {
     count: providerMatches.length,
-    firstMatchAt: providerMatches.map((match) => match.utcDate).filter(Boolean).sort()[0] ?? null,
+    firstMatchAt: kickoffDates[0] ?? null,
+    kickoffDates,
     source: providerMatches.length > 0 ? "provider_cache" as const : "database" as const,
   };
 }
 
-async function detectOpenRoundFromDb(season: number) {
+async function detectOpenRoundsFromDb(season: number): Promise<OfficialRoundCandidate[]> {
   const rows = await prisma.betMatch.findMany({
     where: {
       season,
@@ -206,14 +306,23 @@ async function detectOpenRoundFromDb(season: number) {
     select: { round: true, scheduledAt: true },
   }).catch(() => []);
 
-  const firstRound = rows.find((row) => isValidRoundNumber(row.round))?.round ?? null;
-  if (!firstRound) return null;
-  const roundRows = rows.filter((row) => row.round === firstRound);
-  return {
-    round: firstRound,
-    fixturesCount: roundRows.length,
-    firstMatchAt: roundRows[0]?.scheduledAt.toISOString() ?? null,
-  };
+  const grouped = new Map<number, Date[]>();
+  for (const row of rows) {
+    if (!isValidRoundNumber(row.round)) continue;
+    grouped.set(row.round, [...(grouped.get(row.round) ?? []), row.scheduledAt]);
+  }
+  return Array.from(grouped.entries()).map(([round, dates]) => {
+    const kickoffDates = dates.map((date) => date.toISOString()).sort();
+    return {
+      round,
+      fixturesCount: dates.length,
+      firstKickoffAt: kickoffDates[0] ?? null,
+      kickoffDates,
+      source: "database",
+      reason: "database_open_matches",
+      roundMode: classifyRoundMode(kickoffDates),
+    };
+  });
 }
 
 async function readProviderMatchesCache(season: number): Promise<FDMatch[]> {
@@ -231,22 +340,70 @@ async function readProviderMatchesCache(season: number): Promise<FDMatch[]> {
   return [];
 }
 
-async function detectOpenRoundFromProviderCache(season: number) {
+async function detectOpenRoundsFromProviderCache(season: number): Promise<OfficialRoundCandidate[]> {
   const matches = (await readProviderMatchesCache(season)).filter((match) =>
     isValidRoundNumber(match.matchday) && isOpenFdStatus(match.status),
   );
-  const round = matches.map((match) => match.matchday).sort((a, b) => a - b)[0] ?? null;
-  if (!round) return null;
-  const roundMatches = matches.filter((match) => match.matchday === round);
-  return {
-    round,
-    fixturesCount: roundMatches.length,
-    firstMatchAt: roundMatches.map((match) => match.utcDate).filter(Boolean).sort()[0] ?? null,
-  };
+  const grouped = new Map<number, FDMatch[]>();
+  for (const match of matches) {
+    grouped.set(match.matchday, [...(grouped.get(match.matchday) ?? []), match]);
+  }
+  return Array.from(grouped.entries()).map(([round, roundMatches]) => {
+    const kickoffDates = roundMatches.map((match) => match.utcDate).filter((date): date is string => Boolean(date)).sort();
+    return {
+      round,
+      fixturesCount: roundMatches.length,
+      firstKickoffAt: kickoffDates[0] ?? null,
+      kickoffDates,
+      source: "provider_cache",
+      reason: "provider_cache_open_matches",
+      roundMode: classifyRoundMode(kickoffDates),
+    };
+  });
 }
 
 async function getProviderCachedMatchesForRound(season: number, round: number) {
   return (await readProviderMatchesCache(season)).filter((match) => match.matchday === round);
+}
+
+function readRoundPointerFromCachePayload(data: unknown): number | null {
+  if (!data || typeof data !== "object") return null;
+  const record = data as Record<string, unknown>;
+  const direct = record.currentRound ?? record.currentMatchday ?? record.matchday ?? record.round;
+  if (typeof direct === "number" && isValidRoundNumber(direct)) return direct;
+  const seasonRecord = record.season;
+  if (seasonRecord && typeof seasonRecord === "object") {
+    const seasonRound = (seasonRecord as Record<string, unknown>).currentMatchday;
+    if (typeof seasonRound === "number" && isValidRoundNumber(seasonRound)) return seasonRound;
+  }
+  return null;
+}
+
+async function readCurrentRoundCandidateFromCache(season: number): Promise<OfficialRoundCandidate | null> {
+  const cacheKeys = [
+    "current_round",
+    `current_round:${season}`,
+    "gateway:football-data:current-round:BSA",
+    PROVIDER_STANDINGS_CACHE_KEY,
+    `gateway:football-data:standings:BSA:${season}`,
+  ];
+  for (const cacheKey of cacheKeys) {
+    const cached = await prisma.chatContextCache.findUnique({ where: { cacheKey } }).catch(() => null);
+    const round = readRoundPointerFromCachePayload(cached?.data);
+    if (!isValidRoundNumber(round)) continue;
+    const summary = await getCachedFixtureSummary(season, round);
+    if (summary.count <= 0) continue;
+    return {
+      round,
+      fixturesCount: summary.count,
+      firstKickoffAt: summary.firstMatchAt,
+      kickoffDates: summary.kickoffDates,
+      source: "current_round_cache",
+      reason: `current_round_cache:${cacheKey}`,
+      roundMode: classifyRoundMode(summary.kickoffDates),
+    };
+  }
+  return null;
 }
 
 function fdMatchToInput(match: FDMatch): MatchInput {
@@ -327,68 +484,96 @@ export async function resolveOfficialRoundContext(args: {
       requestedRound,
       receivedRound: requestedRound,
       firstMatchAt: null,
+      firstKickoffAt: null,
+      staleOpenMatchesIgnored: 0,
+      candidateRounds: [],
+      roundMode: null,
     };
   }
 
   if (requestedRound !== null) {
     const summary = await getCachedFixtureSummary(args.season, requestedRound);
+    const roundMode = classifyRoundMode(summary.kickoffDates);
     return {
       ok: true,
       season: args.season,
       round: requestedRound,
       competition: "BSA",
       source: "query_params",
-      reason: summary.count > 0 ? `${summary.source}_fixtures_for_requested_round` : "explicit_round_without_cached_fixtures",
+      reason: summary.count > 0
+        ? `${summary.source}_fixtures_for_requested_round`
+        : "explicit_round_without_cached_fixtures",
       fixturesCount: summary.count,
       requestedRound,
       firstMatchAt: summary.firstMatchAt,
+      firstKickoffAt: summary.firstMatchAt,
+      staleOpenMatchesIgnored: 0,
+      candidateRounds: [
+        {
+          round: requestedRound,
+          fixturesCount: summary.count,
+          firstKickoffAt: summary.firstMatchAt,
+          source: summary.source === "provider_cache" ? "provider_cache" : "database",
+          roundMode,
+        },
+      ],
+      roundMode,
     };
   }
 
-  const dbOpenRound = await detectOpenRoundFromDb(args.season);
-  if (dbOpenRound) {
+  const candidates = [
+    ...await detectOpenRoundsFromDb(args.season),
+    ...await detectOpenRoundsFromProviderCache(args.season),
+  ];
+  const currentRoundCandidate = await readCurrentRoundCandidateFromCache(args.season);
+  if (currentRoundCandidate) candidates.unshift(currentRoundCandidate);
+  const staleOpenMatchesIgnored = candidates.filter((candidate) => candidate.roundMode === "past").length;
+  const selected = selectBestRoundCandidate(candidates);
+  if (selected) {
+    console.info(
+      `[BOB/RoundContext] selected season=${args.season} round=${selected.round} source=current_round_or_upcoming_matches fixtures=${selected.fixturesCount}`,
+    );
     return {
       ok: true,
       season: args.season,
-      round: dbOpenRound.round,
+      round: selected.round,
       competition: "BSA",
-      source: "detected_open_matches",
-      reason: "database_open_matches",
-      fixturesCount: dbOpenRound.fixturesCount,
+      source: selected.source === "provider_cache" ? "provider_cache" : "current_round_or_upcoming_matches",
+      reason: selected.reason,
+      fixturesCount: selected.fixturesCount,
       requestedRound: null,
-      firstMatchAt: dbOpenRound.firstMatchAt,
-    };
-  }
-
-  const providerOpenRound = await detectOpenRoundFromProviderCache(args.season);
-  if (providerOpenRound) {
-    return {
-      ok: true,
-      season: args.season,
-      round: providerOpenRound.round,
-      competition: "BSA",
-      source: "provider_cache",
-      reason: "provider_cache_open_matches",
-      fixturesCount: providerOpenRound.fixturesCount,
-      requestedRound: null,
-      firstMatchAt: providerOpenRound.firstMatchAt,
+      firstMatchAt: selected.firstKickoffAt,
+      firstKickoffAt: selected.firstKickoffAt,
+      staleOpenMatchesIgnored,
+      candidateRounds: candidates.map(publicCandidate),
+      roundMode: selected.roundMode,
     };
   }
 
   const dbRound = await getLastKnownRoundFromDb(args.season);
   if (isValidRoundNumber(dbRound)) {
     const summary = await getCachedFixtureSummary(args.season, dbRound);
-    return {
-      ok: true,
-      season: args.season,
-      round: dbRound,
-      competition: "BSA",
-      source: "database",
-      reason: "last_known_round",
-      fixturesCount: summary.count,
-      requestedRound: null,
-      firstMatchAt: summary.firstMatchAt,
-    };
+    const roundMode = classifyRoundMode(summary.kickoffDates);
+    if (roundMode !== "past") {
+      return {
+        ok: true,
+        season: args.season,
+        round: dbRound,
+        competition: "BSA",
+        source: "database",
+        reason: "last_known_round",
+        fixturesCount: summary.count,
+        requestedRound: null,
+        firstMatchAt: summary.firstMatchAt,
+        firstKickoffAt: summary.firstMatchAt,
+        staleOpenMatchesIgnored,
+        candidateRounds: candidates.map(publicCandidate),
+        roundMode,
+      };
+    }
+    console.info(
+      `[BOB/RoundContext] ignored_stale_round round=${dbRound} firstKickoff=${summary.firstMatchAt ?? "unknown"} reason=last_known_round_past`,
+    );
   }
 
   return {
@@ -402,6 +587,10 @@ export async function resolveOfficialRoundContext(args: {
     requestedRound: null,
     receivedRound: null,
     firstMatchAt: null,
+    firstKickoffAt: null,
+    staleOpenMatchesIgnored,
+    candidateRounds: candidates.map(publicCandidate),
+    roundMode: null,
   };
 }
 

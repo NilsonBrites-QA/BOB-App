@@ -14,7 +14,20 @@ const REQUIRED_EVENT_TYPES = [
   "ANCHOR_SCORE_CALCULATED",
   "ANCHORS_SELECTED",
   "VARIATIONS_GENERATED",
+  "LLM_VARIATION_REVIEW_COMPLETED",
+  "OFFICIAL_VARIATIONS_APPROVED_BY_LLM",
   "OFFICIAL_VARIATIONS_SNAPSHOT",
+] as const;
+
+const LLM_EVENT_TYPES = [
+  "LLM_VARIATION_REVIEW_STARTED",
+  "LLM_VARIATION_REVIEW_COMPLETED",
+  "LLM_VARIATION_REVIEW_REJECTED",
+  "LLM_REVIEW_UNAVAILABLE",
+  "LLM_DATA_REQUESTED",
+  "OFFICIAL_VARIATIONS_APPROVED_BY_LLM",
+  "OFFICIAL_VARIATIONS_REJECTED_BY_LLM",
+  "MEMORY_NOTE_CREATED",
 ] as const;
 
 const FORBIDDEN_SOURCES = new Set(["demo", "mock", "fallback_fake", "synthetic", "empty", "insufficient"]);
@@ -164,6 +177,9 @@ export async function GET(request: Request) {
 
   if (!roundRow) {
     const blockingProblems = ["round_not_found"];
+    const deliveryState = roundContext.ok && roundContext.roundMode === "past"
+      ? "blind_replay_available"
+      : "blocked_missing_data";
     console.info("[BOB/Diagnostics] officialPipelineValid=false");
     console.info(`[BOB/Diagnostics] blockingProblems=${blockingProblems.join(",")}`);
     return NextResponse.json({
@@ -177,7 +193,21 @@ export async function GET(request: Request) {
         uiRoundMismatch: false,
         pipelineRoundMismatch: false,
       },
-      result: { officialPipelineValid: false, blockingProblems, warnings: [], nextRecommendedAction: "Gere e entregue a rodada oficial antes de validar o pipeline." },
+      llmReview: {
+        present: false,
+        provider: null,
+        model: null,
+        approvalStatus: null,
+        approved: false,
+        confidence: null,
+        rejectedBecause: ["missing_llm_review"],
+        dataRequests: [],
+        anchorReviewsCount: 0,
+        variationReviewsCount: 0,
+        finalBobReadingPresent: false,
+      },
+      deliveryState,
+      result: { officialPipelineValid: false, blockingProblems, warnings: ["missing_llm_review"], nextRecommendedAction: "Gere e entregue a rodada oficial antes de validar o pipeline." },
     }, { status: 404 });
   }
 
@@ -185,7 +215,7 @@ export async function GET(request: Request) {
     where: {
       OR: [
         { roundId: roundRow.id },
-        { type: { in: [...REQUIRED_EVENT_TYPES] } },
+        { type: { in: [...REQUIRED_EVENT_TYPES, ...LLM_EVENT_TYPES] } },
       ],
     },
     orderBy: { createdAt: "desc" },
@@ -213,6 +243,9 @@ export async function GET(request: Request) {
   const anchorScoreEvent = events.find((event) => event.type === "ANCHOR_SCORE_CALCULATED");
   const anchorsSelectedEvent = events.find((event) => event.type === "ANCHORS_SELECTED");
   const variationsGeneratedEvent = events.find((event) => event.type === "VARIATIONS_GENERATED");
+  const llmCompletedEvent = events.find((event) => event.type === "LLM_VARIATION_REVIEW_COMPLETED");
+  const llmRejectedEvent = events.find((event) => event.type === "OFFICIAL_VARIATIONS_REJECTED_BY_LLM" || event.type === "LLM_VARIATION_REVIEW_REJECTED");
+  const llmUnavailableEvent = events.find((event) => event.type === "LLM_REVIEW_UNAVAILABLE");
   const pipelineRounds = [
     numberOrNull(snapshot?.round),
     numberOrNull(snapshot?.roundId),
@@ -324,8 +357,8 @@ export async function GET(request: Request) {
     .map(([fingerprint]) => fingerprint);
   const allVariationsDisjoint = snapshotVariations.length > 0 && duplicatedTickets.length === 0;
   const allAreBigOdds = snapshotVariations.length > 0 && snapshotVariations.every((variation) =>
-    stringOrNull(variation.oddsClass) === "big-odds" &&
-    (numberOrNull(variation.combinedOdd) ?? numberOrNull(variation.oddTotal) ?? 0) >= 1000,
+    stringOrNull(variation.oddsClass) !== "below-minimum" &&
+    (numberOrNull(variation.combinedOdd) ?? numberOrNull(variation.oddTotal) ?? 0) >= 900,
   );
   const variations = snapshotVariations.map((variation) => ({
     name: stringOrNull(variation.id),
@@ -347,6 +380,41 @@ export async function GET(request: Request) {
   });
   const appendOnlyEvidence = Boolean(snapshotEvent && roundVersions.length > 0 && roundVersions.every((version) => version.version >= 1));
 
+  const llmReviewFromSnapshot = isRecord(snapshot?.llmReview) ? snapshot.llmReview : null;
+  const llmCompletedContent = isRecord(llmCompletedEvent?.content) ? llmCompletedEvent.content : null;
+  const llmReviewFromEvent = isRecord(llmCompletedContent?.output) ? llmCompletedContent.output : null;
+  const llmReview = llmReviewFromSnapshot ?? llmReviewFromEvent;
+  const llmDataRequests = records(llmReview?.dataRequests);
+  const llmApprovalStatus = stringOrNull(llmReview?.approvalStatus);
+  const llmApproved = llmReview ? Boolean(llmReview.approved) : false;
+  const criticalDataRequestedByLlm = llmDataRequests.some((request) => stringOrNull(request.priority) === "critical");
+  const llmReviewRejected = Boolean(llmRejectedEvent || llmApprovalStatus === "rejected");
+  const llmReviewUnavailable = Boolean(llmUnavailableEvent || llmApprovalStatus === "llm_unavailable");
+  const llmReviewPresent = Boolean(llmReview);
+  const llmReviewDiagnostics = {
+    present: llmReviewPresent,
+    provider: stringOrNull(llmReview?.provider),
+    model: stringOrNull(llmReview?.model),
+    approvalStatus: llmApprovalStatus,
+    approved: llmApproved,
+    confidence: numberOrNull(llmReview?.confidence),
+    rejectedBecause: strings(llmReview?.rejectedBecause),
+    dataRequests: llmDataRequests,
+    anchorReviewsCount: records(llmReview?.anchorReviews).length,
+    variationReviewsCount: records(llmReview?.variationReviews).length,
+    finalBobReadingPresent: Boolean(stringOrNull(llmReview?.finalBobReading)),
+  };
+  const deliveryState =
+    !roundContext.ok ? "invalid_round_context" :
+    roundContext.roundMode === "past" && !snapshot ? "blind_replay_available" :
+    llmReviewRejected ? "blocked_llm_rejected" :
+    llmReviewUnavailable ? "blocked_llm_unavailable" :
+    llmApprovalStatus === "approved_with_warnings" ? "approved_with_warnings" :
+    snapshot && roundRow.status === "DELIVERED" ? "delivered_snapshot" :
+    snapshot && llmReviewPresent ? "generated_now" :
+    datasetMatchesCount === 0 ? "blocked_missing_data" :
+    "blocked_llm_unavailable";
+
   const llmUsedForPickSelection =
     usedSources.some((source) => LLM_SOURCES.has(source)) ||
     snapshotVariations.some((variation) => stringOrNull(variation.method) !== "beam_search");
@@ -366,6 +434,10 @@ export async function GET(request: Request) {
   if (snapshotVariations.length !== 5) blockingProblems.push(`variations_count_${snapshotVariations.length}_expected_5`);
   if (!allVariationsDisjoint) blockingProblems.push("variation_tickets_not_disjoint");
   if (!allAreBigOdds) blockingProblems.push("not_all_variations_big_odds");
+  if (!llmReviewPresent) blockingProblems.push("missing_llm_review");
+  if (llmReviewRejected) blockingProblems.push("llm_review_rejected");
+  if (llmReviewUnavailable) blockingProblems.push("llm_review_unavailable");
+  if (criticalDataRequestedByLlm) blockingProblems.push("critical_data_requested_by_llm");
   if (llmUsedForPickSelection) blockingProblems.push("llm_used_for_pick_selection");
 
   const warnings: string[] = [];
@@ -451,6 +523,8 @@ export async function GET(request: Request) {
       eventTypesFound,
       appendOnlyEvidence,
     },
+    llmReview: llmReviewDiagnostics,
+    deliveryState,
     result: {
       officialPipelineValid,
       blockingProblems,

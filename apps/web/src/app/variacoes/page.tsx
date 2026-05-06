@@ -19,7 +19,8 @@ import { VariacoesClient } from "./variacoes-client";
 import type { VariationView, AnchorView, AuditView, RoundView, VariationLeg } from "./variacoes-client";
 
 // ISR de 5 min: leitura do DB é instantânea (~30ms).
-// LLM NUNCA roda no SSR — análise vem pré-computada do cron /api/cron/judge-variations.
+// Preferência DB-first; se não houver snapshot, o Motor Oficial pode montar candidato
+// e exigir revisão cognitiva antes de exibir como geração oficial.
 export const revalidate = 300;
 
 // Heurística mínima de fallback (se cron nunca rodou para a rodada).
@@ -371,7 +372,17 @@ function renderInsufficientData(
   const audit: AuditView = {
     status: "APPROVED_WITH_ALERTS",
     passed: false,
-    alerts: [reason === "missing_round_dataset" ? "dados da rodada não conectados ao motor" : "dados insuficientes para geração responsável"],
+    alerts: [
+      reason === "missing_round_dataset"
+        ? "dados da rodada não conectados ao motor"
+        : reason === "blind_replay_available"
+          ? "rodada passada sem snapshot oficial carregado"
+          : reason === "missing_llm_review"
+            ? "revisão cognitiva LLM pendente ou indisponível"
+            : reason === "llm_review_rejected" || reason === "critical_data_requested_by_llm"
+              ? "revisão cognitiva bloqueou a entrega oficial"
+              : "dados insuficientes para geração responsável",
+    ],
     warnings: [reason],
     checks: [
       { label: "Dataset real da rodada disponível", ok: false },
@@ -386,12 +397,26 @@ function renderInsufficientData(
     cutoff,
     totalMatches: context?.fixturesCount ?? 0,
     difficulty: "hard",
-    difficultyLabel: reason === "missing_round_dataset" ? "Dados da rodada não conectados ao motor" : "Dados insuficientes",
+    difficultyLabel: reason === "missing_round_dataset"
+      ? "Dados da rodada não conectados ao motor"
+      : reason === "blind_replay_available"
+        ? "Rodada passada — replay cego disponível"
+        : reason === "missing_llm_review"
+          ? "Revisão cognitiva pendente"
+          : reason === "llm_review_rejected" || reason === "critical_data_requested_by_llm"
+            ? "Revisão cognitiva bloqueou entrega"
+            : "Dados insuficientes",
     bobMessage: reason === "invalid_round_context"
       ? "Geração oficial bloqueada: a rodada recebida é inválida para o motor."
       : reason === "missing_round_dataset"
         ? "Geração oficial bloqueada: a rodada foi resolvida, mas o dataset dessa rodada ainda não está disponível para o motor."
-        : "Geração oficial bloqueada: o dataset real ainda não tem cobertura suficiente para uma geração responsável.",
+        : reason === "blind_replay_available"
+          ? "Rodada passada solicitada. Nenhum snapshot oficial histórico foi encontrado; o replay cego pode ser executado em etapa própria."
+          : reason === "missing_llm_review"
+            ? "Geração oficial bloqueada: o pacote analítico foi montado, mas a revisão cognitiva LLM obrigatória não aprovou a entrega."
+            : reason === "llm_review_rejected" || reason === "critical_data_requested_by_llm"
+              ? "Geração oficial bloqueada: a revisão cognitiva encontrou risco ou dado crítico ausente."
+              : "Geração oficial bloqueada: o dataset real ainda não tem cobertura suficiente para uma geração responsável.",
     aiProvider: "none",
   };
 
@@ -443,6 +468,26 @@ export default async function VariacoesPage({
   console.info(
     `[BOB/Variacoes] round_context season=${roundContext.season} round=${roundContext.round} source=${roundContext.source} fixtures=${roundContext.fixturesCount}`,
   );
+
+  if (roundContext.roundMode === "past" && roundContext.requestedRound !== null) {
+    const badgeMap = await loadAllBadgesFromDb();
+    const historicalRound = await loadDeliveredRound(roundContext.season, roundContext.round).catch(() => null);
+    if (historicalRound && historicalRound.status === "DELIVERED" && historicalRound.variations.length > 0) {
+      return await renderFromDb({
+        season: roundContext.season,
+        dbRound: historicalRound as DbRound,
+        badgeMap,
+      });
+    }
+    console.warn(`[BOB/Variacoes] blocked reason=blind_replay_available round=${roundContext.round}`);
+    return renderInsufficientData("blind_replay_available", {
+      season: roundContext.season,
+      round: roundContext.round,
+      source: roundContext.source,
+      fixturesCount: roundContext.fixturesCount,
+      firstMatchAt: roundContext.firstMatchAt,
+    });
+  }
 
   const roundData = await loadOfficialRoundData(roundContext);
   console.info(
@@ -499,6 +544,17 @@ export default async function VariacoesPage({
     matches: roundData.matches,
     source: roundData.source,
     round: effectiveRound,
+    season: roundContext.season,
+    roundContext: {
+      season: roundContext.season,
+      round: effectiveRound,
+      competition: roundContext.competition,
+      source: roundContext.source,
+      reason: roundContext.reason,
+      fixturesCount: roundContext.fixturesCount,
+      firstKickoffAt: roundContext.firstKickoffAt,
+      roundMode: roundContext.roundMode,
+    },
     sourceSnapshotIds: [`round:${roundContext.season}:${effectiveRound}:${roundData.source}`],
   });
 
@@ -516,8 +572,8 @@ export default async function VariacoesPage({
   const anchors = pipeline.anchors;
   const variationsResult = pipeline.variationsResult;
 
-  // ── Camada cognitiva: LER do DB (pré-computado pelo cron) ──
-  // LLM NUNCA roda no SSR. O cron /api/cron/judge-variations popula a tabela.
+  // ── Enriquecimento editorial legado: LER do DB quando existir ──
+  // A aprovação oficial do pacote já ocorreu no pipeline via cognitive review.
   const judgement = await prisma.variationJudgement
     .findUnique({ where: { season_round: { season: roundContext.season, round: effectiveRound } } })
     .catch(() => null);
