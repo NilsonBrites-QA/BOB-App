@@ -307,9 +307,24 @@ export async function getRoundDataset(
       recordCount: result.matches.length,
     });
     await recordMemoryEvent("DATASET_COMPLETED", { season, round, matches: result.matches.length }, "football-data");
+
+    // Enrich API matches with persisted odds when external odds APIs returned zero values.
+    // cachedMatchInputs already contains valid odds from betMatch.odds (fetched above for TTL check).
+    const persistedOddsById = new Map(cachedMatchInputs.map((m) => [m.id, m]));
+    const enrichedMatches = result.matches.map((apiMatch) => {
+      if (apiMatch.homeOdd > 1 && apiMatch.drawOdd > 1 && apiMatch.awayOdd > 1) return apiMatch;
+      const persisted = persistedOddsById.get(apiMatch.id);
+      if (!persisted || !(persisted.homeOdd > 1 && persisted.drawOdd > 1 && persisted.awayOdd > 1))
+        return apiMatch;
+      console.info(
+        `[DataGateway] odds_enriched_from_db match=${apiMatch.id} home=${persisted.homeOdd} draw=${persisted.drawOdd} away=${persisted.awayOdd} round=${round}`,
+      );
+      return { ...apiMatch, homeOdd: persisted.homeOdd, drawOdd: persisted.drawOdd, awayOdd: persisted.awayOdd };
+    });
+
     return {
       ok: true,
-      data: result.matches,
+      data: enrichedMatches,
       source: "api",
       stale: false,
       confidencePenalty: 0,
