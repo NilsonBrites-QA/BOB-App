@@ -308,8 +308,12 @@ export async function getRoundDataset(
     });
     await recordMemoryEvent("DATASET_COMPLETED", { season, round, matches: result.matches.length }, "football-data");
 
+    // Map apiMatch.id (externalId or internal id) → internal betMatch UUID for betOdds upserts.
+    const internalIdByApiId = new Map<string, string>(
+      cachedMatches.map((m) => [m.externalId ?? m.id, m.id]),
+    );
+
     // Enrich API matches with persisted odds when external odds APIs returned zero values.
-    // cachedMatchInputs already contains valid odds from betMatch.odds (fetched above for TTL check).
     const persistedOddsById = new Map(cachedMatchInputs.map((m) => [m.id, m]));
     const enrichedMatches = result.matches.map((apiMatch) => {
       if (apiMatch.homeOdd > 1 && apiMatch.drawOdd > 1 && apiMatch.awayOdd > 1) return apiMatch;
@@ -321,6 +325,39 @@ export async function getRoundDataset(
       );
       return { ...apiMatch, homeOdd: persisted.homeOdd, drawOdd: persisted.drawOdd, awayOdd: persisted.awayOdd };
     });
+
+    // Persist valid odds to betOdds so that getCachedRoundDataset() can find them on subsequent calls.
+    // This is the bridge between external odds providers and the DB-only page/loadOfficialRoundData path.
+    const oddsToSync = enrichedMatches.filter((m) => m.homeOdd > 1 && m.drawOdd > 1 && m.awayOdd > 1);
+    if (oddsToSync.length > 0 && internalIdByApiId.size > 0) {
+      const oddsUpserts = oddsToSync.flatMap((m) => {
+        const matchId = internalIdByApiId.get(m.id);
+        if (!matchId) return [];
+        return [
+          prisma.betOdds.upsert({
+            where: { matchId_market_option: { matchId, market: "RESULT_1X2", option: "HOME" } },
+            update: { odd: m.homeOdd, isActive: true },
+            create: { matchId, market: "RESULT_1X2", option: "HOME", optionLabel: "Casa", odd: m.homeOdd, isActive: true },
+          }),
+          prisma.betOdds.upsert({
+            where: { matchId_market_option: { matchId, market: "RESULT_1X2", option: "DRAW" } },
+            update: { odd: m.drawOdd, isActive: true },
+            create: { matchId, market: "RESULT_1X2", option: "DRAW", optionLabel: "Empate", odd: m.drawOdd, isActive: true },
+          }),
+          prisma.betOdds.upsert({
+            where: { matchId_market_option: { matchId, market: "RESULT_1X2", option: "AWAY" } },
+            update: { odd: m.awayOdd, isActive: true },
+            create: { matchId, market: "RESULT_1X2", option: "AWAY", optionLabel: "Visitante", odd: m.awayOdd, isActive: true },
+          }),
+        ];
+      });
+      if (oddsUpserts.length > 0) {
+        await prisma.$transaction(oddsUpserts);
+        console.info(
+          `[DataGateway] odds_synced_to_db round=${round} matches=${oddsToSync.length} records=${oddsUpserts.length}`,
+        );
+      }
+    }
 
     return {
       ok: true,
