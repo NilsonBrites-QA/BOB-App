@@ -96,6 +96,14 @@ function eventBelongsToRound(event: { roundId: string | null; content: unknown }
   return eventRound(event.content) === round;
 }
 
+function hasComplete1x2Odds(odds: Array<{ market: string; option: string; odd: number; isActive: boolean }>) {
+  const active = odds.filter((o) => o.market === "RESULT_1X2" && o.isActive);
+  const home = active.find((o) => o.option.toUpperCase() === "HOME")?.odd ?? 0;
+  const draw = active.find((o) => o.option.toUpperCase() === "DRAW")?.odd ?? 0;
+  const away = active.find((o) => o.option.toUpperCase() === "AWAY")?.odd ?? 0;
+  return home > 1 && draw > 1 && away > 1;
+}
+
 function addSourceFromSnapshotId(target: Set<string>, snapshotId: string) {
   const last = snapshotId.split(":").at(-1);
   if (!last) return;
@@ -158,6 +166,33 @@ export async function GET(request: Request) {
   const resolvedRound = roundContext.ok ? roundContext.round : null;
   const resolvedSeason = roundContext.season;
 
+  // ── Market Snapshot Diagnostics (DB-only — sem chamada externa) ─────────────
+  const betMatchesForRound = await prisma.betMatch.findMany({
+    where: { season, round },
+    orderBy: { scheduledAt: "asc" },
+    include: { odds: true },
+  });
+
+  const matchesWithSnapshot = betMatchesForRound.filter((m) => hasComplete1x2Odds(m.odds));
+  const matchesMissingSnapshot = betMatchesForRound.filter((m) => !hasComplete1x2Odds(m.odds));
+
+  const marketSnapshotDiagnostics = {
+    hasCompleteMarketSnapshot: betMatchesForRound.length > 0 && matchesMissingSnapshot.length === 0,
+    totalMatches: betMatchesForRound.length,
+    matchesWithComplete1x2Odds: matchesWithSnapshot.length,
+    matchesMissing1x2Odds: matchesMissingSnapshot.length,
+    missingMatchIds: matchesMissingSnapshot.map((m) => m.externalId ?? m.id),
+    missingMatchLabels: matchesMissingSnapshot.map((m) => `${m.homeTeam} x ${m.awayTeam}`),
+    candidateSourcesChecked: ["database", "cache_hit", "stale_valid"],
+    sourceUsed: officialRoundData?.source ?? "database",
+    requiredFields: ["homeOdd", "drawOdd", "awayOdd"],
+  };
+
+  console.info(
+    `[BOB/MarketSnapshotDiagnostics] round=${round} source=${marketSnapshotDiagnostics.sourceUsed} total=${betMatchesForRound.length} complete=${matchesWithSnapshot.length} missing=${matchesMissingSnapshot.length}`,
+  );
+  // ── Fim Market Snapshot Diagnostics ─────────────────────────────────────────
+
   const roundRow = await prisma.round.findFirst({
     where: {
       season: { year: season },
@@ -206,6 +241,7 @@ export async function GET(request: Request) {
         variationReviewsCount: 0,
         finalBobReadingPresent: false,
       },
+      marketSnapshotDiagnostics,
       deliveryState,
       result: { officialPipelineValid: false, blockingProblems, warnings: ["missing_llm_review"], nextRecommendedAction: "Gere e entregue a rodada oficial antes de validar o pipeline." },
     }, { status: 404 });
@@ -524,6 +560,7 @@ export async function GET(request: Request) {
       appendOnlyEvidence,
     },
     llmReview: llmReviewDiagnostics,
+    marketSnapshotDiagnostics,
     deliveryState,
     result: {
       officialPipelineValid,
