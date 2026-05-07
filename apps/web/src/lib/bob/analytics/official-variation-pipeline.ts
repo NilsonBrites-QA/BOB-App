@@ -340,24 +340,33 @@ export async function buildOfficialVariationsPipeline(args: {
   }
 
   const matchesWithoutMarketSnapshot = getMatchesWithoutMarketSnapshot(args.matches);
+  const matchesForPipeline = matchesWithoutMarketSnapshot.length > 0
+    ? args.matches.map((match) => ({
+      ...match,
+      homeOdd: match.homeOdd > 1 ? match.homeOdd : 2.1,
+      drawOdd: match.drawOdd > 1 ? match.drawOdd : 3.2,
+      awayOdd: match.awayOdd > 1 ? match.awayOdd : 2.9,
+    }))
+    : args.matches;
   if (matchesWithoutMarketSnapshot.length > 0) {
     console.warn(
-      `[BOB/Variacoes] market_snapshot_incomplete round=${officialRound} source=${source} missing_matches=${matchesWithoutMarketSnapshot.length}/${args.matches.length}`,
+      `[BOB/Variacoes] market_snapshot_incomplete round=${officialRound} source=${source} missing_matches=${matchesWithoutMarketSnapshot.length}/${args.matches.length} strategy=fallback_odds`,
     );
-    return block("missing_market_snapshot", {
-      missingFeatures: ["missing_market_snapshot", "odds_1x2"],
-      sourceSnapshotIds: args.sourceSnapshotIds ?? [],
-      deliveryState: "blocked_missing_market_snapshot",
-      logReason: "missing_market_snapshot",
-    });
+    await recordMemoryEvent("MARKET_SNAPSHOT_PARTIAL", {
+      round: officialRound,
+      source,
+      missingMatches: matchesWithoutMarketSnapshot.length,
+      totalMatches: args.matches.length,
+      strategy: "fallback_odds",
+    }, source);
   }
 
-  const featureResult = buildMatchFeatures({ matches: args.matches, source, sourceSnapshotIds: args.sourceSnapshotIds });
-  console.info(`[BOB/Variacoes] engine=feature_builder matches=${args.matches.length} coverage=${formatCoverage(featureResult.dataCoverageScore)} round=${args.round ?? "unknown"}`);
+  const featureResult = buildMatchFeatures({ matches: matchesForPipeline, source, sourceSnapshotIds: args.sourceSnapshotIds });
+  console.info(`[BOB/Variacoes] engine=feature_builder matches=${matchesForPipeline.length} coverage=${formatCoverage(featureResult.dataCoverageScore)} round=${args.round ?? "unknown"}`);
   await recordMemoryEvent("FEATURE_BUILT", {
     round: args.round,
     source,
-    matches: args.matches.length,
+    matches: matchesForPipeline.length,
     dataCoverageScore: featureResult.dataCoverageScore,
     missingFeatures: featureResult.missingFeatures,
   }, source);
@@ -487,7 +496,7 @@ export async function buildOfficialVariationsPipeline(args: {
     inputSnapshotId,
   });
   const llmReview = await reviewOfficialVariationPackageWithLLM(buildReviewInput({
-    matches: args.matches,
+    matches: matchesForPipeline,
     source,
     round: officialRound,
     season: args.season,

@@ -91,7 +91,7 @@ export default async function AlavancagemPage() {
         allScored.filter((match) => match.id === leverageDecision.decision?.selectedPick.matchId),
         state.currentStep,
       )
-    : null;
+    : (canGenerateOfficial ? selectLeveragePicks(allScored, state.currentStep) : null);
 
   // ── Hidratar escudos (DB-first) ───────────────────────────────────────────
   const badgeMap = await loadAllBadgesFromDb();

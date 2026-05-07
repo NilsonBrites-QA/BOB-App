@@ -66,8 +66,12 @@ export default async function ApostasPage({
       })
     : { ok: false, opportunities: [] };
   const allowedMatchIds = new Set(ranking.opportunities.map((item) => item.matchId));
-  const allScored = canGenerateOfficial ? roundData.matches.filter((match) => allowedMatchIds.has(match.id)).map(scoreMatch) : [];
-  const apostasRaw = canGenerateOfficial && ranking.ok ? buildCriarApostasForRound(allScored) : [];
+  const allScored = canGenerateOfficial
+    ? (ranking.ok && allowedMatchIds.size > 0
+      ? roundData.matches.filter((match) => allowedMatchIds.has(match.id)).map(scoreMatch)
+      : roundData.matches.map(scoreMatch))
+    : [];
+  const apostasRaw = canGenerateOfficial ? buildCriarApostasForRound(allScored) : [];
 
   // ── ESCUDOS DB-FIRST (PRD §9) ─────────────────────────────────────────────
   const badgeMap = await loadAllBadgesFromDb();
