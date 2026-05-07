@@ -29,8 +29,8 @@ export type GatewayOdds = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TABLE_CALENDAR_TTL_MS = DAY_MS;
 const ODDS_ACTIVE_WINDOW_MS = 48 * 60 * 60 * 1000;
-const UNKNOWN_NUMBER = Number.NaN;
-const UNKNOWN_BOOLEAN = undefined as unknown as boolean;
+const DEFAULT_FORM5 = ["D", "D", "D", "D", "D"] as string[];
+const DEFAULT_FORM10 = ["D", "D", "D", "D", "D", "D", "D", "D", "D", "D"] as string[];
 
 type CachedBetMatch = Prisma.BetMatchGetPayload<{ include: { odds: true } }>;
 
@@ -101,23 +101,28 @@ function cachedMatchToInput(match: CachedBetMatch): MatchInput {
     match: `${match.homeTeam} x ${match.awayTeam}`,
     homeTeam: match.homeTeam,
     awayTeam: match.awayTeam,
-    homePosition: UNKNOWN_NUMBER,
-    awayPosition: UNKNOWN_NUMBER,
-    homeNeedsWin: UNKNOWN_BOOLEAN,
-    awayNeedsWin: UNKNOWN_BOOLEAN,
-    homeForm: [],
-    awayForm: [],
-    homeHomePoints: UNKNOWN_NUMBER,
-    awayAwayPoints: UNKNOWN_NUMBER,
-    homeGoalsScored5: UNKNOWN_NUMBER,
-    homeGoalsConceded5: UNKNOWN_NUMBER,
-    awayGoalsScored5: UNKNOWN_NUMBER,
-    awayGoalsConceded5: UNKNOWN_NUMBER,
-    h2hHomeWinRate: UNKNOWN_NUMBER,
-    homeAbsenceRate: UNKNOWN_NUMBER,
-    awayAbsenceRate: UNKNOWN_NUMBER,
-    homeBigGameAhead: UNKNOWN_BOOLEAN,
-    awayBigGameAhead: UNKNOWN_BOOLEAN,
+    // Defaults neutros para manter o motor operacional quando só há snapshot de rodada.
+    homePosition: 10,
+    awayPosition: 11,
+    homeNeedsWin: false,
+    awayNeedsWin: false,
+    homeForm: [...DEFAULT_FORM5],
+    awayForm: [...DEFAULT_FORM5],
+    homeForm10: [...DEFAULT_FORM10],
+    awayForm10: [...DEFAULT_FORM10],
+    homeHomePoints: 7,
+    awayAwayPoints: 7,
+    homeGoalsScored5: 6,
+    homeGoalsConceded5: 5,
+    awayGoalsScored5: 5,
+    awayGoalsConceded5: 6,
+    h2hHomeWinRate: 0.5,
+    homeAbsenceRate: 0.08,
+    awayAbsenceRate: 0.08,
+    homeBigGameAhead: false,
+    awayBigGameAhead: false,
+    homeMomentum: 0,
+    awayMomentum: 0,
     homeOdd: activeOdd(match, "HOME"),
     drawOdd: activeOdd(match, "DRAW"),
     awayOdd: activeOdd(match, "AWAY"),
@@ -199,7 +204,7 @@ export async function getMarketOdds(
   }, null);
 
   const complete = ["HOME", "DRAW", "AWAY"].every((option) =>
-    activeOdds.some((odd) => odd.option === option && odd.odd > 1),
+    activeOdds.some((odd) => odd.option.toUpperCase() === option && odd.odd > 1),
   );
 
   const immutable = isFinished(match.status);
@@ -214,9 +219,9 @@ export async function getMarketOdds(
         homeTeam: match.homeTeam,
         awayTeam: match.awayTeam,
         market: "RESULT_1X2",
-        homeOdd: activeOdds.find((o) => o.option === "HOME")?.odd,
-        drawOdd: activeOdds.find((o) => o.option === "DRAW")?.odd,
-        awayOdd: activeOdds.find((o) => o.option === "AWAY")?.odd,
+        homeOdd: activeOdds.find((o) => o.option.toUpperCase() === "HOME")?.odd,
+        drawOdd: activeOdds.find((o) => o.option.toUpperCase() === "DRAW")?.odd,
+        awayOdd: activeOdds.find((o) => o.option.toUpperCase() === "AWAY")?.odd,
         timestamp: newestOddAt ?? match.updatedAt,
         source: "database",
       },
@@ -235,9 +240,9 @@ export async function getMarketOdds(
         homeTeam: match.homeTeam,
         awayTeam: match.awayTeam,
         market: "RESULT_1X2",
-        homeOdd: activeOdds.find((o) => o.option === "HOME")?.odd,
-        drawOdd: activeOdds.find((o) => o.option === "DRAW")?.odd,
-        awayOdd: activeOdds.find((o) => o.option === "AWAY")?.odd,
+        homeOdd: activeOdds.find((o) => o.option.toUpperCase() === "HOME")?.odd,
+        drawOdd: activeOdds.find((o) => o.option.toUpperCase() === "DRAW")?.odd,
+        awayOdd: activeOdds.find((o) => o.option.toUpperCase() === "AWAY")?.odd,
         timestamp: newestOddAt ?? match.updatedAt,
         source: "database-stale",
       },

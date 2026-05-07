@@ -453,7 +453,7 @@ export async function buildOfficialVariationsPipeline(args: {
 
   const variationsResult = generateBeamSearchVariations(
     anchorSelection as unknown as BeamAnchorSelectionResult,
-    args.matches,
+    matchesForPipeline,
   );
   const invalidVariations = variationsResult.variations.filter((variation) =>
     variation.combinedOdd < BIG_ODDS_MIN_ACCEPTABLE || variation.legCount < 5,

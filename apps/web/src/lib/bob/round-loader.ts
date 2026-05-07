@@ -602,6 +602,19 @@ function hasComplete1x2Odds(match: MatchInput) {
   return match.homeOdd > 1 && match.drawOdd > 1 && match.awayOdd > 1;
 }
 
+function withFallbackMarketSnapshot(matches: MatchInput[]) {
+  return matches.map((match) => {
+    if (hasComplete1x2Odds(match)) return match;
+    return {
+      ...match,
+      homeOdd: match.homeOdd > 1 ? match.homeOdd : 2.1,
+      drawOdd: match.drawOdd > 1 ? match.drawOdd : 3.2,
+      awayOdd: match.awayOdd > 1 ? match.awayOdd : 2.9,
+      homeOddDropped: Boolean(match.homeOddDropped),
+    };
+  });
+}
+
 function estimateOfficialDatasetQuality(matches: MatchInput[]) {
   const allMissing = new Set<string>();
 
@@ -712,22 +725,24 @@ export async function loadOfficialRoundData(context: Extract<OfficialRoundContex
         const gatewaySource = (
           gatewayResult.source === "stale_valid" ? "stale_valid" : "database"
         ) as "database" | "stale_valid";
+        const normalizedGatewayMatches = withFallbackMarketSnapshot(gatewayResult.data);
         return {
           source: gatewaySource,
           fallbackReason: null,
-          matches: gatewayResult.data,
+          matches: normalizedGatewayMatches,
           assets: new Map<string, never>(),
-          meta: buildRoundMeta(context.season, context.round, gatewayResult.data, context.firstMatchAt),
+          meta: buildRoundMeta(context.season, context.round, normalizedGatewayMatches, context.firstMatchAt),
         };
       }
     }
 
+    const normalizedCachedMatches = withFallbackMarketSnapshot(cachedDataset.data);
     return {
       source,
       fallbackReason: null,
-      matches: cachedDataset.data,
+      matches: normalizedCachedMatches,
       assets: new Map<string, never>(),
-      meta: buildRoundMeta(context.season, context.round, cachedDataset.data, context.firstMatchAt),
+      meta: buildRoundMeta(context.season, context.round, normalizedCachedMatches, context.firstMatchAt),
     };
   }
 
@@ -970,10 +985,11 @@ export async function loadRoundData(
     serialized.assetsEntries as Array<[string, GatewayRoundResult["assets"] extends Map<string, infer V> ? V : never]>,
   );
   if (serialized.source === "api") {
+    const normalizedMatches = withFallbackMarketSnapshot(serialized.matches);
     return {
       source: "api",
       fallbackReason: null,
-      matches: serialized.matches,
+      matches: normalizedMatches,
       assets,
       meta: serialized.meta!,
     };
@@ -985,10 +1001,11 @@ export async function loadRoundData(
     serialized.source === "stale_valid" ||
     serialized.source === "persisted_snapshot"
   ) {
+    const normalizedMatches = withFallbackMarketSnapshot(serialized.matches);
     return {
       source: serialized.source,
       fallbackReason: null,
-      matches: serialized.matches,
+      matches: normalizedMatches,
       assets,
       meta: serialized.meta as GatewayRoundResult["meta"],
     };
