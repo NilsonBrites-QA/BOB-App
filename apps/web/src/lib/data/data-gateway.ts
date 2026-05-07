@@ -58,10 +58,11 @@ export async function recordApiEvent(args: {
   fallbackUsed: boolean;
   recordCount?: number;
 }) {
+  const normalizedSource = args.provider.split(":")[0] || args.provider;
   try {
     await prisma.apiSyncLog.create({
       data: {
-        source: args.provider,
+        source: normalizedSource,
         cacheKey: args.endpoint,
         statusCode: args.statusCode,
         recordCount: args.recordCount ?? 0,
@@ -274,11 +275,14 @@ export async function getRoundDataset(
     include: { odds: true },
   });
   const cachedMatchInputs = cachedMatches.map(cachedMatchToInput);
+  const hasCompleteMarketSnapshot =
+    cachedMatchInputs.length > 0 &&
+    cachedMatchInputs.every((m) => m.homeOdd > 1 && m.drawOdd > 1 && m.awayOdd > 1);
 
   const completeHistorical = cachedMatches.length > 0 && cachedMatches.every((m) => isFinished(m.status));
   const freshCalendar = cachedMatches.length > 0 && isFresh(recentSync?.syncedAt, TABLE_CALENDAR_TTL_MS);
 
-  if (completeHistorical || freshCalendar) {
+  if (completeHistorical || (freshCalendar && hasCompleteMarketSnapshot)) {
     await recordApiEvent({
       provider: "football-data",
       endpoint,
@@ -294,6 +298,12 @@ export async function getRoundDataset(
       confidencePenalty: 0,
       reason: "database-round-available",
     };
+  }
+
+  if (freshCalendar && !hasCompleteMarketSnapshot && cachedMatches.length > 0) {
+    console.info(
+      `[DataGateway] stale_market_snapshot_forcing_provider_fetch round=${round} season=${season} matches=${cachedMatches.length}`,
+    );
   }
 
   try {

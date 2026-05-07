@@ -876,15 +876,22 @@ const fetchAndSerialize = unstable_cache(
     }
 
     const gatewayResult = await getRoundDataset(season, resolvedRound);
-    if (gatewayResult.ok && gatewayResult.source !== "api") {
+    if (gatewayResult.ok && gatewayResult.data && gatewayResult.data.length > 0) {
       const matches = gatewayResult.data ?? [];
-      return {
-        source: gatewayResult.source,
-        fallbackReason: null,
-        matches,
-        assetsEntries: [],
-        meta: buildRoundMeta(season, resolvedRound, matches),
-      };
+      const hasCompleteMarketSnapshot = matches.every(hasComplete1x2Odds);
+      if (gatewayResult.source !== "api" || hasCompleteMarketSnapshot) {
+        return {
+          source: gatewayResult.source,
+          fallbackReason: null,
+          matches,
+          assetsEntries: [],
+          meta: buildRoundMeta(season, resolvedRound, matches),
+        };
+      }
+
+      console.info(
+        `[RoundLoader] gateway_dataset_api_incomplete round=${resolvedRound} matches=${matches.length} forcing_gateway_round_dataset=true`,
+      );
     }
 
     try {
@@ -893,9 +900,30 @@ const fetchAndSerialize = unstable_cache(
         throw new Error("insufficient:gateway-round-dataset");
       }
 
+      const normalizedMatches = result.matches;
+      if (normalizedMatches.length > 0 && normalizedMatches.every(hasComplete1x2Odds)) {
+        return {
+          source: "api",
+          fallbackReason: null,
+          matches: normalizedMatches,
+          assetsEntries: Array.from(result.assets.entries()),
+          meta: result.meta,
+        };
+      }
+
+      if (gatewayResult.ok && gatewayResult.data && gatewayResult.data.length > 0) {
+        return {
+          source: gatewayResult.source,
+          fallbackReason: null,
+          matches: gatewayResult.data,
+          assetsEntries: [],
+          meta: buildRoundMeta(season, resolvedRound, gatewayResult.data),
+        };
+      }
+
       // Se a rodada foi resolvida pelo banco (L2), os dados do pipeline
       // podem estar parcialmente stale. A meta reflete isso para a UI.
-      if (calendarInterrupted && result.matches.length === 0) {
+      if (calendarInterrupted && normalizedMatches.length === 0) {
         // API retornou 0 matches para a rodada do banco — provável dessincronização
         console.warn(
           `[RoundLoader] Rodada ${resolvedRound} (L2) retornou 0 matches — caindo para demo.`,
@@ -912,11 +940,12 @@ const fetchAndSerialize = unstable_cache(
       return {
         source: "api",
         fallbackReason: null,
-        matches: result.matches,
+        matches: normalizedMatches,
         assetsEntries: Array.from(result.assets.entries()),
         meta: result.meta,
       };
-    } catch (err) {
+    }
+    catch (err) {
       console.error("[RoundLoader] Falha ao buscar dados reais:", err);
       return {
         source: "demo",
