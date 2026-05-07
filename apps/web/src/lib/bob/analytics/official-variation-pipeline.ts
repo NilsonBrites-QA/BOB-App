@@ -36,6 +36,7 @@ export type OfficialVariationPipelineResult = {
   deliveryState?:
     | "generated_now"
     | "blocked_missing_data"
+    | "blocked_missing_market_snapshot"
     | "blocked_llm_rejected"
     | "blocked_llm_unavailable"
     | "approved_with_warnings"
@@ -45,6 +46,16 @@ export type OfficialVariationPipelineResult = {
 
 function formatCoverage(value: number) {
   return Math.round(value * 1000) / 1000;
+}
+
+function hasValid1x2MarketSnapshot(match: MatchInput) {
+  return match.homeOdd > 1 && match.drawOdd > 1 && match.awayOdd > 1;
+}
+
+function getMatchesWithoutMarketSnapshot(matches: MatchInput[]) {
+  return matches
+    .filter((match) => !hasValid1x2MarketSnapshot(match))
+    .map((match) => match.id);
 }
 
 function buildVariationSnapshot(
@@ -263,7 +274,7 @@ export async function buildOfficialVariationsPipeline(args: {
       sourceSnapshotIds?: string[];
       llmReview?: VariationCognitiveReview | null;
       deliveryState?: OfficialVariationPipelineResult["deliveryState"];
-      logReason?: "insufficient_data" | "missing_round_dataset" | "invalid_round_context";
+      logReason?: "insufficient_data" | "missing_round_dataset" | "missing_market_snapshot" | "invalid_round_context";
     },
   ): Promise<OfficialVariationPipelineResult> => {
     const missing = extra?.missingFeatures ?? ["valid_real_source"];
@@ -271,6 +282,8 @@ export async function buildOfficialVariationsPipeline(args: {
       console.warn(`[BOB/Variacoes] blocked reason=invalid_round_context received_round=${receivedRound ?? "missing"}`);
     } else if (extra?.logReason === "missing_round_dataset") {
       console.warn(`[BOB/Variacoes] blocked reason=missing_round_dataset round=${args.round ?? "unknown"}`);
+    } else if (extra?.logReason === "missing_market_snapshot") {
+      console.warn(`[BOB/Variacoes] blocked reason=missing_market_snapshot missing=odds_1x2 round=${args.round ?? "unknown"} detail=${reason}`);
     } else {
       console.warn(`[BOB/Variacoes] blocked reason=insufficient_data missing=${missing.join(",")} round=${args.round ?? "unknown"} detail=${reason}`);
     }
@@ -323,6 +336,19 @@ export async function buildOfficialVariationsPipeline(args: {
     return block("missing_round_dataset", {
       missingFeatures: ["round_dataset"],
       logReason: "missing_round_dataset",
+    });
+  }
+
+  const matchesWithoutMarketSnapshot = getMatchesWithoutMarketSnapshot(args.matches);
+  if (matchesWithoutMarketSnapshot.length > 0) {
+    console.warn(
+      `[BOB/Variacoes] market_snapshot_incomplete round=${officialRound} source=${source} missing_matches=${matchesWithoutMarketSnapshot.length}/${args.matches.length}`,
+    );
+    return block("missing_market_snapshot", {
+      missingFeatures: ["missing_market_snapshot", "odds_1x2"],
+      sourceSnapshotIds: args.sourceSnapshotIds ?? [],
+      deliveryState: "blocked_missing_market_snapshot",
+      logReason: "missing_market_snapshot",
     });
   }
 
