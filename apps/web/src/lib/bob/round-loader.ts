@@ -594,11 +594,114 @@ export async function resolveOfficialRoundContext(args: {
   };
 }
 
+function hasFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function hasComplete1x2Odds(match: MatchInput) {
+  return match.homeOdd > 1 && match.drawOdd > 1 && match.awayOdd > 1;
+}
+
+function estimateOfficialDatasetQuality(matches: MatchInput[]) {
+  const allMissing = new Set<string>();
+
+  if (matches.length === 0) {
+    return {
+      score: 0,
+      missingFeatures: ["round_dataset"],
+      hasCompleteMarketSnapshot: false,
+    };
+  }
+
+  const scores = matches.map((match) => {
+    const missing: string[] = [];
+
+    if (!hasComplete1x2Odds(match)) missing.push("odds_1x2");
+
+    if (!hasFiniteNumber(match.homePosition) || !hasFiniteNumber(match.awayPosition)) {
+      missing.push("table_context");
+    }
+
+    if (!Array.isArray(match.homeForm) || match.homeForm.length === 0 || !Array.isArray(match.awayForm) || match.awayForm.length === 0) {
+      missing.push("last5");
+    }
+
+    if (!Array.isArray(match.homeForm10) || match.homeForm10.length === 0 || !Array.isArray(match.awayForm10) || match.awayForm10.length === 0) {
+      missing.push("last10");
+    }
+
+    if (!hasFiniteNumber(match.homeHomePoints)) missing.push("home_home_points");
+    if (!hasFiniteNumber(match.awayAwayPoints)) missing.push("away_away_points");
+
+    if (
+      !hasFiniteNumber(match.homeGoalsScored5) ||
+      !hasFiniteNumber(match.homeGoalsConceded5) ||
+      !hasFiniteNumber(match.awayGoalsScored5) ||
+      !hasFiniteNumber(match.awayGoalsConceded5)
+    ) {
+      missing.push("goals_last5");
+    }
+
+    if (!hasFiniteNumber(match.homeAbsenceRate) || !hasFiniteNumber(match.awayAbsenceRate)) {
+      missing.push("absences");
+    }
+
+    if (typeof match.homeBigGameAhead !== "boolean" || typeof match.awayBigGameAhead !== "boolean") {
+      missing.push("rest_calendar");
+    }
+
+    if (!hasFiniteNumber(match.homeMomentum) && !hasFiniteNumber(match.awayMomentum)) {
+      missing.push("momentum");
+    }
+
+    missing.forEach((item) => allMissing.add(item));
+
+    const totalChecks = 10;
+    return Math.max(0, (totalChecks - missing.length) / totalChecks);
+  });
+
+  return {
+    score: scores.reduce((sum, value) => sum + value, 0) / scores.length,
+    missingFeatures: Array.from(allMissing).sort(),
+    hasCompleteMarketSnapshot: matches.every(hasComplete1x2Odds),
+  };
+}
+
+function logOfficialDatasetQuality(args: {
+  round: number;
+  source: "database" | "cache_hit" | "stale_valid";
+  matches: MatchInput[];
+}) {
+  const quality = estimateOfficialDatasetQuality(args.matches);
+  const missing = quality.missingFeatures.length > 0
+    ? quality.missingFeatures.join(",")
+    : "none";
+
+  console.info(
+    `[BOB/RoundData] persisted_dataset_loaded round=${args.round} source=${args.source} matches=${args.matches.length} quality=${quality.score.toFixed(3)} missing=${missing}`,
+  );
+
+  if (!quality.hasCompleteMarketSnapshot) {
+    console.warn(
+      `[BOB/RoundData] missing_market_snapshot round=${args.round} source=${args.source} missing=odds_1x2`,
+    );
+  }
+
+  return quality;
+}
+
 export async function loadOfficialRoundData(context: Extract<OfficialRoundContext, { ok: true }>): Promise<LoadedRoundData> {
   const cachedDataset = await getCachedRoundDataset(context.season, context.round);
   if (cachedDataset.ok && cachedDataset.data && cachedDataset.data.length > 0) {
+    const source = cachedDataset.source === "stale_valid" ? "stale_valid" : "database";
+    logOfficialDatasetQuality({
+      round: context.round,
+      source,
+      matches: cachedDataset.data,
+    });
+
     return {
-      source: cachedDataset.source === "stale_valid" ? "stale_valid" : "database",
+      source,
       fallbackReason: null,
       matches: cachedDataset.data,
       assets: new Map<string, never>(),
@@ -609,6 +712,12 @@ export async function loadOfficialRoundData(context: Extract<OfficialRoundContex
   const providerMatches = await getProviderCachedMatchesForRound(context.season, context.round);
   if (providerMatches.length > 0) {
     const matches = providerMatches.map(fdMatchToInput);
+    logOfficialDatasetQuality({
+      round: context.round,
+      source: "cache_hit",
+      matches,
+    });
+
     return {
       source: "cache_hit",
       fallbackReason: null,
@@ -617,6 +726,10 @@ export async function loadOfficialRoundData(context: Extract<OfficialRoundContex
       meta: buildRoundMeta(context.season, context.round, matches, context.firstMatchAt),
     };
   }
+
+  console.warn(
+    `[BOB/RoundData] missing_persisted_dataset round=${context.round} source=none`,
+  );
 
   return {
     source: "insufficient",
