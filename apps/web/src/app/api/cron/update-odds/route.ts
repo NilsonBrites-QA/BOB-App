@@ -66,63 +66,42 @@ export async function GET(request: NextRequest) {
         const matchOdds = odds.get(`${match.homeTeam}:${match.awayTeam}`);
         
         if (matchOdds) {
+          const options = [
+            { option: "HOME", optionLabel: "Casa", odd: matchOdds.homeOdd ?? 0 },
+            { option: "DRAW", optionLabel: "Empate", odd: matchOdds.drawOdd ?? 0 },
+            { option: "AWAY", optionLabel: "Visitante", odd: matchOdds.awayOdd ?? 0 },
+          ].filter((item) => item.odd > 1);
+
+          if (options.length === 0) {
+            return { matchId: match.id, success: false, reason: "invalid_odds" };
+          }
+
           // Salvar odds no banco
-          await Promise.all([
-            // Home
-            prisma.betOdds.upsert({
-              where: {
-                matchId_market_option: {
+          await prisma.$transaction(
+            options.map((item) =>
+              prisma.betOdds.upsert({
+                where: {
+                  matchId_market_option: {
+                    matchId: match.id,
+                    market: "RESULT_1X2",
+                    option: item.option,
+                  },
+                },
+                update: {
+                  odd: item.odd,
+                  isActive: true,
+                },
+                create: {
                   matchId: match.id,
                   market: "RESULT_1X2",
-                  option: "HOME",
+                  option: item.option,
+                  optionLabel: item.optionLabel,
+                  odd: item.odd,
+                  isActive: true,
                 },
-              },
-              update: { odd: matchOdds.homeOdd || 0 },
-              create: {
-                matchId: match.id,
-                market: "RESULT_1X2",
-                option: "HOME",
-                optionLabel: "Casa",
-                odd: matchOdds.homeOdd || 0,
-              },
-            }),
-            // Draw
-            prisma.betOdds.upsert({
-              where: {
-                matchId_market_option: {
-                  matchId: match.id,
-                  market: "RESULT_1X2",
-                  option: "DRAW",
-                },
-              },
-              update: { odd: matchOdds.drawOdd || 0 },
-              create: {
-                matchId: match.id,
-                market: "RESULT_1X2",
-                option: "DRAW",
-                optionLabel: "Empate",
-                odd: matchOdds.drawOdd || 0,
-              },
-            }),
-            // Away
-            prisma.betOdds.upsert({
-              where: {
-                matchId_market_option: {
-                  matchId: match.id,
-                  market: "RESULT_1X2",
-                  option: "AWAY",
-                },
-              },
-              update: { odd: matchOdds.awayOdd || 0 },
-              create: {
-                matchId: match.id,
-                market: "RESULT_1X2",
-                option: "AWAY",
-                optionLabel: "Visitante",
-                odd: matchOdds.awayOdd || 0,
-              },
-            }),
-          ]);
+              }),
+            ),
+          );
           
           return { matchId: match.id, success: true, source: matchOdds.source };
         }

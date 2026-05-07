@@ -110,15 +110,27 @@ async function fetchFromDatabase(
 
   if (!match?.odds?.length) return null;
 
-  const odd1X2 = match.odds.find((o) => o.market === "RESULT_1X2");
-  if (!odd1X2) return null;
+  const odds1x2 = match.odds.filter(
+    (o) => o.market === "RESULT_1X2" && o.isActive && o.odd > 1,
+  );
+  if (odds1x2.length === 0) return null;
+
+  const homeOdd = odds1x2.find((o) => o.option.toUpperCase() === "HOME")?.odd ?? 0;
+  const drawOdd = odds1x2.find((o) => o.option.toUpperCase() === "DRAW")?.odd ?? 0;
+  const awayOdd = odds1x2.find((o) => o.option.toUpperCase() === "AWAY")?.odd ?? 0;
+
+  if (!(homeOdd > 1 && drawOdd > 1 && awayOdd > 1)) {
+    return null;
+  }
 
   return {
     matchId: match.id,
     homeTeam: match.homeTeam,
     awayTeam: match.awayTeam,
     market: "1X2",
-    homeOdd: odd1X2.odd,
+    homeOdd,
+    drawOdd,
+    awayOdd,
     timestamp: match.updatedAt,
     source: "cache",
   };
