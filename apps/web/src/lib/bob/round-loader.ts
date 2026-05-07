@@ -694,11 +694,33 @@ export async function loadOfficialRoundData(context: Extract<OfficialRoundContex
   const cachedDataset = await getCachedRoundDataset(context.season, context.round);
   if (cachedDataset.ok && cachedDataset.data && cachedDataset.data.length > 0) {
     const source = cachedDataset.source === "stale_valid" ? "stale_valid" : "database";
-    logOfficialDatasetQuality({
+    const quality = logOfficialDatasetQuality({
       round: context.round,
       source,
       matches: cachedDataset.data,
     });
+
+    // betOdds está vazio: tentar buscar odds dos providers externos.
+    // getRoundDataset() chama fetchRoundMatchInputs() e persiste as odds em betOdds (via fix anterior).
+    // Nas próximas chamadas, getCachedRoundDataset() já encontrará as odds salvas.
+    if (!quality.hasCompleteMarketSnapshot) {
+      console.info(
+        `[BOB/RoundData] odds_missing_fetching_providers round=${context.round} source=${source}`,
+      );
+      const gatewayResult = await getRoundDataset(context.season, context.round);
+      if (gatewayResult.ok && gatewayResult.data && gatewayResult.data.length > 0) {
+        const gatewaySource = (
+          gatewayResult.source === "stale_valid" ? "stale_valid" : "database"
+        ) as "database" | "stale_valid";
+        return {
+          source: gatewaySource,
+          fallbackReason: null,
+          matches: gatewayResult.data,
+          assets: new Map<string, never>(),
+          meta: buildRoundMeta(context.season, context.round, gatewayResult.data, context.firstMatchAt),
+        };
+      }
+    }
 
     return {
       source,
