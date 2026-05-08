@@ -386,7 +386,8 @@ function runBeamSearch(
   targetLogOdd: number,
   maxLegs: number,
   width: number,
-  penalized: Set<string>
+  penalized: Set<string>,
+  forbiddenFingerprints: Set<string>
 ): BeamNode {
   const initLogOdd  = anchorLegs.reduce((s, l) => s + l.logOdd,  0);
   const initLogProb = anchorLegs.reduce((s, l) => s + l.logProb, 0);
@@ -416,13 +417,22 @@ function runBeamSearch(
         const newUsed = new Set<string>(beam.usedMatchIds);
         newUsed.add(cand.matchId);
 
-        next.push({
+        const candidateNode: BeamNode = {
           legs:         [...beam.legs, cand],
           logOdd:       beam.logOdd  + cand.logOdd,
           // logProb acumula a penalidade: não afeta a odd real, só o ranking interno
           logProb:      beam.logProb + cand.logProb - penalty,
           usedMatchIds: newUsed,
-        });
+        };
+
+        const fp = candidateNode.legs
+          .map((l) => `${l.matchId}:${l.pickOutcome}`)
+          .sort()
+          .join("|");
+
+        if (forbiddenFingerprints.has(fp)) continue;
+
+        next.push(candidateNode);
       }
     }
 
@@ -581,6 +591,7 @@ export function generateVariations(
   const usedLegKeys = new Set<string>();
 
   const variations: Variation[] = [];
+  const forbiddenFingerprints = new Set<string>();
   const VARIATION_IDS: Array<"V1" | "V2" | "V3" | "V4" | "V5"> = [
     "V1", "V2", "V3", "V4", "V5",
   ];
@@ -641,14 +652,48 @@ export function generateVariations(
     }
 
     // ── Beam Search para pernas complementares ─────────────────────────────────
-    const best = runBeamSearch(
+    let best = runBeamSearch(
       anchorLegs,
       nonAnchorPool,
       logTarget,
       TICKET_MAX_LEGS,
       beamWidth,
-      usedLegKeys
+      usedLegKeys,
+      forbiddenFingerprints,
     );
+
+    let fingerprint = best.legs
+      .map((l) => `${l.matchId}:${l.pickOutcome}`)
+      .sort()
+      .join("|");
+
+    let retryCount = 0;
+    while (
+      variations.some((prev) => {
+        const prevFp = prev.legs
+          .map((l) => `${l.matchId}:${l.pickOutcome}`)
+          .sort()
+          .join("|");
+        return prevFp === fingerprint;
+      }) &&
+      retryCount < 2
+    ) {
+      forbiddenFingerprints.add(fingerprint);
+      retryCount++;
+      best = runBeamSearch(
+        anchorLegs,
+        nonAnchorPool,
+        logTarget,
+        TICKET_MAX_LEGS,
+        beamWidth,
+        usedLegKeys,
+        forbiddenFingerprints,
+      );
+      fingerprint = best.legs
+        .map((l) => `${l.matchId}:${l.pickOutcome}`)
+        .sort()
+        .join("|");
+    }
 
     // ── Verificação: alvo de odd atingido? ────────────────────────────────────
     if (best.logOdd < logTarget) {
@@ -665,11 +710,6 @@ export function generateVariations(
     }
 
     // ── Verificação de disjunção ───────────────────────────────────────────────
-    const fingerprint = best.legs
-      .map((l) => `${l.matchId}:${l.pickOutcome}`)
-      .sort()
-      .join("|");
-
     const isDuplicate = variations.some((prev) => {
       const prevFp = prev.legs
         .map((l) => `${l.matchId}:${l.pickOutcome}`)

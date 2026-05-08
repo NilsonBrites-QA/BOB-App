@@ -34,6 +34,156 @@ const DEFAULT_FORM10 = ["D", "D", "D", "D", "D", "D", "D", "D", "D", "D"] as str
 
 type CachedBetMatch = Prisma.BetMatchGetPayload<{ include: { odds: true } }>;
 
+function clampRate(value: number, min = 0, max = 0.5) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeTeamName(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readNumber(rec: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const raw = rec[key];
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string") {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+function readString(rec: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const raw = rec[key];
+    if (typeof raw === "string" && raw.trim()) return raw;
+  }
+  return null;
+}
+
+function countToRate(value: number | null): number | null {
+  if (value === null) return null;
+  if (value <= 1) return clampRate(value);
+  if (value <= 100) return clampRate(value / 100);
+  return clampRate(value / 11);
+}
+
+function extractAbsenceRateForTeam(content: unknown, teamName: string): number | null {
+  const rec = asRecord(content);
+  if (!rec) return null;
+  const team = normalizeTeamName(teamName);
+
+  const genericTeam = readString(rec, ["team", "teamName", "club", "name"]);
+  if (genericTeam && normalizeTeamName(genericTeam) === team) {
+    const direct = countToRate(
+      readNumber(rec, [
+        "absenceRate",
+        "injuryRate",
+        "absences",
+        "injuries",
+        "injuredCount",
+        "missingPlayers",
+        "unavailablePlayers",
+      ]),
+    );
+    if (direct !== null) return direct;
+  }
+
+  const homeTeam = readString(rec, ["homeTeam", "home_team"]);
+  const awayTeam = readString(rec, ["awayTeam", "away_team"]);
+
+  if (homeTeam && normalizeTeamName(homeTeam) === team) {
+    return countToRate(
+      readNumber(rec, ["homeAbsenceRate", "homeInjuries", "homeAbsences", "homeMissingPlayers"]),
+    );
+  }
+
+  if (awayTeam && normalizeTeamName(awayTeam) === team) {
+    return countToRate(
+      readNumber(rec, ["awayAbsenceRate", "awayInjuries", "awayAbsences", "awayMissingPlayers"]),
+    );
+  }
+
+  return null;
+}
+
+async function getAbsenceRates(homeTeam: string, awayTeam: string, matchDate: Date) {
+  const lookbackStart = new Date(matchDate.getTime() - 7 * DAY_MS);
+  const events = await prisma.memoryEvent.findMany({
+    where: {
+      createdAt: { gte: lookbackStart, lte: matchDate },
+      type: { in: ["injury", "lineup"] },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+    select: { content: true },
+  });
+
+  const homeRate =
+    events
+      .map((evt) => extractAbsenceRateForTeam(evt.content, homeTeam))
+      .find((v) => v !== null) ?? 0.08;
+
+  const awayRate =
+    events
+      .map((evt) => extractAbsenceRateForTeam(evt.content, awayTeam))
+      .find((v) => v !== null) ?? 0.08;
+
+  return {
+    homeAbsenceRate: clampRate(homeRate),
+    awayAbsenceRate: clampRate(awayRate),
+  };
+}
+
+async function hasBigGameAhead(teamName: string, afterDate: Date) {
+  const horizon = new Date(afterDate.getTime() + 7 * DAY_MS);
+  const nextMatch = await prisma.betMatch.findFirst({
+    where: {
+      OR: [{ homeTeam: teamName }, { awayTeam: teamName }],
+      scheduledAt: { gt: afterDate, lte: horizon },
+      status: { in: ["SCHEDULED", "LIVE", "POSTPONED"] },
+    },
+    orderBy: { scheduledAt: "asc" },
+    select: { competition: true, scheduledAt: true },
+  });
+
+  if (!nextMatch) return false;
+
+  const restMs = nextMatch.scheduledAt.getTime() - afterDate.getTime();
+  const hasTightTurnaround = restMs > 0 && restMs <= 72 * 60 * 60 * 1000;
+  const cupLikeCompetition = /libert|sul[- ]?americana|copa|recopa|champions/i.test(
+    nextMatch.competition,
+  );
+
+  return hasTightTurnaround || cupLikeCompetition;
+}
+
+function detectOddDrop(match: CachedBetMatch, option: "HOME" | "DRAW" | "AWAY") {
+  const currentOdd = activeOdd(match, option);
+  const baseline =
+    match.odds.find(
+      (odd) =>
+        odd.market === "RESULT_1X2" &&
+        odd.option.toUpperCase() === option &&
+        odd.initialOdd != null &&
+        odd.initialOdd > 1,
+    )?.initialOdd ?? null;
+
+  if (!baseline || currentOdd <= 1) return false;
+  return currentOdd < baseline * 0.9;
+}
+
 export async function recordMemoryEvent(type: string, content: Record<string, unknown>, source?: string) {
   try {
     await prisma.memoryEvent.create({
@@ -95,7 +245,17 @@ function activeOdd(match: CachedBetMatch, option: "HOME" | "DRAW" | "AWAY") {
   )?.odd ?? 0;
 }
 
-function cachedMatchToInput(match: CachedBetMatch): MatchInput {
+async function cachedMatchToInput(match: CachedBetMatch): Promise<MatchInput> {
+  const { homeAbsenceRate, awayAbsenceRate } = await getAbsenceRates(
+    match.homeTeam,
+    match.awayTeam,
+    match.scheduledAt,
+  );
+  const [homeBigGameAhead, awayBigGameAhead] = await Promise.all([
+    hasBigGameAhead(match.homeTeam, match.scheduledAt),
+    hasBigGameAhead(match.awayTeam, match.scheduledAt),
+  ]);
+
   return {
     id: match.externalId || match.id,
     match: `${match.homeTeam} x ${match.awayTeam}`,
@@ -117,16 +277,16 @@ function cachedMatchToInput(match: CachedBetMatch): MatchInput {
     awayGoalsScored5: 5,
     awayGoalsConceded5: 6,
     h2hHomeWinRate: 0.5,
-    homeAbsenceRate: 0.08,
-    awayAbsenceRate: 0.08,
-    homeBigGameAhead: false,
-    awayBigGameAhead: false,
+    homeAbsenceRate,
+    awayAbsenceRate,
+    homeBigGameAhead,
+    awayBigGameAhead,
     homeMomentum: 0,
     awayMomentum: 0,
     homeOdd: activeOdd(match, "HOME"),
     drawOdd: activeOdd(match, "DRAW"),
     awayOdd: activeOdd(match, "AWAY"),
-    homeOddDropped: false,
+    homeOddDropped: detectOddDrop(match, "HOME"),
     scheduledAt: match.scheduledAt.toISOString(),
     status: match.status,
     homeCrest: match.homeCrest,
@@ -168,7 +328,7 @@ export async function getCachedRoundDataset(
 
   return {
     ok: true,
-    data: cachedMatches.map(cachedMatchToInput),
+    data: await Promise.all(cachedMatches.map(cachedMatchToInput)),
     source: "database",
     stale: false,
     confidencePenalty: 0,
@@ -279,7 +439,7 @@ export async function getRoundDataset(
     orderBy: { scheduledAt: "asc" },
     include: { odds: true },
   });
-  const cachedMatchInputs = cachedMatches.map(cachedMatchToInput);
+  const cachedMatchInputs = await Promise.all(cachedMatches.map(cachedMatchToInput));
   const hasCompleteMarketSnapshot =
     cachedMatchInputs.length > 0 &&
     cachedMatchInputs.every((m) => m.homeOdd > 1 && m.drawOdd > 1 && m.awayOdd > 1);
@@ -352,17 +512,41 @@ export async function getRoundDataset(
           prisma.betOdds.upsert({
             where: { matchId_market_option: { matchId, market: "RESULT_1X2", option: "HOME" } },
             update: { odd: m.homeOdd, isActive: true },
-            create: { matchId, market: "RESULT_1X2", option: "HOME", optionLabel: "Casa", odd: m.homeOdd, isActive: true },
+            create: {
+              matchId,
+              market: "RESULT_1X2",
+              option: "HOME",
+              optionLabel: "Casa",
+              odd: m.homeOdd,
+              initialOdd: m.homeOdd,
+              isActive: true,
+            },
           }),
           prisma.betOdds.upsert({
             where: { matchId_market_option: { matchId, market: "RESULT_1X2", option: "DRAW" } },
             update: { odd: m.drawOdd, isActive: true },
-            create: { matchId, market: "RESULT_1X2", option: "DRAW", optionLabel: "Empate", odd: m.drawOdd, isActive: true },
+            create: {
+              matchId,
+              market: "RESULT_1X2",
+              option: "DRAW",
+              optionLabel: "Empate",
+              odd: m.drawOdd,
+              initialOdd: m.drawOdd,
+              isActive: true,
+            },
           }),
           prisma.betOdds.upsert({
             where: { matchId_market_option: { matchId, market: "RESULT_1X2", option: "AWAY" } },
             update: { odd: m.awayOdd, isActive: true },
-            create: { matchId, market: "RESULT_1X2", option: "AWAY", optionLabel: "Visitante", odd: m.awayOdd, isActive: true },
+            create: {
+              matchId,
+              market: "RESULT_1X2",
+              option: "AWAY",
+              optionLabel: "Visitante",
+              odd: m.awayOdd,
+              initialOdd: m.awayOdd,
+              isActive: true,
+            },
           }),
         ];
       });

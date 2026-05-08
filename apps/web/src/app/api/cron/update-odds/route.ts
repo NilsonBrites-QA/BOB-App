@@ -97,6 +97,7 @@ export async function GET(request: NextRequest) {
                   option: item.option,
                   optionLabel: item.optionLabel,
                   odd: item.odd,
+                  initialOdd: item.odd,
                   isActive: true,
                 },
               }),
