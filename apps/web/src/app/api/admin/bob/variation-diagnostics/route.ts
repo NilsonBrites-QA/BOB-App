@@ -170,7 +170,20 @@ export async function GET(request: Request) {
   const betMatchesForRound = await prisma.betMatch.findMany({
     where: { season, round },
     orderBy: { scheduledAt: "asc" },
-    include: { odds: true },
+    include: {
+      odds: {
+        select: {
+          market: true,
+          option: true,
+          optionLabel: true,
+          odd: true,
+          isActive: true,
+          source: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      },
+    },
   });
 
   const matchesWithSnapshot = betMatchesForRound.filter((m) => hasComplete1x2Odds(m.odds));

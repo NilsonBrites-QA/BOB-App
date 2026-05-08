@@ -32,7 +32,18 @@ const ODDS_ACTIVE_WINDOW_MS = 48 * 60 * 60 * 1000;
 const DEFAULT_FORM5 = ["D", "D", "D", "D", "D"] as string[];
 const DEFAULT_FORM10 = ["D", "D", "D", "D", "D", "D", "D", "D", "D", "D"] as string[];
 
-type CachedBetMatch = Prisma.BetMatchGetPayload<{ include: { odds: true } }>;
+const BET_ODDS_SAFE_SELECT = {
+  market: true,
+  option: true,
+  optionLabel: true,
+  odd: true,
+  isActive: true,
+  source: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+type CachedBetMatch = Prisma.BetMatchGetPayload<{ include: { odds: { select: typeof BET_ODDS_SAFE_SELECT } } }>;
 
 function clampRate(value: number, min = 0, max = 0.5) {
   return Math.min(max, Math.max(min, value));
@@ -170,18 +181,11 @@ async function hasBigGameAhead(teamName: string, afterDate: Date) {
 }
 
 function detectOddDrop(match: CachedBetMatch, option: "HOME" | "DRAW" | "AWAY") {
-  const currentOdd = activeOdd(match, option);
-  const baseline =
-    match.odds.find(
-      (odd) =>
-        odd.market === "RESULT_1X2" &&
-        odd.option.toUpperCase() === option &&
-        odd.initialOdd != null &&
-        odd.initialOdd > 1,
-    )?.initialOdd ?? null;
-
-  if (!baseline || currentOdd <= 1) return false;
-  return currentOdd < baseline * 0.9;
+  // Compatibilidade: em ambientes onde migration 014 ainda não foi aplicada,
+  // a coluna initial_odd pode não existir e a leitura deve ser tolerante.
+  void match;
+  void option;
+  return false;
 }
 
 export async function recordMemoryEvent(type: string, content: Record<string, unknown>, source?: string) {
@@ -312,7 +316,7 @@ export async function getCachedRoundDataset(
   const cachedMatches = await prisma.betMatch.findMany({
     where: { season, round },
     orderBy: { scheduledAt: "asc" },
-    include: { odds: true },
+    include: { odds: { select: BET_ODDS_SAFE_SELECT } },
   });
 
   if (cachedMatches.length === 0) {
@@ -342,7 +346,7 @@ export async function getMarketOdds(
 ): Promise<DataGatewayResult<GatewayOdds>> {
   const match = await prisma.betMatch.findUnique({
     where: { id: fixtureId },
-    include: { odds: true },
+    include: { odds: { select: BET_ODDS_SAFE_SELECT } },
   });
 
   if (!match) {
@@ -437,7 +441,7 @@ export async function getRoundDataset(
   const cachedMatches = await prisma.betMatch.findMany({
     where: { season, round },
     orderBy: { scheduledAt: "asc" },
-    include: { odds: true },
+    include: { odds: { select: BET_ODDS_SAFE_SELECT } },
   });
   const cachedMatchInputs = await Promise.all(cachedMatches.map(cachedMatchToInput));
   const hasCompleteMarketSnapshot =
@@ -518,7 +522,6 @@ export async function getRoundDataset(
               option: "HOME",
               optionLabel: "Casa",
               odd: m.homeOdd,
-              initialOdd: m.homeOdd,
               isActive: true,
             },
           }),
@@ -531,7 +534,6 @@ export async function getRoundDataset(
               option: "DRAW",
               optionLabel: "Empate",
               odd: m.drawOdd,
-              initialOdd: m.drawOdd,
               isActive: true,
             },
           }),
@@ -544,7 +546,6 @@ export async function getRoundDataset(
               option: "AWAY",
               optionLabel: "Visitante",
               odd: m.awayOdd,
-              initialOdd: m.awayOdd,
               isActive: true,
             },
           }),

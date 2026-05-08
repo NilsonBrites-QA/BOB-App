@@ -104,7 +104,20 @@ async function fetchFromDatabase(
         { awayTeam: { contains: awayTeam, mode: "insensitive" } },
       ],
     },
-    include: { odds: true },
+    include: {
+      odds: {
+        select: {
+          market: true,
+          option: true,
+          optionLabel: true,
+          odd: true,
+          isActive: true,
+          source: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      },
+    },
     orderBy: { updatedAt: "desc" },
   });
 
