@@ -21,6 +21,13 @@ import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-va
 // Variações congeladas NUNCA mudam entre requests.
 export const revalidate = 300;
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  return Promise.race<T>([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
+  ]);
+}
+
 // ─── Helper: converter beam-search variation para formato legado ─────────────
 
 function convertBeamToLegacy(beamVar: BeamVariation): Variation {
@@ -109,14 +116,24 @@ export default async function DashboardPage({
 
   let roundData;
   try {
-    roundData = await loadRoundData(paramSeason, paramRound);
+    roundData = await withTimeout(
+      loadRoundData(paramSeason, paramRound),
+      4500,
+      {
+        source: "demo" as const,
+        fallbackReason: "provider-fallback" as const,
+        matches: demoMatches,
+        assets: new Map<string, never>(),
+        meta: null,
+      },
+    );
   } catch (err) {
     console.error("[Dashboard] falha em loadRoundData, usando fallback demo:", err);
     roundData = {
       source: "demo" as const,
       fallbackReason: "provider-fallback" as const,
       matches: demoMatches,
-      assetsEntries: [] as Array<[string, string]>,
+      assets: new Map<string, never>(),
       meta: null,
     };
   }
@@ -124,10 +141,14 @@ export default async function DashboardPage({
   // ── CORREÇÃO CRÍTICA: Carregar escudos do banco (DB-first, PRD §9) ──
   // Substitui o antigo crestMap que dependia de URLs vindas da API externa.
   // Uma única query carrega TODOS os times. Zero chamadas externas.
-  const badgeMap = await loadAllBadgesFromDb().catch((err) => {
-    console.error("[Dashboard] falha em loadAllBadgesFromDb:", err);
-    return new Map<string, string>();
-  });
+  const badgeMap = await withTimeout(
+    loadAllBadgesFromDb().catch((err) => {
+      console.error("[Dashboard] falha em loadAllBadgesFromDb:", err);
+      return new Map<string, string>();
+    }),
+    2500,
+    new Map<string, string>(),
+  );
 
   // ── CORREÇÃO CRÍTICA: Verificar se há variações CONGELADAS no banco ──
   // Antes: scoreMatch() + generateVariations() rodava em todo SSR, gerando
@@ -157,7 +178,11 @@ export default async function DashboardPage({
   }
 
   const dbRound = effectiveRound > 0
-    ? await loadDeliveredRound(paramSeason, effectiveRound).catch(() => null)
+    ? await withTimeout(
+        loadDeliveredRound(paramSeason, effectiveRound).catch(() => null),
+        2500,
+        null,
+      )
     : null;
 
   // ── Caminho 1: Variações congeladas do banco (IDEAL — determinístico) ──
@@ -230,13 +255,16 @@ export default async function DashboardPage({
     console.log(`[Dashboard] Sem rodada congelada — gerando variações on-the-fly (não oficial)`);
 
     const filteredMatches = roundData.matches.filter((match) => !excludedIds.has(match.id));
-    const pipeline = await buildOfficialVariationsPipeline({
-      matches: filteredMatches,
-      source: roundData.source,
-      round: effectiveRound,
-      sourceSnapshotIds: [`dashboard:${paramSeason}:${effectiveRound}:${roundData.source}`],
-    });
-    if (pipeline.ok && pipeline.variationsResult) {
+    const pipeline = await Promise.race([
+      buildOfficialVariationsPipeline({
+        matches: filteredMatches,
+        source: roundData.source,
+        round: effectiveRound,
+        sourceSnapshotIds: [`dashboard:${paramSeason}:${effectiveRound}:${roundData.source}`],
+      }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+    ]);
+    if (pipeline && pipeline.ok && pipeline.variationsResult) {
       variations = (pipeline.variationsResult.variations as BeamVariation[]).map(convertBeamToLegacy);
       anchorsForDisplay = pipeline.anchors.map((a) => ({
         ...a,
@@ -245,7 +273,8 @@ export default async function DashboardPage({
         awayCrest: resolveBadge(a.awayTeam, badgeMap),
       }));
     } else {
-      console.info(`[Dashboard] Motor oficial bloqueado: ${pipeline.reason ?? pipeline.status}`);
+      const why = pipeline ? `${pipeline.reason ?? pipeline.status}` : "timeout";
+      console.info(`[Dashboard] Motor oficial bloqueado: ${why}`);
       variations = [];
       anchorsForDisplay = [];
     }
