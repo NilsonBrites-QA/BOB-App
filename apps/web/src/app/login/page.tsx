@@ -43,7 +43,7 @@ export default function LoginPage() {
     }
 
     // Redireciona para /auth/confirm que valida whitelist
-    window.location.assign("/auth/confirm?next=/dashboard");
+    window.location.assign("/dashboard");
   }
 
   return (

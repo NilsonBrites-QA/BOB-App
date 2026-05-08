@@ -10,7 +10,10 @@ const PUBLIC_PATHS = [
   "/auth/callback",
   "/auth/confirm",
   "/auth/error",
+  "/auth/recover",   // página de recuperação de senha — acessível sem sessão
   "/api/",           // todas as rotas de API — autenticação gerenciada por cada route handler
+  "/manifest.json",  // PWA manifest — deve ser acessível sem sessão
+  "/sw.js",          // Service Worker — deve ser acessível sem sessão
 ];
 
 function isPublic(pathname: string) {

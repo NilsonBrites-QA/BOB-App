@@ -103,9 +103,14 @@ function formatFirstMatch(isoDate: string | null): { label: string; cutoff: stri
       weekday: "short", day: "numeric", month: "short",
       hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo",
     };
-    const label = d.toLocaleString("pt-BR", opts).replace(",", " ·");
+    const fmt = new Intl.DateTimeFormat("pt-BR", opts);
+    const toParts = (date: Date) => {
+      const p = Object.fromEntries(fmt.formatToParts(date).map((x) => [x.type, x.value]));
+      return `${p.weekday} ${p.day} ${p.month} · ${p.hour}:${p.minute}`;
+    };
+    const label = toParts(d);
     const cutoffDate = new Date(d.getTime() - 60 * 60 * 1000);
-    const cutoff = cutoffDate.toLocaleString("pt-BR", opts).replace(",", " ·");
+    const cutoff = toParts(cutoffDate);
     return { label, cutoff };
   } catch {
     return { label: DEMO_FIRST_MATCH, cutoff: DEMO_CUTOFF };
@@ -530,7 +535,7 @@ export default async function VariacoesPage({
   const effectiveRoundForDb = roundContext.round;
   const dbRound = await loadDeliveredRound(roundContext.season, effectiveRoundForDb).catch(() => null);
 
-  if (dbRound && dbRound.status === "DELIVERED" && dbRound.variations.length > 0) {
+  if (dbRound && dbRound.status !== "SUPERSEDED" && dbRound.variations.length > 0) {
     return await renderFromDb({
       season: roundContext.season,
       dbRound: dbRound as DbRound,
