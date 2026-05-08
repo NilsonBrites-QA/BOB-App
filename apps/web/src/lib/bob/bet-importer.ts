@@ -10,8 +10,8 @@
  */
 
 import { prisma } from "@/lib/db";
-import { getGatewayFootballDataCompetitionMatches } from "@/lib/data/sports-data-gateway";
-import type { FDMatch } from "@/lib/data/sports-data-gateway";
+import { fdFetch } from "@/lib/bob/connectors/football-data";
+import type { FDMatch, FDMatchesResponse } from "@/lib/bob/connectors/football-data";
 import { BetMatchStatus } from "@/generated/prisma";
 
 // ─── Mapeamento de status ──────────────────────────────────────────────────────
@@ -52,8 +52,10 @@ async function importCompetition(
   let matches: FDMatch[];
 
   try {
-    const response = await getGatewayFootballDataCompetitionMatches(competitionCode, season);
-    if (!response) throw new Error("insufficient:competition-matches");
+    const response = await fdFetch<FDMatchesResponse>(
+      `/competitions/${competitionCode}/matches?season=${season}`,
+      3600 // cache 1h
+    );
     matches = response.matches ?? [];
   } catch (err) {
     return {

@@ -429,8 +429,7 @@ export function scoreMatch(input: MatchInput): ScoredMatch {
   if (stadiumWin < 0.30) reasons.push(`Atenção: mandante com aproveitamento baixo em casa (${Math.round(stadiumWin * 100)}%)`);
 
   // ── Score final ───────────────────────────────────────────────────────────
-  const safeTotal = Number.isFinite(total) ? total : 0;
-  const rawScore = Math.round(Math.min(100, Math.max(0, safeTotal)));
+  const rawScore = Math.round(Math.min(100, Math.max(0, total)));
 
   // RN05: Clássico regional → cap no score (imprevisibilidade estrutural)
   const isClassico = input.isClassico === true;
@@ -460,7 +459,7 @@ export function scoreMatch(input: MatchInput): ScoredMatch {
   if (input.awayOdd > 1 && input.awayOdd <= 1.70) suggestedResult = "2";
 
   // RN10: Value Edge — score do algoritmo deve superar a probabilidade implícita do mercado
-  const algoProb = Number.isFinite(score) ? score / 100 : 0;
+  const algoProb = score / 100;
   const marketImplied = input.homeOdd > 0 ? 1 / input.homeOdd : 0;
   const hasValueEdge = algoProb > marketImplied;
 

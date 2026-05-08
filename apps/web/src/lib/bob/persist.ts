@@ -13,7 +13,6 @@
  */
 
 import { prisma } from "@/lib/db";
-import type { Prisma } from "@/generated/prisma";
 import type { ScoredMatch } from "@/lib/bob/engine/scoring";
 import type { Variation }   from "@/lib/bob/types";
 import type { Variation as BeamVariation } from "@/lib/bob/engine/beam-search";
@@ -25,8 +24,7 @@ export type SaveRoundInput = {
   round: number;
   anchors: ScoredMatch[];
   variations: Variation[] | BeamVariation[]; // Aceita ambos os formatos
-  source: "api" | "database" | "db" | "cache" | "cache_hit" | "persisted_snapshot" | "stale_valid" | "stale";
-  officialSnapshot?: Record<string, unknown>;
+  source: "api" | "football-data" | "api-football" | "demo";
 };
 
 /**
@@ -168,7 +166,7 @@ export async function saveRound(input: SaveRoundInput): Promise<SaveRoundResult>
         status:          "READY",
         version:         nextVersion,
         previousRoundId: lastVersion?.id ?? null,
-        notes:           `Snapshot oficial ${input.source}`,
+        notes:           input.source === "demo" ? "Gerado com dados de demonstração" : undefined,
       },
     });
 
@@ -218,19 +216,6 @@ export async function saveRound(input: SaveRoundInput): Promise<SaveRoundResult>
           },
         });
       }
-    }
-
-    if (input.officialSnapshot) {
-      await tx.memoryEvent.create({
-        data: {
-          roundId: round.id,
-          layer: "DECISIONS",
-          type: "OFFICIAL_VARIATIONS_SNAPSHOT",
-          content: input.officialSnapshot as Prisma.InputJsonValue,
-          source: input.source,
-          relevanceScore: 1,
-        },
-      });
     }
 
     return round;

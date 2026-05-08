@@ -7,7 +7,7 @@
  * Pipeline:
  *   1. Detecta rodada atual via getCurrentRound()
  *   2. fetchRoundMatchInputs() — orquestrador multi-API
- *   3. Feature Builder → Match Intelligence → Anchor Score → Beam Search
+ *   3. scoreMatch() → selectAnchors() → generateVariations()
  *   4. Persiste via saveRound() (idempotente)
  *   5. Revalida cache do dashboard
  *
@@ -16,11 +16,10 @@
 
 import { NextResponse }        from "next/server";
 import { revalidatePath }      from "next/cache";
+import { fetchRoundMatchInputs, getCurrentRound } from "@/lib/bob/connectors";
+import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
 import { saveRound }            from "@/lib/bob/persist";
-import { loadRoundData } from "@/lib/bob/round-loader";
-import { getRoundDataset } from "@/lib/data/data-gateway";
-import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-variation-pipeline";
-import { isRealDataSource } from "@/lib/bob/data/source-policy";
+import { enrichMatchContext }   from "@/lib/bob/ai/cognitive-analyst";
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
@@ -39,17 +38,27 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const forceRound = searchParams.get("round") ? parseInt(searchParams.get("round")!, 10) : null;
 
-  const roundData = await loadRoundData(season, forceRound);
-  const round = roundData.meta?.round ?? forceRound ?? null;
+  // 1. Detectar rodada atual (ou usar override)
+  let round: number | null = forceRound;
+  if (!round) {
+    try {
+      round = await getCurrentRound();
+    } catch (err) {
+      console.error("[BOB/pre-round] Falha ao detectar rodada:", err);
+    }
+  }
+
+  if (!round) {
+    return NextResponse.json({
+      ok:      false,
+      message: "Sem rodada detectada — possível entressafra ou FOOTBALL_DATA_TOKEN ausente.",
+    });
+  }
 
   console.info(`[BOB/pre-round] Processando T-48h · rodada ${round}/${season}`);
 
-  if (!round || !isRealDataSource(roundData.source)) {
-    return NextResponse.json({ ok: false, message: "Fonte insuficiente para geração oficial.", round, season, source: roundData.source });
-  }
-
-  const dataset = await getRoundDataset(season, round);
-  const matchInputs = dataset.data ?? roundData.matches;
+  // 2. Buscar dados via orquestrador multi-API
+  const { matches: matchInputs, meta } = await fetchRoundMatchInputs(season, round);
 
   if (matchInputs.length === 0) {
     return NextResponse.json({
@@ -60,17 +69,30 @@ export async function GET(request: Request) {
     });
   }
 
-  const pipeline = await buildOfficialVariationsPipeline({
-    matches: matchInputs,
-    source: dataset.ok ? dataset.source : roundData.source,
-    round,
-    sourceSnapshotIds: [`round:${season}:${round}:${dataset.ok ? dataset.source : roundData.source}`],
-  });
-  if (!pipeline.ok || !pipeline.variationsResult) {
-    return NextResponse.json({ ok: false, message: pipeline.reason ?? "Pipeline oficial bloqueou geração.", round, season });
+  // 3. Motor de scoring + enriquecimento contextual (zona cinza) + variações
+  const scored     = matchInputs.map(scoreMatch);
+
+  // Zona cinza: score 50–69 — enriquecer com Claude para ajuste contextual
+  const hasClaudeKey = !!process.env.ANTHROPIC_API_KEY;
+  if (hasClaudeKey) {
+    const grayZone = scored.filter((m) => m.score >= 50 && m.score < 70);
+    if (grayZone.length > 0) {
+      await Promise.allSettled(
+        grayZone.map(async (m) => {
+          const enrichment = await enrichMatchContext(m.homeTeam, m.awayTeam, m.score, m.reasons);
+          m.score = enrichment.adjustedScore;
+        })
+      );
+    }
   }
-  const anchors = pipeline.anchors;
-  const variations = pipeline.variationsResult.variations;
+
+  const anchors    = selectAnchorsFromScored(scored);
+  const anchorIds  = new Set(anchors.map((a) => a.id));
+  const pool       = scored.filter((m) => !anchorIds.has(m.id));
+  const variationsResult = generateVariations({ anchors, pool });
+  
+  // Extrair array de variações do resultado (compatibilidade com beam-search)
+  const variations = variationsResult.variations || [];
 
   // 4. Persistir rascunho (idempotente)
   const { roundDbId } = await saveRound({
@@ -78,8 +100,7 @@ export async function GET(request: Request) {
     round,
     anchors,
     variations,
-    source: "api",
-    officialSnapshot: pipeline.snapshot ?? undefined,
+    source: meta.source,
   });
 
   // 5. Revalidar cache do dashboard

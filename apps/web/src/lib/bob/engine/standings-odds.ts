@@ -11,7 +11,7 @@
  * Atualiza automaticamente com a tabela da API (standings).
  */
 
-import type { FDStandingEntry } from "@/lib/data/sports-data-gateway";
+import type { FDStandingEntry } from "@/lib/bob/connectors/football-data";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 

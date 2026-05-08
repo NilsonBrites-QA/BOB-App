@@ -7,14 +7,6 @@ import { NextResponse } from "next/server";
 import { fetchOddsBatch } from "@/lib/odds/odds-service";
 import { prisma } from "@/lib/db";
 
-type LiveOddsResponseEntry = {
-  home?: number;
-  draw?: number;
-  away?: number;
-  source: string;
-  updatedAt: Date;
-};
-
 export async function GET() {
   try {
     // Buscar partidas dos próximos 7 dias
@@ -50,7 +42,7 @@ export async function GET() {
     );
 
     // Formatar resposta
-    const odds: Record<string, LiveOddsResponseEntry> = {};
+    const odds: Record<string, any> = {};
     matches.forEach((match) => {
       const matchOdds = oddsMap.get(`${match.homeTeam}:${match.awayTeam}`);
       if (matchOdds) {

@@ -15,9 +15,9 @@
 
 import { NextResponse }   from "next/server";
 import { revalidatePath } from "next/cache";
-import { getGatewayCurrentRound, getGatewayRoundDataset } from "@/lib/data/sports-data-gateway";
+import { fetchRoundMatchInputs, getCurrentRound } from "@/lib/bob/connectors";
+import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
 import { saveRound }            from "@/lib/bob/persist";
-import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-variation-pipeline";
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
   let round = forceRound;
   if (!round) {
     try {
-      round = await getGatewayCurrentRound();
+      round = await getCurrentRound();
     } catch (err) {
       console.error("[BOB/lineup-check] Falha ao detectar rodada:", err);
     }
@@ -55,8 +55,7 @@ export async function GET(request: Request) {
   console.info(`[BOB/lineup-check] Verificação T-1h · rodada ${round}/${season}`);
 
   // 2. Buscar dados frescos via orquestrador
-  const dataset = await getGatewayRoundDataset(season, round);
-  const matchInputs = dataset?.matches ?? [];
+  const { matches: matchInputs, meta } = await fetchRoundMatchInputs(season, round);
 
   if (matchInputs.length === 0) {
     return NextResponse.json({
@@ -67,25 +66,23 @@ export async function GET(request: Request) {
     });
   }
 
-  // 3. Re-rodar motor oficial com dados frescos
-  const pipeline = await buildOfficialVariationsPipeline({
-    matches: matchInputs,
-    source: "api",
-    round,
-    sourceSnapshotIds: [`lineup-check:${season}:${round}:gateway`],
-  });
-  if (!pipeline.ok || !pipeline.variationsResult) {
-    return NextResponse.json({ ok: false, message: pipeline.reason ?? "Pipeline oficial bloqueou geração.", status: pipeline.status, round, season });
-  }
+  // 3. Re-rodar motor com dados frescos
+  const scored     = matchInputs.map(scoreMatch);
+  const anchors    = selectAnchorsFromScored(scored);
+  const anchorIds  = new Set(anchors.map((a) => a.id));
+  const pool       = scored.filter((m) => !anchorIds.has(m.id));
+  const variationsResult = generateVariations({ anchors, pool });
+  
+  // Extrair array de variações do resultado (compatibilidade com beam-search)
+  const variations = variationsResult.variations || [];
 
   // 4. Upsert no DB (substitui rascunho T-48h)
   const { roundDbId } = await saveRound({
     season,
     round,
-    anchors: pipeline.anchors,
-    variations: pipeline.variationsResult.variations,
-    source: "api",
-    officialSnapshot: pipeline.snapshot ?? undefined,
+    anchors,
+    variations,
+    source: meta.source,
   });
 
   // 5. Revalidar dashboard
@@ -98,7 +95,7 @@ export async function GET(request: Request) {
     round,
     roundDbId,
     matchCount:    matchInputs.length,
-    anchorCount:   pipeline.anchors.length,
+    anchorCount:   anchors.length,
     timestamp:     now.toISOString(),
   });
 }

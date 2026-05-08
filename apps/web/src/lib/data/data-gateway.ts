@@ -212,7 +212,21 @@ export async function recordApiEvent(args: {
   fallbackUsed: boolean;
   recordCount?: number;
 }) {
-  const normalizedSource = args.provider.split(":")[0] || args.provider;
+  const providerKey = (args.provider.split(":")[0] || args.provider).toLowerCase();
+  const providerAlias: Record<string, "thesportsdb" | "football-data" | "api-football" | "oddspapi"> = {
+    "thesportsdb": "thesportsdb",
+    "football-data": "football-data",
+    "football_data": "football-data",
+    "api-football": "api-football",
+    "api_football": "api-football",
+    "oddspapi": "oddspapi",
+    "the-odds-api": "oddspapi",
+    "theoddsapi": "oddspapi",
+    "theodds-api": "oddspapi",
+    "open-meteo": "api-football",
+    "openmeteo": "api-football",
+  };
+  const normalizedSource = providerAlias[providerKey] ?? "football-data";
   try {
     await prisma.apiSyncLog.create({
       data: {
@@ -466,7 +480,15 @@ export async function getRoundDataset(
   }
 
   try {
-    const result = await fetchRoundMatchInputs(season, round);
+    const result = await Promise.race([
+      fetchRoundMatchInputs(season, round),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000)),
+    ]);
+
+    if (!result) {
+      throw new Error("provider-timeout");
+    }
+
     await recordApiEvent({
       provider: "football-data",
       endpoint,

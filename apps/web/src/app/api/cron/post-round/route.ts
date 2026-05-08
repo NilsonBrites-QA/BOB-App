@@ -15,7 +15,8 @@
 
 import { NextResponse }   from "next/server";
 import { revalidatePath } from "next/cache";
-import { getGatewayMatchesByMatchday, type FDMatch } from "@/lib/data/sports-data-gateway";
+import { getMatchesByMatchday } from "@/lib/bob/connectors/football-data";
+import type { FDMatch } from "@/lib/bob/connectors/football-data";
 import { markPickResult } from "@/lib/bob/persist";
 import { prisma }         from "@/lib/db";
 import { selfReflect }    from "@/lib/bob/ai/self-reflection";
@@ -90,7 +91,7 @@ export async function GET(request: Request) {
   // 1. Buscar jogos da rodada via football-data.org
   let matchesRes;
   try {
-    matchesRes = await getGatewayMatchesByMatchday(round);
+    matchesRes = await getMatchesByMatchday(round);
   } catch {
     return NextResponse.json({
       ok:      false,
@@ -100,7 +101,7 @@ export async function GET(request: Request) {
     });
   }
 
-  const allMatches = matchesRes?.matches ?? [];
+  const allMatches = matchesRes.matches;
   const finishedMatches = allMatches.filter((m) => m.status === "FINISHED");
 
   if (finishedMatches.length === 0) {

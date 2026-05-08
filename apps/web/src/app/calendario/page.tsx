@@ -2,10 +2,11 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
-  getGatewayCurrentRound,
-  getGatewayMatchesByMatchday,
+  getStandings,
+  getMatchesByMatchday,
+  getCurrentMatchday,
   type FDMatch,
-} from "@/lib/data/sports-data-gateway";
+} from "@/lib/bob/connectors/football-data";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
 import { TeamShield } from "@/components/team-shield";
@@ -106,7 +107,7 @@ export default async function CalendarioPage({
   let fetchError = false;
 
   try {
-    currentMatchday = await getGatewayCurrentRound() ?? 1;
+    currentMatchday = await getCurrentMatchday();
   } catch {
     fetchError = true;
     currentMatchday = 1;
@@ -124,8 +125,8 @@ export default async function CalendarioPage({
   // ── Buscar jogos da rodada ─────────────────────────────────────────────
   let matches: FDMatch[] = [];
   try {
-    const res = await getGatewayMatchesByMatchday(requestedRound);
-    matches = res?.matches ?? [];
+    const res = await getMatchesByMatchday(requestedRound);
+    matches = res.matches ?? [];
   } catch {
     fetchError = true;
   }

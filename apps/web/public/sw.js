@@ -16,6 +16,8 @@
 
 const CACHE_NAME    = "bob-shell-v1";
 const SHELL_ASSETS  = [
+  "/dashboard",
+  "/investimento-retorno",
   "/manifest.json",
   "/icons/icon-192.png",
   "/icons/icon-512.png",

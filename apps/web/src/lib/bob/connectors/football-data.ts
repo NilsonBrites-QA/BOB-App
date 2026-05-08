@@ -24,10 +24,8 @@
  * Taxa máxima: 10 req/min (free tier). O padrão Gated garante ~4 req/rodada.
  */
 
-import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/db";
 import { checkFootballData, recordSync } from "./cache-gate";
-import { blockCircuit, fetchJsonWithTimeout, isCircuitBlocked } from "@/lib/bob/data/external-guard";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -123,85 +121,8 @@ export type FDTeamsResponse = {
 // ─── Fetch base ───────────────────────────────────────────────────────────────
 
 const BASE = "https://api.football-data.org/v4";
-const FD_TIMEOUT_MS = 10_000;
-const FD_PROVIDER_KEY = "football-data";
-const FD_STALE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-
-function keyId(token: string): string {
-  return `${token.slice(0, 4)}…${token.slice(-4)}`;
-}
-
-async function recordFdFailure(path: string, statusCode: number | null, errorType: string): Promise<void> {
-  try {
-    await prisma.apiSyncLog.create({
-      data: {
-        source: "football-data",
-        cacheKey: path,
-        statusCode,
-        recordCount: 0,
-        notes: JSON.stringify({
-          error_type: errorType,
-          used_cache: false,
-          fallback_used: false,
-        }),
-      },
-    });
-  } catch {
-  }
-}
-
-function providerCacheKey(path: string): string {
-  return `provider:football-data:${path}`;
-}
-
-async function readProviderCache<T>(
-  path: string,
-  ttlSeconds: number,
-  options?: { allowStale?: boolean },
-): Promise<{ data: T; stale: boolean } | null> {
-  const cacheKey = providerCacheKey(path);
-  const cached = await prisma.chatContextCache.findUnique({ where: { cacheKey } }).catch(() => null);
-  if (!cached?.data) return null;
-
-  const ageMs = Date.now() - new Date(cached.updatedAt).getTime();
-  const fresh = ttlSeconds <= 0 || ageMs <= ttlSeconds * 1000;
-  if (fresh) {
-    console.info(`[DataGateway] cache_hit key=${cacheKey}`);
-    return { data: cached.data as T, stale: false };
-  }
-
-  if (options?.allowStale && ageMs <= FD_STALE_MAX_AGE_MS) {
-    console.info(`[DataGateway] stale_used key=${cacheKey}`);
-    return { data: cached.data as T, stale: true };
-  }
-
-  console.info(`[DataGateway] cache_miss key=${cacheKey}`);
-  return null;
-}
-
-async function writeProviderCache<T>(path: string, ttlSeconds: number, data: T): Promise<void> {
-  const cacheKey = providerCacheKey(path);
-  await prisma.chatContextCache.upsert({
-    where: { cacheKey },
-    create: {
-      cacheKey,
-      data: data as Prisma.InputJsonValue,
-      ttlSeconds,
-    },
-    update: {
-      data: data as Prisma.InputJsonValue,
-      ttlSeconds,
-    },
-  }).catch(() => null);
-}
 
 export async function fdFetch<T>(path: string, revalidate: number): Promise<T> {
-  const cached = await readProviderCache<T>(path, revalidate);
-  if (cached) return cached.data;
-  return fdFetchUncoalesced<T>(path, revalidate);
-}
-
-async function fdFetchUncoalesced<T>(path: string, revalidate: number): Promise<T> {
   const raw = (process.env.FOOTBALL_DATA_TOKEN ?? "").replace(/['"]/g, "");
   const keys = raw.split(",").map((k) => k.trim()).filter(Boolean);
 
@@ -211,56 +132,37 @@ async function fdFetchUncoalesced<T>(path: string, revalidate: number): Promise<
     );
   }
 
-  const availableKeys = keys.filter((token) => !isCircuitBlocked(`${FD_PROVIDER_KEY}:${keyId(token)}`));
-  if (availableKeys.length === 0) {
-    await recordFdFailure(path, null, "all-keys-in-cooldown");
-    const stale = await readProviderCache<T>(path, revalidate, { allowStale: true });
-    if (stale) return stale.data;
-    throw new Error(
-      `football-data.org: todas as ${keys.length} chave(s) estão em cooldown por 401/403/429.`
-    );
-  }
+  for (let i = 0; i < keys.length; i++) {
+    const token = keys[i]!;
 
-  const token = availableKeys[0]!;
-  const providerKey = `${FD_PROVIDER_KEY}:${keyId(token)}`;
+    const res = await fetch(`${BASE}${path}`, {
+      headers: { "X-Auth-Token": token },
+      next: { revalidate },
+    });
 
-  try {
-    const data = await fetchJsonWithTimeout<T>({
-        url: `${BASE}${path}`,
-        init: {
-          headers: { "X-Auth-Token": token },
-          next: { revalidate },
-        },
-        timeoutMs: FD_TIMEOUT_MS,
-        providerKey,
-        cacheKey: `football-data:${path}`,
-      });
-    await writeProviderCache(path, revalidate, data);
-    return data;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("provider-auth-blocked")) {
-      blockCircuit(providerKey, "auth_blocked", message.includes("403") ? 403 : 401);
-      await recordFdFailure(path, message.includes("403") ? 403 : 401, "auth_blocked");
-    } else if (message.includes("provider-rate-limited")) {
-      blockCircuit(providerKey, "rate_limited", 429);
-      await recordFdFailure(path, 429, "rate_limited");
-    } else if (message.includes("provider-circuit-open")) {
-      await recordFdFailure(path, null, "provider-circuit-open");
-    } else if (message.includes("api-lock-held") || message.includes("api-lock-skipped")) {
-      await recordFdFailure(path, null, message.includes("api-lock-skipped") ? "api-lock-skipped" : "api-lock-held");
-    } else if (message.includes("provider-temporary-error")) {
-      await recordFdFailure(path, null, "temporary_error");
-    } else if (message.includes("provider-http-error")) {
-      await recordFdFailure(path, null, "http-error");
-    } else {
-      await recordFdFailure(path, null, message.includes("timeout") ? "timeout" : "network-error");
+    if (res.status === 429 || res.status === 401 || res.status === 403) {
+      const hasNext = i + 1 < keys.length;
+      console.warn(
+        `[Football-Data] Chave ${i + 1}/${keys.length} recusada (${res.status}). ` +
+        (hasNext ? "Tentando próxima..." : "Todas as chaves esgotadas.")
+      );
+      continue;
     }
 
-    const stale = await readProviderCache<T>(path, revalidate, { allowStale: true });
-    if (stale) return stale.data;
-    throw new Error(`insufficient:football-data:${path}:${message}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `football-data.org erro HTTP ${res.status} em ${path}: ${body.slice(0, 200)}`
+      );
+    }
+
+    return (await res.json()) as T;
   }
+
+  throw new Error(
+    `football-data.org: todas as ${keys.length} chave(s) retornaram 429. ` +
+    `Rate limit global atingido — tente novamente em alguns minutos.`
+  );
 }
 
 // ─── Helpers internos: Log de Sync (L1 + L2) ─────────────────────────────────
@@ -411,16 +313,13 @@ export async function getTeams(): Promise<FDTeamsResponse> {
  */
 export async function getStandingsGated(): Promise<FDStandingsResponse | null> {
   const cacheKey = "FD-BSA-standings";
-  const path = "/competitions/BSA/standings";
   const lastSyncedAt = await _getLastSyncFD(cacheKey);
   const decision = checkFootballData(cacheKey, lastSyncedAt);
 
   console.info(`[Football-Data/Gated] ${decision.reason}`);
-  if (!decision.allowed) {
-    return (await readProviderCache<FDStandingsResponse>(path, 14400, { allowStale: true }))?.data ?? null;
-  }
+  if (!decision.allowed) return null;
 
-  const result = await fdFetch<FDStandingsResponse>(path, 14400);
+  const result = await getStandings();
   // standings retorna um objeto com standings[].table[] — contar entradas do TOTAL
   const totalGroup = result.standings.find((s) => s.type === "TOTAL");
   const recordCount = totalGroup?.table.length ?? 0;
@@ -438,16 +337,13 @@ export async function getMatchesByMatchdayGated(
   matchday: number
 ): Promise<FDMatchesResponse | null> {
   const cacheKey = `FD-BSA-matchday-${matchday}`;
-  const path = `/competitions/BSA/matches?matchday=${matchday}`;
   const lastSyncedAt = await _getLastSyncFD(cacheKey);
   const decision = checkFootballData(cacheKey, lastSyncedAt);
 
   console.info(`[Football-Data/Gated] ${decision.reason}`);
-  if (!decision.allowed) {
-    return (await readProviderCache<FDMatchesResponse>(path, 14400, { allowStale: true }))?.data ?? null;
-  }
+  if (!decision.allowed) return null;
 
-  const result = await fdFetch<FDMatchesResponse>(path, 14400);
+  const result = await getMatchesByMatchday(matchday);
   await _logSyncFD(cacheKey, result.matches.length);
   return result;
 }
@@ -462,16 +358,13 @@ export async function getFinishedMatchesGated(
   limit = 100
 ): Promise<FDMatchesResponse | null> {
   const cacheKey = "FD-BSA-finished";
-  const path = `/competitions/BSA/matches?status=FINISHED&limit=${limit}`;
   const lastSyncedAt = await _getLastSyncFD(cacheKey);
   const decision = checkFootballData(cacheKey, lastSyncedAt);
 
   console.info(`[Football-Data/Gated] ${decision.reason}`);
-  if (!decision.allowed) {
-    return (await readProviderCache<FDMatchesResponse>(path, 14400, { allowStale: true }))?.data ?? null;
-  }
+  if (!decision.allowed) return null;
 
-  const result = await fdFetch<FDMatchesResponse>(path, 14400);
+  const result = await getFinishedMatches(limit);
   await _logSyncFD(cacheKey, result.matches.length);
   return result;
 }
@@ -484,16 +377,13 @@ export async function getFinishedMatchesGated(
  */
 export async function getTeamsGated(): Promise<FDTeamsResponse | null> {
   const cacheKey = "FD-BSA-teams";
-  const path = "/competitions/BSA/teams";
   const lastSyncedAt = await _getLastSyncFD(cacheKey);
   const decision = checkFootballData(cacheKey, lastSyncedAt);
 
   console.info(`[Football-Data/Gated] ${decision.reason}`);
-  if (!decision.allowed) {
-    return (await readProviderCache<FDTeamsResponse>(path, 86400, { allowStale: true }))?.data ?? null;
-  }
+  if (!decision.allowed) return null;
 
-  const result = await fdFetch<FDTeamsResponse>(path, 86400);
+  const result = await getTeams();
   await _logSyncFD(cacheKey, result.teams.length);
   return result;
 }

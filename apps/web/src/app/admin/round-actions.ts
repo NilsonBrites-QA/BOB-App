@@ -18,8 +18,12 @@ import {
   freezeRound,
   supersedeActiveRound,
 } from "@/lib/bob/persist";
-import { getGatewayCurrentRound, getGatewayRoundDataset } from "@/lib/data/sports-data-gateway";
-import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-variation-pipeline";
+import { fetchRoundMatchInputs, getCurrentRound } from "@/lib/bob/connectors";
+import {
+  scoreMatch,
+  selectAnchorsFromScored,
+  generateVariations,
+} from "@/lib/bob/engine";
 
 // ─── Auth gate ────────────────────────────────────────────────────────────────
 
@@ -44,37 +48,31 @@ async function runPipelineAndPersist(
   season: number,
   round: number,
 ): Promise<{ roundDbId: string; matchCount: number; anchorCount: number }> {
-  const data = await getGatewayRoundDataset(season, round);
-  const matches = data?.matches ?? [];
-  if (matches.length === 0) {
+  const data = await fetchRoundMatchInputs(season, round);
+  if (data.matches.length === 0) {
     throw new Error(
       `Sem jogos disponíveis para R${round}/${season}. Verifique se a rodada já foi publicada nas APIs.`,
     );
   }
 
-  const pipeline = await buildOfficialVariationsPipeline({
-    matches,
-    source: "api",
-    round,
-    sourceSnapshotIds: [`admin-round:${season}:${round}:gateway`],
-  });
-  if (!pipeline.ok || !pipeline.variationsResult) {
-    throw new Error(pipeline.reason ?? "Dados insuficientes para gerar Variações oficiais.");
-  }
+  const allScored = data.matches.map(scoreMatch);
+  const anchors = selectAnchorsFromScored(allScored);
+  const anchorIds = new Set(anchors.map((a) => a.id));
+  const pool = allScored.filter((m) => !anchorIds.has(m.id));
+  const variationsResult = generateVariations({ anchors, pool });
 
   const { roundDbId } = await saveRound({
     season,
     round,
-    anchors: pipeline.anchors,
-    variations: pipeline.variationsResult.variations,
+    anchors,
+    variations: variationsResult.variations,
     source: "api",
-    officialSnapshot: pipeline.snapshot ?? undefined,
   });
 
   return {
     roundDbId,
-    matchCount: matches.length,
-    anchorCount: pipeline.anchors.length,
+    matchCount: data.matches.length,
+    anchorCount: anchors.length,
   };
 }
 
@@ -96,7 +94,7 @@ export async function approveAndDeliverRound(
   await ensureAdmin();
 
   const seasonNum = season ?? new Date().getFullYear();
-  const roundNum  = round ?? (await getGatewayCurrentRound());
+  const roundNum  = round ?? (await getCurrentRound());
   if (!roundNum) {
     return {
       ok: false,
@@ -165,7 +163,7 @@ export async function regenerateRound(
   await ensureAdmin();
 
   const seasonNum = season ?? new Date().getFullYear();
-  const roundNum  = round ?? (await getGatewayCurrentRound());
+  const roundNum  = round ?? (await getCurrentRound());
   if (!roundNum) {
     return {
       ok: false,

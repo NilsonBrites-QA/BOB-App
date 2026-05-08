@@ -6,7 +6,7 @@
  * Pipeline:
  *   1. Auth via CRON_SECRET
  *   2. Busca todos os eventos PENDING no banco (apostas geradas, aguardando resultado)
- *   3. Busca resultados reais via Data Gateway/cache layer
+ *   3. Busca resultados reais via getFinishedMatchesGated (football-data.org)
  *   4. Cruza pickOutcome × placar real
  *   5. INSERT append-only:
  *      - Todos os picks GREEN → evento GREEN (avança step)
@@ -24,8 +24,9 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getGatewayFinishedMatches } from "@/lib/data/sports-data-gateway";
-import type { FDMatch } from "@/lib/data/sports-data-gateway";
+import { getFinishedMatchesGated } from "@/lib/bob/connectors/football-data";
+import { calculateStake, LEVERAGE_TOTAL_STEPS } from "@/lib/bob/engine/leverage";
+import type { FDMatch } from "@/lib/bob/connectors/football-data";
 
 // ─── Tipos internos ──────────────────────────────────────────────────────────
 
@@ -183,9 +184,25 @@ export async function GET(request: Request) {
 
     console.info(`[leverage-resolve] ${pendingRows.length} evento(s) PENDING encontrado(s).`);
 
-    // ── 3. Buscar resultados reais via Data Gateway ─────────────────────────
-    // O gateway aplica cache DB, lock cross-instance, cooldown e fallback stale.
-    const finishedMatches: FDMatch[] = (await getGatewayFinishedMatches(200))?.matches ?? [];
+    // ── 3. Buscar resultados reais via API ──────────────────────────────────
+    // Usa a versão Gated para respeitar o throttle de 24h.
+    // Se o gate bloquear, tenta a versão raw com cache de 4h do Next.js.
+    let finishedMatches: FDMatch[] = [];
+
+    const gatedResult = await getFinishedMatchesGated(200);
+    if (gatedResult) {
+      finishedMatches = gatedResult.matches;
+    } else {
+      // Fallback: lê do cache do Next.js (revalidate: 4h) — sem gastar cota
+      try {
+        const { getFinishedMatches } = await import("@/lib/bob/connectors/football-data");
+        const fallback = await getFinishedMatches(200);
+        finishedMatches = fallback.matches;
+        console.info(`[leverage-resolve] Gated bloqueado — usando cache Next.js (${finishedMatches.length} jogos).`);
+      } catch {
+        console.warn("[leverage-resolve] Fallback de finished matches falhou.");
+      }
+    }
 
     if (finishedMatches.length === 0) {
       return NextResponse.json({

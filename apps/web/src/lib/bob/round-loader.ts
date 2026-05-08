@@ -28,17 +28,10 @@
 
 import { unstable_cache } from "next/cache";
 import { demoMatches } from "@/lib/bob/demo-matches";
-import {
-  getGatewayCurrentRound,
-  getGatewayRoundDataset,
-  type GatewayRoundResult,
-  type FDMatch,
-  type FDMatchesResponse,
-} from "@/lib/data/sports-data-gateway";
+import { fetchRoundMatchInputs, getCurrentRound } from "@/lib/bob/connectors";
+import type { FetchRoundResult } from "@/lib/bob/connectors";
 import type { MatchInput } from "@/lib/bob/engine/scoring";
 import { prisma } from "@/lib/db";
-import { getCachedRoundDataset, getRoundDataset } from "@/lib/data/data-gateway";
-import { BetMatchStatus } from "@/generated/prisma";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -58,63 +51,18 @@ export type RoundResolution = {
 
 export type LoadedRoundData =
   | {
-      source: "api" | "database" | "cache" | "cache_hit" | "stale_valid" | "persisted_snapshot";
+      source: "api";
       fallbackReason: null;
       matches: MatchInput[];
-      assets: GatewayRoundResult["assets"];
-      meta: GatewayRoundResult["meta"];
+      assets: FetchRoundResult["assets"];
+      meta: FetchRoundResult["meta"];
     }
   | {
-      source: "demo" | "mock" | "fallback_fake" | "synthetic" | "empty" | "insufficient";
+      source: "demo";
       fallbackReason: RoundFallbackReason;
       matches: MatchInput[];
-      assets: GatewayRoundResult["assets"];
+      assets: FetchRoundResult["assets"];
       meta: null;
-    };
-
-export type OfficialRoundContext =
-  | {
-      ok: true;
-      season: number;
-      round: number;
-      competition: "BSA";
-      source: "query_params" | "detected_open_matches" | "provider_cache" | "database" | "current_round_or_upcoming_matches";
-      reason: string;
-      fixturesCount: number;
-      requestedRound: number | null;
-      firstMatchAt: string | null;
-      firstKickoffAt: string | null;
-      staleOpenMatchesIgnored: number;
-      candidateRounds: Array<{
-        round: number;
-        fixturesCount: number;
-        firstKickoffAt: string | null;
-        source: "database" | "provider_cache" | "current_round_cache";
-        roundMode: "current" | "future" | "past";
-      }>;
-      roundMode: "current" | "future" | "past";
-    }
-  | {
-      ok: false;
-      season: number;
-      round: null;
-      competition: "BSA";
-      source: "invalid" | "unresolved";
-      reason: "invalid_round_context";
-      fixturesCount: 0;
-      requestedRound: number | null;
-      receivedRound: number | null;
-      firstMatchAt: null;
-      firstKickoffAt: null;
-      staleOpenMatchesIgnored: number;
-      candidateRounds: Array<{
-        round: number;
-        fixturesCount: number;
-        firstKickoffAt: string | null;
-        source: "database" | "provider_cache" | "current_round_cache";
-        roundMode: "current" | "future" | "past";
-      }>;
-      roundMode: null;
     };
 
 export function describeRoundFallback(reason: RoundFallbackReason): string {
@@ -172,611 +120,6 @@ async function getLastKnownRoundFromDb(season: number): Promise<number | null> {
   }
 }
 
-const OPEN_BET_MATCH_STATUSES = [
-  BetMatchStatus.SCHEDULED,
-  BetMatchStatus.LIVE,
-  BetMatchStatus.POSTPONED,
-];
-
-const PROVIDER_OPEN_MATCHES_CACHE_KEY =
-  "provider:football-data:/competitions/BSA/matches?status=SCHEDULED,TIMED,IN_PLAY,PAUSED,POSTPONED&limit=200";
-const PROVIDER_STANDINGS_CACHE_KEY = "provider:football-data:/competitions/BSA/standings";
-const ROUND_STALE_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-const UNKNOWN_NUMBER = Number.NaN;
-const UNKNOWN_BOOLEAN = undefined as unknown as boolean;
-
-function isValidRoundNumber(round: number | null | undefined): round is number {
-  return typeof round === "number" && Number.isInteger(round) && round >= 1 && round <= 38;
-}
-
-function isOpenFdStatus(status: string | null | undefined) {
-  return ["SCHEDULED", "TIMED", "IN_PLAY", "PAUSED", "POSTPONED"].includes(String(status ?? ""));
-}
-
-function parseKickoffTime(value: string | Date | null | undefined): number | null {
-  if (!value) return null;
-  const time = value instanceof Date ? value.getTime() : new Date(value).getTime();
-  return Number.isFinite(time) ? time : null;
-}
-
-function classifyRoundMode(kickoffs: Array<string | Date | null | undefined>): "current" | "future" | "past" {
-  const now = Date.now();
-  const staleCutoff = now - ROUND_STALE_WINDOW_MS;
-  const times = kickoffs
-    .map(parseKickoffTime)
-    .filter((time): time is number => time !== null)
-    .sort((a, b) => a - b);
-  if (times.length === 0) return "future";
-  if (times.every((time) => time < staleCutoff)) return "past";
-  if (times.some((time) => time >= staleCutoff && time <= now + ROUND_STALE_WINDOW_MS)) return "current";
-  return "future";
-}
-
-function firstRelevantKickoff(kickoffs: Array<string | Date | null | undefined>) {
-  const staleCutoff = Date.now() - ROUND_STALE_WINDOW_MS;
-  const times = kickoffs
-    .map(parseKickoffTime)
-    .filter((time): time is number => time !== null)
-    .filter((time) => time >= staleCutoff)
-    .sort((a, b) => a - b);
-  return times[0] ?? Number.POSITIVE_INFINITY;
-}
-
-type OfficialRoundCandidate = {
-  round: number;
-  fixturesCount: number;
-  firstKickoffAt: string | null;
-  kickoffDates: string[];
-  source: "database" | "provider_cache" | "current_round_cache";
-  reason: string;
-  roundMode: "current" | "future" | "past";
-};
-
-function publicCandidate(candidate: OfficialRoundCandidate) {
-  return {
-    round: candidate.round,
-    fixturesCount: candidate.fixturesCount,
-    firstKickoffAt: candidate.firstKickoffAt,
-    source: candidate.source,
-    roundMode: candidate.roundMode,
-  };
-}
-
-function selectBestRoundCandidate(candidates: OfficialRoundCandidate[]) {
-  const viable = candidates.filter((candidate) => {
-    if (candidate.roundMode !== "past") return true;
-    console.info(
-      `[BOB/RoundContext] ignored_stale_round round=${candidate.round} firstKickoff=${candidate.firstKickoffAt ?? "unknown"} reason=past_open_matches`,
-    );
-    return false;
-  });
-  const currentRoundCandidate = viable.find((candidate) => candidate.source === "current_round_cache");
-  if (currentRoundCandidate) return currentRoundCandidate;
-  return viable
-    .slice()
-    .sort((a, b) => {
-      const aTime = firstRelevantKickoff(a.kickoffDates);
-      const bTime = firstRelevantKickoff(b.kickoffDates);
-      if (aTime !== bTime) return aTime - bTime;
-      const sourcePriority: Record<OfficialRoundCandidate["source"], number> = {
-        database: 0,
-        provider_cache: 1,
-        current_round_cache: 2,
-      };
-      return sourcePriority[a.source] - sourcePriority[b.source];
-    })[0] ?? null;
-}
-
-async function getCachedFixtureSummary(season: number, round: number) {
-  const dbMatches = await prisma.betMatch.findMany({
-    where: { season, round },
-    orderBy: { scheduledAt: "asc" },
-    select: { scheduledAt: true },
-  }).catch(() => []);
-
-  if (dbMatches.length > 0) {
-    const kickoffDates = dbMatches.map((match) => match.scheduledAt.toISOString());
-    return {
-      count: dbMatches.length,
-      firstMatchAt: kickoffDates[0] ?? null,
-      kickoffDates,
-      source: "database" as const,
-    };
-  }
-
-  const providerMatches = await getProviderCachedMatchesForRound(season, round);
-  const kickoffDates = providerMatches.map((match) => match.utcDate).filter((date): date is string => Boolean(date)).sort();
-  return {
-    count: providerMatches.length,
-    firstMatchAt: kickoffDates[0] ?? null,
-    kickoffDates,
-    source: providerMatches.length > 0 ? "provider_cache" as const : "database" as const,
-  };
-}
-
-async function detectOpenRoundsFromDb(season: number): Promise<OfficialRoundCandidate[]> {
-  const rows = await prisma.betMatch.findMany({
-    where: {
-      season,
-      round: { not: null },
-      status: { in: OPEN_BET_MATCH_STATUSES },
-    },
-    orderBy: [{ round: "asc" }, { scheduledAt: "asc" }],
-    select: { round: true, scheduledAt: true },
-  }).catch(() => []);
-
-  const grouped = new Map<number, Date[]>();
-  for (const row of rows) {
-    if (!isValidRoundNumber(row.round)) continue;
-    grouped.set(row.round, [...(grouped.get(row.round) ?? []), row.scheduledAt]);
-  }
-  return Array.from(grouped.entries()).map(([round, dates]) => {
-    const kickoffDates = dates.map((date) => date.toISOString()).sort();
-    return {
-      round,
-      fixturesCount: dates.length,
-      firstKickoffAt: kickoffDates[0] ?? null,
-      kickoffDates,
-      source: "database",
-      reason: "database_open_matches",
-      roundMode: classifyRoundMode(kickoffDates),
-    };
-  });
-}
-
-async function readProviderMatchesCache(season: number): Promise<FDMatch[]> {
-  const cacheKeys = [
-    PROVIDER_OPEN_MATCHES_CACHE_KEY,
-    `gateway:football-data:competition:BSA:${season}`,
-  ];
-  for (const cacheKey of cacheKeys) {
-    const cached = await prisma.chatContextCache.findUnique({ where: { cacheKey } }).catch(() => null);
-    const data = cached?.data as unknown as FDMatchesResponse | null;
-    if (Array.isArray(data?.matches) && data.matches.length > 0) {
-      return data.matches;
-    }
-  }
-  return [];
-}
-
-async function detectOpenRoundsFromProviderCache(season: number): Promise<OfficialRoundCandidate[]> {
-  const matches = (await readProviderMatchesCache(season)).filter((match) =>
-    isValidRoundNumber(match.matchday) && isOpenFdStatus(match.status),
-  );
-  const grouped = new Map<number, FDMatch[]>();
-  for (const match of matches) {
-    grouped.set(match.matchday, [...(grouped.get(match.matchday) ?? []), match]);
-  }
-  return Array.from(grouped.entries()).map(([round, roundMatches]) => {
-    const kickoffDates = roundMatches.map((match) => match.utcDate).filter((date): date is string => Boolean(date)).sort();
-    return {
-      round,
-      fixturesCount: roundMatches.length,
-      firstKickoffAt: kickoffDates[0] ?? null,
-      kickoffDates,
-      source: "provider_cache",
-      reason: "provider_cache_open_matches",
-      roundMode: classifyRoundMode(kickoffDates),
-    };
-  });
-}
-
-async function getProviderCachedMatchesForRound(season: number, round: number) {
-  return (await readProviderMatchesCache(season)).filter((match) => match.matchday === round);
-}
-
-function readRoundPointerFromCachePayload(data: unknown): number | null {
-  if (!data || typeof data !== "object") return null;
-  const record = data as Record<string, unknown>;
-  const direct = record.currentRound ?? record.currentMatchday ?? record.matchday ?? record.round;
-  if (typeof direct === "number" && isValidRoundNumber(direct)) return direct;
-  const seasonRecord = record.season;
-  if (seasonRecord && typeof seasonRecord === "object") {
-    const seasonRound = (seasonRecord as Record<string, unknown>).currentMatchday;
-    if (typeof seasonRound === "number" && isValidRoundNumber(seasonRound)) return seasonRound;
-  }
-  return null;
-}
-
-async function readCurrentRoundCandidateFromCache(season: number): Promise<OfficialRoundCandidate | null> {
-  const cacheKeys = [
-    "current_round",
-    `current_round:${season}`,
-    "gateway:football-data:current-round:BSA",
-    PROVIDER_STANDINGS_CACHE_KEY,
-    `gateway:football-data:standings:BSA:${season}`,
-  ];
-  for (const cacheKey of cacheKeys) {
-    const cached = await prisma.chatContextCache.findUnique({ where: { cacheKey } }).catch(() => null);
-    const round = readRoundPointerFromCachePayload(cached?.data);
-    if (!isValidRoundNumber(round)) continue;
-    const summary = await getCachedFixtureSummary(season, round);
-    if (summary.count <= 0) continue;
-    return {
-      round,
-      fixturesCount: summary.count,
-      firstKickoffAt: summary.firstMatchAt,
-      kickoffDates: summary.kickoffDates,
-      source: "current_round_cache",
-      reason: `current_round_cache:${cacheKey}`,
-      roundMode: classifyRoundMode(summary.kickoffDates),
-    };
-  }
-  return null;
-}
-
-function fdMatchToInput(match: FDMatch): MatchInput {
-  const homeTeam = match.homeTeam.shortName || match.homeTeam.name;
-  const awayTeam = match.awayTeam.shortName || match.awayTeam.name;
-  return {
-    id: String(match.id),
-    match: `${homeTeam} x ${awayTeam}`,
-    homeTeam,
-    awayTeam,
-    homePosition: UNKNOWN_NUMBER,
-    awayPosition: UNKNOWN_NUMBER,
-    homeNeedsWin: UNKNOWN_BOOLEAN,
-    awayNeedsWin: UNKNOWN_BOOLEAN,
-    homeForm: [],
-    awayForm: [],
-    homeHomePoints: UNKNOWN_NUMBER,
-    awayAwayPoints: UNKNOWN_NUMBER,
-    homeGoalsScored5: UNKNOWN_NUMBER,
-    homeGoalsConceded5: UNKNOWN_NUMBER,
-    awayGoalsScored5: UNKNOWN_NUMBER,
-    awayGoalsConceded5: UNKNOWN_NUMBER,
-    h2hHomeWinRate: UNKNOWN_NUMBER,
-    homeAbsenceRate: UNKNOWN_NUMBER,
-    awayAbsenceRate: UNKNOWN_NUMBER,
-    homeBigGameAhead: UNKNOWN_BOOLEAN,
-    awayBigGameAhead: UNKNOWN_BOOLEAN,
-    homeOdd: match.odds?.homeWin ?? 0,
-    drawOdd: match.odds?.draw ?? 0,
-    awayOdd: match.odds?.awayWin ?? 0,
-    homeOddDropped: false,
-    scheduledAt: match.utcDate,
-    status: match.status,
-    homeCrest: match.homeTeam.crest ?? null,
-    awayCrest: match.awayTeam.crest ?? null,
-  };
-}
-
-function buildRoundMeta(
-  season: number,
-  round: number,
-  matches: MatchInput[],
-  firstMatchAt?: string | null,
-): GatewayRoundResult["meta"] {
-  return {
-    season,
-    round,
-    fixtureCount: matches.length,
-    generatedAt: new Date().toISOString(),
-    source: "football-data",
-    firstMatchAt: firstMatchAt ?? matches.map((match) => match.scheduledAt).filter(Boolean).sort()[0] ?? null,
-    gatedHits: { standings: false, matchday: false, finished: false, injuries: false },
-    integrations: {
-      odds: matches.some((match) => match.homeOdd > 1 && match.drawOdd > 1 && match.awayOdd > 1) ? "partial" : "fallback",
-      h2h: "fallback",
-      injuries: "fallback",
-      cup: "fallback",
-      assets: matches.some((match) => match.homeCrest || match.awayCrest) ? "ready" : "empty",
-      weather: "fallback",
-    },
-  };
-}
-
-export async function resolveOfficialRoundContext(args: {
-  season: number;
-  round?: number | null;
-}): Promise<OfficialRoundContext> {
-  const requestedRound = args.round ?? null;
-  if (requestedRound !== null && !isValidRoundNumber(requestedRound)) {
-    return {
-      ok: false,
-      season: args.season,
-      round: null,
-      competition: "BSA",
-      source: "invalid",
-      reason: "invalid_round_context",
-      fixturesCount: 0,
-      requestedRound,
-      receivedRound: requestedRound,
-      firstMatchAt: null,
-      firstKickoffAt: null,
-      staleOpenMatchesIgnored: 0,
-      candidateRounds: [],
-      roundMode: null,
-    };
-  }
-
-  if (requestedRound !== null) {
-    const summary = await getCachedFixtureSummary(args.season, requestedRound);
-    const roundMode = classifyRoundMode(summary.kickoffDates);
-    return {
-      ok: true,
-      season: args.season,
-      round: requestedRound,
-      competition: "BSA",
-      source: "query_params",
-      reason: summary.count > 0
-        ? `${summary.source}_fixtures_for_requested_round`
-        : "explicit_round_without_cached_fixtures",
-      fixturesCount: summary.count,
-      requestedRound,
-      firstMatchAt: summary.firstMatchAt,
-      firstKickoffAt: summary.firstMatchAt,
-      staleOpenMatchesIgnored: 0,
-      candidateRounds: [
-        {
-          round: requestedRound,
-          fixturesCount: summary.count,
-          firstKickoffAt: summary.firstMatchAt,
-          source: summary.source === "provider_cache" ? "provider_cache" : "database",
-          roundMode,
-        },
-      ],
-      roundMode,
-    };
-  }
-
-  const candidates = [
-    ...await detectOpenRoundsFromDb(args.season),
-    ...await detectOpenRoundsFromProviderCache(args.season),
-  ];
-  const currentRoundCandidate = await readCurrentRoundCandidateFromCache(args.season);
-  if (currentRoundCandidate) candidates.unshift(currentRoundCandidate);
-  const staleOpenMatchesIgnored = candidates.filter((candidate) => candidate.roundMode === "past").length;
-  const selected = selectBestRoundCandidate(candidates);
-  if (selected) {
-    console.info(
-      `[BOB/RoundContext] selected season=${args.season} round=${selected.round} source=current_round_or_upcoming_matches fixtures=${selected.fixturesCount}`,
-    );
-    return {
-      ok: true,
-      season: args.season,
-      round: selected.round,
-      competition: "BSA",
-      source: selected.source === "provider_cache" ? "provider_cache" : "current_round_or_upcoming_matches",
-      reason: selected.reason,
-      fixturesCount: selected.fixturesCount,
-      requestedRound: null,
-      firstMatchAt: selected.firstKickoffAt,
-      firstKickoffAt: selected.firstKickoffAt,
-      staleOpenMatchesIgnored,
-      candidateRounds: candidates.map(publicCandidate),
-      roundMode: selected.roundMode,
-    };
-  }
-
-  const dbRound = await getLastKnownRoundFromDb(args.season);
-  if (isValidRoundNumber(dbRound)) {
-    const summary = await getCachedFixtureSummary(args.season, dbRound);
-    const roundMode = classifyRoundMode(summary.kickoffDates);
-    if (roundMode !== "past") {
-      return {
-        ok: true,
-        season: args.season,
-        round: dbRound,
-        competition: "BSA",
-        source: "database",
-        reason: "last_known_round",
-        fixturesCount: summary.count,
-        requestedRound: null,
-        firstMatchAt: summary.firstMatchAt,
-        firstKickoffAt: summary.firstMatchAt,
-        staleOpenMatchesIgnored,
-        candidateRounds: candidates.map(publicCandidate),
-        roundMode,
-      };
-    }
-    console.info(
-      `[BOB/RoundContext] ignored_stale_round round=${dbRound} firstKickoff=${summary.firstMatchAt ?? "unknown"} reason=last_known_round_past`,
-    );
-  }
-
-  return {
-    ok: false,
-    season: args.season,
-    round: null,
-    competition: "BSA",
-    source: "unresolved",
-    reason: "invalid_round_context",
-    fixturesCount: 0,
-    requestedRound: null,
-    receivedRound: null,
-    firstMatchAt: null,
-    firstKickoffAt: null,
-    staleOpenMatchesIgnored,
-    candidateRounds: candidates.map(publicCandidate),
-    roundMode: null,
-  };
-}
-
-function hasFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function hasComplete1x2Odds(match: MatchInput) {
-  return match.homeOdd > 1 && match.drawOdd > 1 && match.awayOdd > 1;
-}
-
-function withFallbackMarketSnapshot(matches: MatchInput[]) {
-  return matches.map((match) => {
-    if (hasComplete1x2Odds(match)) return match;
-    return {
-      ...match,
-      homeOdd: match.homeOdd > 1 ? match.homeOdd : 2.1,
-      drawOdd: match.drawOdd > 1 ? match.drawOdd : 3.2,
-      awayOdd: match.awayOdd > 1 ? match.awayOdd : 2.9,
-      homeOddDropped: Boolean(match.homeOddDropped),
-    };
-  });
-}
-
-function estimateOfficialDatasetQuality(matches: MatchInput[]) {
-  const allMissing = new Set<string>();
-
-  if (matches.length === 0) {
-    return {
-      score: 0,
-      missingFeatures: ["round_dataset"],
-      hasCompleteMarketSnapshot: false,
-    };
-  }
-
-  const scores = matches.map((match) => {
-    const missing: string[] = [];
-
-    if (!hasComplete1x2Odds(match)) missing.push("odds_1x2");
-
-    if (!hasFiniteNumber(match.homePosition) || !hasFiniteNumber(match.awayPosition)) {
-      missing.push("table_context");
-    }
-
-    if (!Array.isArray(match.homeForm) || match.homeForm.length === 0 || !Array.isArray(match.awayForm) || match.awayForm.length === 0) {
-      missing.push("last5");
-    }
-
-    if (!Array.isArray(match.homeForm10) || match.homeForm10.length === 0 || !Array.isArray(match.awayForm10) || match.awayForm10.length === 0) {
-      missing.push("last10");
-    }
-
-    if (!hasFiniteNumber(match.homeHomePoints)) missing.push("home_home_points");
-    if (!hasFiniteNumber(match.awayAwayPoints)) missing.push("away_away_points");
-
-    if (
-      !hasFiniteNumber(match.homeGoalsScored5) ||
-      !hasFiniteNumber(match.homeGoalsConceded5) ||
-      !hasFiniteNumber(match.awayGoalsScored5) ||
-      !hasFiniteNumber(match.awayGoalsConceded5)
-    ) {
-      missing.push("goals_last5");
-    }
-
-    if (!hasFiniteNumber(match.homeAbsenceRate) || !hasFiniteNumber(match.awayAbsenceRate)) {
-      missing.push("absences");
-    }
-
-    if (typeof match.homeBigGameAhead !== "boolean" || typeof match.awayBigGameAhead !== "boolean") {
-      missing.push("rest_calendar");
-    }
-
-    if (!hasFiniteNumber(match.homeMomentum) && !hasFiniteNumber(match.awayMomentum)) {
-      missing.push("momentum");
-    }
-
-    missing.forEach((item) => allMissing.add(item));
-
-    const totalChecks = 10;
-    return Math.max(0, (totalChecks - missing.length) / totalChecks);
-  });
-
-  return {
-    score: scores.reduce((sum, value) => sum + value, 0) / scores.length,
-    missingFeatures: Array.from(allMissing).sort(),
-    hasCompleteMarketSnapshot: matches.every(hasComplete1x2Odds),
-  };
-}
-
-function logOfficialDatasetQuality(args: {
-  round: number;
-  source: "database" | "cache_hit" | "stale_valid";
-  matches: MatchInput[];
-}) {
-  const quality = estimateOfficialDatasetQuality(args.matches);
-  const missing = quality.missingFeatures.length > 0
-    ? quality.missingFeatures.join(",")
-    : "none";
-
-  console.info(
-    `[BOB/RoundData] persisted_dataset_loaded round=${args.round} source=${args.source} matches=${args.matches.length} quality=${quality.score.toFixed(3)} missing=${missing}`,
-  );
-
-  if (!quality.hasCompleteMarketSnapshot) {
-    console.warn(
-      `[BOB/RoundData] missing_market_snapshot round=${args.round} source=${args.source} missing=odds_1x2`,
-    );
-  }
-
-  return quality;
-}
-
-export async function loadOfficialRoundData(context: Extract<OfficialRoundContext, { ok: true }>): Promise<LoadedRoundData> {
-  const cachedDataset = await getCachedRoundDataset(context.season, context.round);
-  if (cachedDataset.ok && cachedDataset.data && cachedDataset.data.length > 0) {
-    const source = cachedDataset.source === "stale_valid" ? "stale_valid" : "database";
-    const quality = logOfficialDatasetQuality({
-      round: context.round,
-      source,
-      matches: cachedDataset.data,
-    });
-
-    // betOdds está vazio: tentar buscar odds dos providers externos.
-    // getRoundDataset() chama fetchRoundMatchInputs() e persiste as odds em betOdds (via fix anterior).
-    // Nas próximas chamadas, getCachedRoundDataset() já encontrará as odds salvas.
-    if (!quality.hasCompleteMarketSnapshot) {
-      console.info(
-        `[BOB/RoundData] odds_missing_fetching_providers round=${context.round} source=${source}`,
-      );
-      const gatewayResult = await getRoundDataset(context.season, context.round);
-      if (gatewayResult.ok && gatewayResult.data && gatewayResult.data.length > 0) {
-        const gatewaySource = (
-          gatewayResult.source === "stale_valid" ? "stale_valid" : "database"
-        ) as "database" | "stale_valid";
-        const normalizedGatewayMatches = withFallbackMarketSnapshot(gatewayResult.data);
-        return {
-          source: gatewaySource,
-          fallbackReason: null,
-          matches: normalizedGatewayMatches,
-          assets: new Map<string, never>(),
-          meta: buildRoundMeta(context.season, context.round, normalizedGatewayMatches, context.firstMatchAt),
-        };
-      }
-    }
-
-    const normalizedCachedMatches = withFallbackMarketSnapshot(cachedDataset.data);
-    return {
-      source,
-      fallbackReason: null,
-      matches: normalizedCachedMatches,
-      assets: new Map<string, never>(),
-      meta: buildRoundMeta(context.season, context.round, normalizedCachedMatches, context.firstMatchAt),
-    };
-  }
-
-  const providerMatches = await getProviderCachedMatchesForRound(context.season, context.round);
-  if (providerMatches.length > 0) {
-    const matches = providerMatches.map(fdMatchToInput);
-    logOfficialDatasetQuality({
-      round: context.round,
-      source: "cache_hit",
-      matches,
-    });
-
-    return {
-      source: "cache_hit",
-      fallbackReason: null,
-      matches,
-      assets: new Map<string, never>(),
-      meta: buildRoundMeta(context.season, context.round, matches, context.firstMatchAt),
-    };
-  }
-
-  console.warn(
-    `[BOB/RoundData] missing_persisted_dataset round=${context.round} source=none`,
-  );
-
-  return {
-    source: "insufficient",
-    fallbackReason: "round-unavailable",
-    matches: [],
-    assets: new Map<string, never>(),
-    meta: null,
-  };
-}
-
 /**
  * Resolve a rodada atual do Brasileirão usando cascata de 3 níveis.
  *
@@ -784,8 +127,8 @@ export async function loadOfficialRoundData(context: Extract<OfficialRoundContex
  * Cada nível só é tentado se o anterior falhar.
  *
  * L1 (API Gated):
- *   - Chama getGatewayCurrentRound() do Data Gateway
- *   - Internamente usa o orquestrador autorizado de calendário
+ *   - Chama getCurrentRound() do connectors/index.ts
+ *   - Internamente usa detectNextOpenRound() + ponteiro getCurrentMatchday()
  *   - Consumo gated: football-data.org com cache ISR de 1h
  *   - Se o cache-gate bloquear (throttle 24h), Next.js serve do edge cache
  *
@@ -803,12 +146,12 @@ export async function loadOfficialRoundData(context: Extract<OfficialRoundContex
  */
 export async function resolveCurrentRound(season: number): Promise<RoundResolution> {
   // ── L1: API Gated (detectNextOpenRound + ponteiro FD) ──
-  // getGatewayCurrentRound() já implementa a lógica de drift detection no caminho autorizado.
+  // getCurrentRound() já implementa a lógica de drift detection.
   // O cache ISR do Next.js (1h) evita chamadas repetidas à API.
   // Se o token não está configurado, pula direto para L2.
   if (process.env.FOOTBALL_DATA_TOKEN) {
     try {
-      const apiRound = await getGatewayCurrentRound();
+      const apiRound = await getCurrentRound();
       if (apiRound !== null) {
         console.info(`[RoundLoader/L1] Rodada resolvida pela API: ${apiRound}`);
         return {
@@ -867,7 +210,7 @@ const fetchAndSerialize = unstable_cache(
     }
 
     // ── TAREFA 2: Resolução autônoma com cascata L1→L2→L3 ──
-    // Antes: `round ?? getGatewayCurrentRound()` — sem fallback DB, quebrava em demo.
+    // Antes: `round ?? getCurrentRound()` — sem fallback DB, quebrava em demo.
     // Agora: resolveCurrentRound() tenta API → banco → demo, nunca falha.
     let resolvedRound: number;
     let calendarInterrupted = false;
@@ -890,55 +233,12 @@ const fetchAndSerialize = unstable_cache(
       calendarInterrupted = resolution.resolvedBy === "database";
     }
 
-    const gatewayResult = await getRoundDataset(season, resolvedRound);
-    if (gatewayResult.ok && gatewayResult.data && gatewayResult.data.length > 0) {
-      const matches = gatewayResult.data ?? [];
-      const hasCompleteMarketSnapshot = matches.every(hasComplete1x2Odds);
-      if (gatewayResult.source !== "api" || hasCompleteMarketSnapshot) {
-        return {
-          source: gatewayResult.source,
-          fallbackReason: null,
-          matches,
-          assetsEntries: [],
-          meta: buildRoundMeta(season, resolvedRound, matches),
-        };
-      }
-
-      console.info(
-        `[RoundLoader] gateway_dataset_api_incomplete round=${resolvedRound} matches=${matches.length} forcing_gateway_round_dataset=true`,
-      );
-    }
-
     try {
-      const result = await getGatewayRoundDataset(season, resolvedRound);
-      if (!result) {
-        throw new Error("insufficient:gateway-round-dataset");
-      }
-
-      const normalizedMatches = result.matches;
-      if (normalizedMatches.length > 0 && normalizedMatches.every(hasComplete1x2Odds)) {
-        return {
-          source: "api",
-          fallbackReason: null,
-          matches: normalizedMatches,
-          assetsEntries: Array.from(result.assets.entries()),
-          meta: result.meta,
-        };
-      }
-
-      if (gatewayResult.ok && gatewayResult.data && gatewayResult.data.length > 0) {
-        return {
-          source: gatewayResult.source,
-          fallbackReason: null,
-          matches: gatewayResult.data,
-          assetsEntries: [],
-          meta: buildRoundMeta(season, resolvedRound, gatewayResult.data),
-        };
-      }
+      const result = await fetchRoundMatchInputs(season, resolvedRound);
 
       // Se a rodada foi resolvida pelo banco (L2), os dados do pipeline
       // podem estar parcialmente stale. A meta reflete isso para a UI.
-      if (calendarInterrupted && normalizedMatches.length === 0) {
+      if (calendarInterrupted && result.matches.length === 0) {
         // API retornou 0 matches para a rodada do banco — provável dessincronização
         console.warn(
           `[RoundLoader] Rodada ${resolvedRound} (L2) retornou 0 matches — caindo para demo.`,
@@ -955,12 +255,11 @@ const fetchAndSerialize = unstable_cache(
       return {
         source: "api",
         fallbackReason: null,
-        matches: normalizedMatches,
+        matches: result.matches,
         assetsEntries: Array.from(result.assets.entries()),
         meta: result.meta,
       };
-    }
-    catch (err) {
+    } catch (err) {
       console.error("[RoundLoader] Falha ao buscar dados reais:", err);
       return {
         source: "demo",
@@ -982,32 +281,15 @@ export async function loadRoundData(
   const serialized = await fetchAndSerialize(season, round);
   // Reconstrói Map a partir das entries serializadas
   const assets = new Map(
-    serialized.assetsEntries as Array<[string, GatewayRoundResult["assets"] extends Map<string, infer V> ? V : never]>,
+    serialized.assetsEntries as Array<[string, FetchRoundResult["assets"] extends Map<string, infer V> ? V : never]>,
   );
   if (serialized.source === "api") {
-    const normalizedMatches = withFallbackMarketSnapshot(serialized.matches);
     return {
       source: "api",
       fallbackReason: null,
-      matches: normalizedMatches,
+      matches: serialized.matches,
       assets,
       meta: serialized.meta!,
-    };
-  }
-  if (
-    serialized.source === "database" ||
-    serialized.source === "cache" ||
-    serialized.source === "cache_hit" ||
-    serialized.source === "stale_valid" ||
-    serialized.source === "persisted_snapshot"
-  ) {
-    const normalizedMatches = withFallbackMarketSnapshot(serialized.matches);
-    return {
-      source: serialized.source,
-      fallbackReason: null,
-      matches: normalizedMatches,
-      assets,
-      meta: serialized.meta as GatewayRoundResult["meta"],
     };
   }
   return {

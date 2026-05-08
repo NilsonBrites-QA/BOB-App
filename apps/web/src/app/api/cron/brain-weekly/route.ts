@@ -18,9 +18,6 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getGatewayCurrentRound, getGatewayRoundDataset } from "@/lib/data/sports-data-gateway";
-import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-variation-pipeline";
-import { saveRound } from "@/lib/bob/persist";
 
 export async function GET(request: Request) {
   // ── Auth ────────────────────────────────────────────────────────────────
@@ -107,7 +104,8 @@ export async function GET(request: Request) {
         targetRound = nextRound.number;
         info(`Rodada do banco: ${targetRound}`);
       } else {
-        const apiRound = await getGatewayCurrentRound().catch(() => null);
+        const { getCurrentRound } = await import("@/lib/bob/connectors");
+        const apiRound = await getCurrentRound().catch(() => null);
         if (apiRound) {
           targetRound = apiRound;
           info(`Rodada da API: ${targetRound}`);
@@ -155,38 +153,31 @@ export async function GET(request: Request) {
     try {
       info(`Buscando dados da rodada ${season}/${targetRound}...`);
 
-      const dataset = await getGatewayRoundDataset(season, targetRound);
-      const matches = dataset?.matches ?? [];
-      const meta = dataset?.meta ?? { integrations: { odds: "fallback" } };
+      const { fetchRoundMatchInputs } = await import("@/lib/bob/connectors");
+      const { matches, meta } = await fetchRoundMatchInputs(season, targetRound);
       info(`${matches.length} jogos. Odds: ${meta.integrations.odds}`);
 
       if (matches.length === 0) {
         warn(`Nenhum jogo encontrado para rodada ${targetRound}`);
       } else {
-        const pipeline = await buildOfficialVariationsPipeline({
-          matches,
-          source: "api",
-          round: targetRound,
-          sourceSnapshotIds: [`brain-weekly:${season}:${targetRound}:gateway`],
-        });
-        if (!pipeline.ok || !pipeline.variationsResult) {
-          warn(`Pipeline oficial bloqueou geração: ${pipeline.reason ?? pipeline.status}`);
-          throw new Error(pipeline.reason ?? "official-pipeline-insufficient");
-        }
-        const anchors  = pipeline.anchors;
+        const { scoreMatch, selectAnchorsFromScored, generateVariations } = await import("@/lib/bob/engine");
+        const scored   = matches.map((m) => scoreMatch(m));
+        const anchors  = selectAnchorsFromScored(scored);
         anchorsCount   = anchors.length;
         info(`${anchorsCount} âncoras selecionadas`);
 
-        const { variations } = pipeline.variationsResult;
+        const anchorSet = new Set(anchors.map((a) => a.id));
+        const pool      = scored.filter((m) => !anchorSet.has(m.id));
+        const { variations } = generateVariations({ anchors, pool });
         info(`${variations.length} variações geradas`);
 
+        const { saveRound } = await import("@/lib/bob/persist");
         const saved = await saveRound({
           season,
           round:   targetRound,
           anchors,
           variations,
-          source:  "api",
-          officialSnapshot: pipeline.snapshot ?? undefined,
+          source:  "football-data",
         });
         roundDbId = saved.roundDbId;
         info(`Rodada salva: ${roundDbId}`);

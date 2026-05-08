@@ -4,7 +4,7 @@ import { ReflectionCard, ReflectionCardSkeleton } from "@/components/reflection-
 import { GlossarySection } from "@/components/glossary";
 import { AberturaDiariaBanner } from "@/components/abertura-diaria-banner";
 import { PageHero } from "@/components/page-hero";
-import { scoreMatch } from "@/lib/bob/engine";
+import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
 import { detectZebras, type ZebraOpportunity } from "@/lib/bob/engine/zebra-detector";
 import { demoMatches, DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
@@ -15,18 +15,10 @@ import { loadDeliveredRound } from "@/lib/bob/persist";
 import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
 import type { Variation } from "@/lib/bob/types";
 import type { Variation as BeamVariation, TicketLeg } from "@/lib/bob/engine/beam-search";
-import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-variation-pipeline";
 
 // ISR de 5 min: leitura do DB é instantânea (~30ms).
 // Variações congeladas NUNCA mudam entre requests.
 export const revalidate = 300;
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
-  return Promise.race<T>([
-    promise,
-    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
-  ]);
-}
 
 // ─── Helper: converter beam-search variation para formato legado ─────────────
 
@@ -114,41 +106,12 @@ export default async function DashboardPage({
   const excludedParam = params.excluded ?? "";
   const excludedIds   = new Set(excludedParam ? excludedParam.split(",").filter(Boolean) : []);
 
-  let roundData;
-  try {
-    roundData = await withTimeout(
-      loadRoundData(paramSeason, paramRound),
-      4500,
-      {
-        source: "demo" as const,
-        fallbackReason: "provider-fallback" as const,
-        matches: demoMatches,
-        assets: new Map<string, never>(),
-        meta: null,
-      },
-    );
-  } catch (err) {
-    console.error("[Dashboard] falha em loadRoundData, usando fallback demo:", err);
-    roundData = {
-      source: "demo" as const,
-      fallbackReason: "provider-fallback" as const,
-      matches: demoMatches,
-      assets: new Map<string, never>(),
-      meta: null,
-    };
-  }
+  const roundData = await loadRoundData(paramSeason, paramRound);
 
   // ── CORREÇÃO CRÍTICA: Carregar escudos do banco (DB-first, PRD §9) ──
   // Substitui o antigo crestMap que dependia de URLs vindas da API externa.
   // Uma única query carrega TODOS os times. Zero chamadas externas.
-  const badgeMap = await withTimeout(
-    loadAllBadgesFromDb().catch((err) => {
-      console.error("[Dashboard] falha em loadAllBadgesFromDb:", err);
-      return new Map<string, string>();
-    }),
-    2500,
-    new Map<string, string>(),
-  );
+  const badgeMap = await loadAllBadgesFromDb();
 
   // ── CORREÇÃO CRÍTICA: Verificar se há variações CONGELADAS no banco ──
   // Antes: scoreMatch() + generateVariations() rodava em todo SSR, gerando
@@ -178,11 +141,7 @@ export default async function DashboardPage({
   }
 
   const dbRound = effectiveRound > 0
-    ? await withTimeout(
-        loadDeliveredRound(paramSeason, effectiveRound).catch(() => null),
-        2500,
-        null,
-      )
+    ? await loadDeliveredRound(paramSeason, effectiveRound).catch(() => null)
     : null;
 
   // ── Caminho 1: Variações congeladas do banco (IDEAL — determinístico) ──
@@ -255,30 +214,20 @@ export default async function DashboardPage({
     console.log(`[Dashboard] Sem rodada congelada — gerando variações on-the-fly (não oficial)`);
 
     const filteredMatches = roundData.matches.filter((match) => !excludedIds.has(match.id));
-    const pipeline = await Promise.race([
-      buildOfficialVariationsPipeline({
-        matches: filteredMatches,
-        source: roundData.source,
-        round: effectiveRound,
-        sourceSnapshotIds: [`dashboard:${paramSeason}:${effectiveRound}:${roundData.source}`],
-      }),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
-    ]);
-    if (pipeline && pipeline.ok && pipeline.variationsResult) {
-      variations = (pipeline.variationsResult.variations as BeamVariation[]).map(convertBeamToLegacy);
-      anchorsForDisplay = pipeline.anchors.map((a) => ({
-        ...a,
-        reasons: a.reasons ?? [],
-        homeCrest: resolveBadge(a.homeTeam, badgeMap),
-        awayCrest: resolveBadge(a.awayTeam, badgeMap),
-      }));
-    } else {
-      const why = pipeline ? `${pipeline.reason ?? pipeline.status}` : "timeout";
-      console.info(`[Dashboard] Motor oficial bloqueado: ${why}`);
-      variations = [];
-      anchorsForDisplay = [];
-    }
-    allScoredCount = filteredMatches.length;
+    const allScored = filteredMatches.map(scoreMatch);
+    const anchors = selectAnchorsFromScored(allScored);
+    const anchorIds = new Set(anchors.map((anchor) => anchor.id));
+    const pool = allScored.filter((match) => !anchorIds.has(match.id));
+    const variationsResult = generateVariations({ anchors, pool });
+    variations = ((variationsResult.variations ?? []) as BeamVariation[]).map(convertBeamToLegacy);
+    allScoredCount = allScored.length;
+
+    anchorsForDisplay = anchors.map((a) => ({
+      ...a,
+      reasons: a.reasons ?? [],
+      homeCrest: resolveBadge(a.homeTeam, badgeMap),
+      awayCrest: resolveBadge(a.awayTeam, badgeMap),
+    }));
 
     roundLabel = roundData.source === "api" && roundData.meta
       ? `Rodada ${roundData.meta.round} · ${roundData.meta.season}`

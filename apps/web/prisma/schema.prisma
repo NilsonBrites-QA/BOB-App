@@ -425,7 +425,6 @@ model BetOdds {
   option      String    // 'home' | 'draw' | 'away' | 'over_2.5' | 'btts_yes' | ...
   optionLabel String    @map("option_label")
   odd         Float
-  initialOdd  Float?    @map("initial_odd")
   isActive    Boolean   @default(true) @map("is_active")
   source      String?   // 'oddspapi' | 'manual'
   createdAt   DateTime  @default(now()) @map("created_at")
@@ -812,16 +811,6 @@ model ApiSyncLog {
 
   @@index([source, cacheKey, windowLabel, syncedAt(sort: Desc)], name: "api_sync_log_lookup")
   @@map("api_sync_log")
-}
-
-model ApiCacheLock {
-  cacheKey    String   @id @map("cache_key") @db.Text
-  lockedUntil DateTime @map("locked_until") @db.Timestamptz(6)
-  owner       String   @db.Text
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  @@map("api_cache_locks")
 }
 
 // ─── Alavancagem (Event Sourcing / Append-Only) ──────────────────────────────

@@ -8,8 +8,6 @@
  * Docs: https://open-meteo.com/en/docs
  */
 
-import { fetchJsonWithTimeout } from "@/lib/bob/data/external-guard";
-
 export type WeatherReport = {
   rain: boolean;
   intensity: "none" | "light" | "moderate" | "heavy";
@@ -121,12 +119,19 @@ export async function getWeatherForMatch(
       `&timezone=America%2FSao_Paulo` +
       `&start_date=${startDate}&end_date=${endDate}`;
 
-    const data = await fetchJsonWithTimeout<OpenMeteoResponse>({
-      url,
-      timeoutMs,
-      providerKey: "open-meteo",
-      cacheKey: `open-meteo:${lat}:${lon}:${startDate}:${endDate}`,
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!res.ok) return fallback;
+
+    const data: OpenMeteoResponse = await res.json() as OpenMeteoResponse;
     const hourly = data.hourly;
 
     // Encontra o índice da hora mais próxima ao horário do jogo

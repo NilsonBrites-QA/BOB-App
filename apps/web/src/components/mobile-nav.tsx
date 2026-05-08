@@ -17,10 +17,7 @@ export function MobileNav({ isAdmin, signOutAction }: MobileNavProps) {
   const close = () => setOpen(false);
 
   // Fecha ao navegar
-  useEffect(() => {
-    const timer = setTimeout(() => setOpen(false), 0);
-    return () => clearTimeout(timer);
-  }, [pathname]);
+  useEffect(() => { close(); }, [pathname]);
 
   // Bloqueia scroll do body quando menu aberto
   useEffect(() => {

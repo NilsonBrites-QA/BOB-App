@@ -28,7 +28,7 @@
  *                                   (leitura pura de DB, sem API)
  *
  * ─── Funções Internas Preservadas ────────────────────────────────────────────
- *   tsdbFetch()       → HTTP via guard central (uso interno)
+ *   tsdbFetch()       → HTTP raw (nunca chamar diretamente dos conectores)
  *   getTeams()        → lista bruta da API (apenas para syncAllTeams)
  *   getNextEvents()   → próximos jogos (sem DB-first: eventos mudam diariamente)
  *   getLastEvents()   → últimos resultados (sem DB-first: eventos mudam diariamente)
@@ -100,25 +100,26 @@ export type TeamAssetRow = {
 import { prisma } from "@/lib/db";
 import { revalidateTag, unstable_cache } from "next/cache";
 import { checkTheSportsDB, recordSync } from "./cache-gate";
-import { fetchJsonWithTimeout } from "@/lib/bob/data/external-guard";
 
-// ─── Fetch base (guard central — uso restrito interno) ────────────────────────
+// ─── Fetch base (HTTP puro — uso restrito interno) ────────────────────────────
 
 const BASE = "https://www.thesportsdb.com/api/v1/json/3";
 
 /**
- * Realiza uma chamada HTTP ao TheSportsDB via guard central.
+ * Realiza uma chamada HTTP ao TheSportsDB.
  * USO RESTRITO: apenas funções internas deste módulo podem chamar tsdbFetch.
  * Consumidores externos sempre passam pelas funções DB-first (getTeamAsset, etc.).
  */
 async function tsdbFetch<T>(path: string, revalidate: number): Promise<T> {
-  return fetchJsonWithTimeout<T>({
-    url: `${BASE}${path}`,
-    init: { next: { revalidate } },
-    timeoutMs: 8_000,
-    providerKey: "thesportsdb",
-    cacheKey: `thesportsdb:${path}`,
+  const res = await fetch(`${BASE}${path}`, {
+    next: { revalidate },
   });
+
+  if (!res.ok) {
+    throw new Error(`TheSportsDB erro HTTP ${res.status} em ${path}`);
+  }
+
+  return (await res.json()) as T;
 }
 
 // ─── Endpoints de leitura bruta (sem DB-first) ───────────────────────────────

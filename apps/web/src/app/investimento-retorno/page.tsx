@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { InvestmentReturnCalculator } from "@/components/investment-return-calculator";
 import { getPerformanceMetrics } from "@/lib/bob/persist";
 
@@ -72,9 +71,9 @@ export default async function InvestmentReturnPage() {
         {!hasData ? (
           <p className="mt-6 text-sm text-muted">
             Nenhuma rodada encerrada ainda. Depois que você registrar o resultado no{" "}
-            <Link href="/admin/betslips" className="underline decoration-dotted">
+            <a href="/admin/betslips" className="underline decoration-dotted">
               painel admin
-            </Link>
+            </a>
             , os dados aparecerão aqui automaticamente.
           </p>
         ) : (

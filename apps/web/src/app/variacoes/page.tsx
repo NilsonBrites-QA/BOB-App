@@ -2,25 +2,22 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { prisma } from "@/lib/db";
-import { scoreMatch } from "@/lib/bob/engine";
+import { scoreMatch, selectAnchorsFromScored, generateVariations } from "@/lib/bob/engine";
 import type {
   VariationEnrichment,
   VariationReplacement,
   JudgeResult,
 } from "@/lib/bob/engine/variation-judge";
 import { analyzeRoundDifficulty } from "@/lib/bob/engine/round-analyzer";
-import { loadOfficialRoundData, resolveOfficialRoundContext } from "@/lib/bob/round-loader";
+import { loadRoundData } from "@/lib/bob/round-loader";
 import { loadDeliveredRound } from "@/lib/bob/persist";
 import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
 import { DEMO_ROUND_LABEL, DEMO_FIRST_MATCH, DEMO_CUTOFF } from "@/lib/bob/demo-matches";
-import { isRealDataSource } from "@/lib/bob/data/source-policy";
-import { buildOfficialVariationsPipeline } from "@/lib/bob/analytics/official-variation-pipeline";
 import { VariacoesClient } from "./variacoes-client";
 import type { VariationView, AnchorView, AuditView, RoundView, VariationLeg } from "./variacoes-client";
 
 // ISR de 5 min: leitura do DB é instantânea (~30ms).
-// Preferência DB-first; se não houver snapshot, o Motor Oficial pode montar candidato
-// e exigir revisão cognitiva antes de exibir como geração oficial.
+// LLM NUNCA roda no SSR — análise vem pré-computada do cron /api/cron/judge-variations.
 export const revalidate = 300;
 
 // Heurística mínima de fallback (se cron nunca rodou para a rodada).
@@ -103,14 +100,9 @@ function formatFirstMatch(isoDate: string | null): { label: string; cutoff: stri
       weekday: "short", day: "numeric", month: "short",
       hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo",
     };
-    const fmt = new Intl.DateTimeFormat("pt-BR", opts);
-    const toParts = (date: Date) => {
-      const p = Object.fromEntries(fmt.formatToParts(date).map((x) => [x.type, x.value]));
-      return `${p.weekday} ${p.day} ${p.month} · ${p.hour}:${p.minute}`;
-    };
-    const label = toParts(d);
+    const label = d.toLocaleString("pt-BR", opts).replace(",", " ·");
     const cutoffDate = new Date(d.getTime() - 60 * 60 * 1000);
-    const cutoff = toParts(cutoffDate);
+    const cutoff = cutoffDate.toLocaleString("pt-BR", opts).replace(",", " ·");
     return { label, cutoff };
   } catch {
     return { label: DEMO_FIRST_MATCH, cutoff: DEMO_CUTOFF };
@@ -345,91 +337,14 @@ async function renderFromDb(args: {
       `Variações entregues e congeladas (versão ${
         (dbRound as { version?: number }).version ?? 1
       }). Para regerar, peça ao admin.`,
-    aiProvider:    "none",
+    aiProvider:    "heuristic",
   };
-
-  console.info(`[BOB/Variacoes] source=cache status=loaded_snapshot round=${dbRound.number} version=${(dbRound as { version?: number }).version ?? 1}`);
 
   return (
     <VariacoesClient
       round={roundView}
       anchors={anchorsView}
       variations={variations}
-      audit={audit}
-    />
-  );
-}
-
-function renderInsufficientData(
-  reason: string,
-  context?: {
-    season: number;
-    round: number | null;
-    source: string;
-    fixturesCount?: number;
-    firstMatchAt?: string | null;
-  },
-) {
-  const hasRealRound = Boolean(context?.round && context.round > 0);
-  const { label: firstMatch, cutoff } = hasRealRound
-    ? formatFirstMatch(context?.firstMatchAt ?? null)
-    : { label: DEMO_FIRST_MATCH, cutoff: DEMO_CUTOFF };
-  const audit: AuditView = {
-    status: "APPROVED_WITH_ALERTS",
-    passed: false,
-    alerts: [
-      reason === "missing_round_dataset"
-        ? "dados da rodada não conectados ao motor"
-        : reason === "blind_replay_available"
-          ? "rodada passada sem snapshot oficial carregado"
-          : reason === "missing_llm_review"
-            ? "revisão cognitiva LLM pendente ou indisponível"
-            : reason === "llm_review_rejected" || reason === "critical_data_requested_by_llm"
-              ? "revisão cognitiva bloqueou a entrega oficial"
-              : "dados insuficientes para geração responsável",
-    ],
-    warnings: [reason],
-    checks: [
-      { label: "Dataset real da rodada disponível", ok: false },
-      { label: "Geração oficial bloqueada", ok: true },
-    ],
-  };
-
-  const roundView: RoundView = {
-    label: hasRealRound ? `Rodada ${context!.round} · ${context!.season}` : DEMO_ROUND_LABEL,
-    source: context && context.source !== "demo" ? "api" : "demo",
-    firstMatch,
-    cutoff,
-    totalMatches: context?.fixturesCount ?? 0,
-    difficulty: "hard",
-    difficultyLabel: reason === "missing_round_dataset"
-      ? "Dados da rodada não conectados ao motor"
-      : reason === "blind_replay_available"
-        ? "Rodada passada — replay cego disponível"
-        : reason === "missing_llm_review"
-          ? "Revisão cognitiva pendente"
-          : reason === "llm_review_rejected" || reason === "critical_data_requested_by_llm"
-            ? "Revisão cognitiva bloqueou entrega"
-            : "Dados insuficientes",
-    bobMessage: reason === "invalid_round_context"
-      ? "Geração oficial bloqueada: a rodada recebida é inválida para o motor."
-      : reason === "missing_round_dataset"
-        ? "Geração oficial bloqueada: a rodada foi resolvida, mas o dataset dessa rodada ainda não está disponível para o motor."
-        : reason === "blind_replay_available"
-          ? "Rodada passada solicitada. Nenhum snapshot oficial histórico foi encontrado; o replay cego pode ser executado em etapa própria."
-          : reason === "missing_llm_review"
-            ? "Geração oficial bloqueada: o pacote analítico foi montado, mas a revisão cognitiva LLM obrigatória não aprovou a entrega."
-            : reason === "llm_review_rejected" || reason === "critical_data_requested_by_llm"
-              ? "Geração oficial bloqueada: a revisão cognitiva encontrou risco ou dado crítico ausente."
-              : "Geração oficial bloqueada: o dataset real ainda não tem cobertura suficiente para uma geração responsável.",
-    aiProvider: "none",
-  };
-
-  return (
-    <VariacoesClient
-      round={roundView}
-      anchors={[]}
-      variations={[]}
       audit={audit}
     />
   );
@@ -454,72 +369,10 @@ export default async function VariacoesPage({
   if (!dbUser?.active) redirect("/login");
 
   const params = await searchParams;
-  const parsedSeason = params.season ? parseInt(params.season, 10) : new Date().getFullYear();
-  const season = Number.isInteger(parsedSeason) && parsedSeason >= 2000 ? parsedSeason : new Date().getFullYear();
-  const requestedRound = params.round ? parseInt(params.round, 10) : null;
-  const roundContext = await resolveOfficialRoundContext({ season, round: requestedRound });
+  const season = params.season ? parseInt(params.season, 10) : new Date().getFullYear();
+  const round = params.round ? parseInt(params.round, 10) : null;
 
-  if (!roundContext.ok) {
-    console.warn(`[BOB/Variacoes] blocked reason=invalid_round_context received_round=${roundContext.receivedRound ?? "missing"}`);
-    return renderInsufficientData("invalid_round_context", {
-      season,
-      round: null,
-      source: roundContext.source,
-      fixturesCount: 0,
-      firstMatchAt: null,
-    });
-  }
-
-  console.info(
-    `[BOB/Variacoes] round_context season=${roundContext.season} round=${roundContext.round} source=${roundContext.source} fixtures=${roundContext.fixturesCount}`,
-  );
-
-  if (roundContext.roundMode === "past" && roundContext.requestedRound !== null) {
-    const badgeMap = await loadAllBadgesFromDb();
-    const historicalRound = await loadDeliveredRound(roundContext.season, roundContext.round).catch(() => null);
-    if (historicalRound && historicalRound.status === "DELIVERED" && historicalRound.variations.length > 0) {
-      return await renderFromDb({
-        season: roundContext.season,
-        dbRound: historicalRound as DbRound,
-        badgeMap,
-      });
-    }
-    console.warn(`[BOB/Variacoes] blocked reason=blind_replay_available round=${roundContext.round}`);
-    return renderInsufficientData("blind_replay_available", {
-      season: roundContext.season,
-      round: roundContext.round,
-      source: roundContext.source,
-      fixturesCount: roundContext.fixturesCount,
-      firstMatchAt: roundContext.firstMatchAt,
-    });
-  }
-
-  const roundData = await loadOfficialRoundData(roundContext);
-  console.info(
-    `[BOB/Variacoes] dataset_loaded round=${roundContext.round} matches=${roundData.matches.length} source=${roundData.source}`,
-  );
-
-  if (!isRealDataSource(roundData.source)) {
-    console.warn(`[BOB/Variacoes] blocked reason=missing_round_dataset round=${roundContext.round}`);
-    return renderInsufficientData("missing_round_dataset", {
-      season: roundContext.season,
-      round: roundContext.round,
-      source: roundData.source,
-      fixturesCount: roundContext.fixturesCount,
-      firstMatchAt: roundContext.firstMatchAt,
-    });
-  }
-
-  if (roundData.matches.length === 0) {
-    console.warn(`[BOB/Variacoes] blocked reason=missing_round_dataset round=${roundContext.round}`);
-    return renderInsufficientData("missing_round_dataset", {
-      season: roundContext.season,
-      round: roundContext.round,
-      source: roundData.source,
-      fixturesCount: 0,
-      firstMatchAt: roundContext.firstMatchAt,
-    });
-  }
+  const roundData = await loadRoundData(season, round);
 
   // ── Escudos: DB-first + fallback com crests direto da API ──────────────────
   const badgeMap = await loadAllBadgesFromDb();
@@ -532,60 +385,41 @@ export default async function VariacoesPage({
   // Se a rodada já foi DELIVERED (admin clicou "Aprovar e entregar" ou cron rodou),
   // lemos as variações salvas — IMUTÁVEIS — em vez de recalcular a cada visita.
   // Isto resolve a sensação de "as variações ficam mudando sozinhas".
-  const effectiveRoundForDb = roundContext.round;
-  const dbRound = await loadDeliveredRound(roundContext.season, effectiveRoundForDb).catch(() => null);
+  const effectiveRoundForDb =
+    roundData.source === "api" && roundData.meta ? roundData.meta.round : (round ?? 0);
+  const dbRound = effectiveRoundForDb > 0
+    ? await loadDeliveredRound(season, effectiveRoundForDb).catch(() => null)
+    : null;
 
-  if (dbRound && dbRound.status !== "SUPERSEDED" && dbRound.variations.length > 0) {
+  if (dbRound && dbRound.status === "DELIVERED" && dbRound.variations.length > 0) {
     return await renderFromDb({
-      season: roundContext.season,
+      season,
       dbRound: dbRound as DbRound,
       badgeMap,
     });
   }
   // ── Fim do branch DB-first ────────────────────────────────────────
 
-  const effectiveRound = roundContext.round;
-  const pipeline = await buildOfficialVariationsPipeline({
-    matches: roundData.matches,
-    source: roundData.source,
-    round: effectiveRound,
-    season: roundContext.season,
-    roundContext: {
-      season: roundContext.season,
-      round: effectiveRound,
-      competition: roundContext.competition,
-      source: roundContext.source,
-      reason: roundContext.reason,
-      fixturesCount: roundContext.fixturesCount,
-      firstKickoffAt: roundContext.firstKickoffAt,
-      roundMode: roundContext.roundMode,
-    },
-    sourceSnapshotIds: [`round:${roundContext.season}:${effectiveRound}:${roundData.source}`],
-  });
-
-  if (!pipeline.ok || !pipeline.variationsResult) {
-    return renderInsufficientData(pipeline.reason ?? "Dados insuficientes para gerar as 5 Variações oficiais.", {
-      season: roundContext.season,
-      round: roundContext.round,
-      source: roundData.source,
-      fixturesCount: roundData.matches.length,
-      firstMatchAt: roundContext.firstMatchAt,
-    });
-  }
-
+  // Run engine
   const allScored = roundData.matches.map(scoreMatch);
-  const anchors = pipeline.anchors;
-  const variationsResult = pipeline.variationsResult;
 
-  // ── Enriquecimento editorial legado: LER do DB quando existir ──
-  // A aprovação oficial do pacote já ocorreu no pipeline via cognitive review.
+  const anchors = selectAnchorsFromScored(allScored);
+  const anchorIds = new Set(anchors.map((a) => a.id));
+  const pool = allScored.filter((m) => !anchorIds.has(m.id));
+  const variationsResult = generateVariations({ anchors, pool });
+
+  // ── Camada cognitiva: LER do DB (pré-computado pelo cron) ──
+  // LLM NUNCA roda no SSR. O cron /api/cron/judge-variations popula a tabela.
+  const effectiveRound =
+    roundData.source === "api" && roundData.meta ? roundData.meta.round : (round ?? 0);
+
   const judgement = await prisma.variationJudgement
-    .findUnique({ where: { season_round: { season: roundContext.season, round: effectiveRound } } })
+    .findUnique({ where: { season_round: { season, round: effectiveRound } } })
     .catch(() => null);
 
   let enrichments: VariationEnrichment[];
   let replacements: VariationReplacement[] = [];
-  let aiProvider: RoundView["aiProvider"] = "none";
+  let aiProvider: JudgeResult["provider"] = "heuristic";
 
   if (judgement) {
     const payload = judgement.payload as unknown as {
@@ -596,10 +430,10 @@ export default async function VariacoesPage({
     replacements = payload.replacements ?? [];
     aiProvider = judgement.provider as JudgeResult["provider"];
     console.log(
-      `[BOB/Variacoes] source=cache status=loaded_judgement provider=${aiProvider} round=${effectiveRound} approved_replacements=${replacements.filter((r) => r.approved).length}/${replacements.length}`,
+      `[BOB/Variacoes] análise pré-computada: ${aiProvider} (${replacements.filter((r) => r.approved).length}/${replacements.length} subs aprovadas)`,
     );
   } else {
-    // Enriquecimento diagnóstico instantâneo: não escolhe picks nem gera Variações.
+    // Fallback instantâneo (sem LLM, sem latência)
     enrichments = variationsResult.variations.map((v) =>
       quickHeuristicEnrichment({
         id: v.id,
@@ -609,7 +443,7 @@ export default async function VariacoesPage({
       }),
     );
     console.log(
-      `[BOB/Variacoes] source=diagnostic status=missing_judgement round=${effectiveRound} enrichment=deterministic_text_only`,
+      `[BOB/Variacoes] sem análise pré-computada — usando heurística rápida. Rode /api/cron/judge-variations.`,
     );
   }
 
@@ -684,11 +518,13 @@ export default async function VariacoesPage({
 
   // Round info
   const difficulty = analyzeRoundDifficulty(allScored);
-  const { label: firstMatch, cutoff } = roundData.meta
+  const { label: firstMatch, cutoff } = roundData.source === "api" && roundData.meta
     ? formatFirstMatch(roundData.meta.firstMatchAt)
     : { label: DEMO_FIRST_MATCH, cutoff: DEMO_CUTOFF };
 
-  const roundLabel = `Rodada ${roundContext.round} · ${roundContext.season}`;
+  const roundLabel = roundData.source === "api" && roundData.meta
+    ? `Rodada ${roundData.meta.round} · ${roundData.meta.season}`
+    : DEMO_ROUND_LABEL;
 
   const difficultyLabel =
     difficulty.difficulty === "easy" ? "Rodada favorável" :
@@ -697,7 +533,7 @@ export default async function VariacoesPage({
 
   const roundView: RoundView = {
     label: roundLabel,
-    source: isRealDataSource(roundData.source) ? "api" : "demo",
+    source: roundData.source,
     firstMatch,
     cutoff,
     totalMatches: allScored.length,

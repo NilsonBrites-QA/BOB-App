@@ -16,8 +16,6 @@ import { buildCriarApostasForRound } from "@/lib/bob/engine/criar-apostas";
 import { loadRoundData } from "@/lib/bob/round-loader";
 import { DEMO_ROUND_LABEL } from "@/lib/bob/demo-matches";
 import { loadAllBadgesFromDb, resolveBadge } from "@/lib/badges/badge-service";
-import { isRealDataSource } from "@/lib/bob/data/source-policy";
-import { rankBetOpportunities } from "@/lib/bob/analytics/bet-ranking";
 import { ApostasClient } from "./apostas-client";
 import type { TicketView } from "./apostas-client";
 
@@ -56,22 +54,9 @@ export default async function ApostasPage({
 
   const roundData = await loadRoundData(season, round);
 
-  // ── Gerar tickets pelo engine apenas com dados reais ─────────────────────
-  const canGenerateOfficial = isRealDataSource(roundData.source);
-  const ranking = canGenerateOfficial
-    ? await rankBetOpportunities({
-        matches: roundData.matches,
-        source: roundData.source,
-        sourceSnapshotIds: [`round:${season}:${round ?? "current"}:${roundData.source}`],
-      })
-    : { ok: false, opportunities: [] };
-  const allowedMatchIds = new Set(ranking.opportunities.map((item) => item.matchId));
-  const allScored = canGenerateOfficial
-    ? (ranking.ok && allowedMatchIds.size > 0
-      ? roundData.matches.filter((match) => allowedMatchIds.has(match.id)).map(scoreMatch)
-      : roundData.matches.map(scoreMatch))
-    : [];
-  const apostasRaw = canGenerateOfficial ? buildCriarApostasForRound(allScored) : [];
+  // ── Gerar tickets pelo engine ─────────────────────────────────────────────
+  const allScored = roundData.matches.map(scoreMatch);
+  const apostasRaw = buildCriarApostasForRound(allScored);
 
   // ── ESCUDOS DB-FIRST (PRD §9) ─────────────────────────────────────────────
   const badgeMap = await loadAllBadgesFromDb();

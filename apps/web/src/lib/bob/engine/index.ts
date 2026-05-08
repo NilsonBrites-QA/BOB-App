@@ -66,7 +66,6 @@ export type VariationsResult = {
 };
 
 export type PickOutcome = "Home" | "Draw" | "Away";
-type VariationPickWithWarning = VariationPick & { warning?: string };
 
 /**
  * Gera 5 variações (V1–V5) com garantia de mínimo 5 jogos e odd 900+.
@@ -105,8 +104,7 @@ export function generateVariations(
   
   // Converter para formato VariationsResult (compatível com beam-search)
   const variations: VariationsResult["variations"] = coreResult.map((v) => {
-    const picks = v.picks as VariationPickWithWarning[];
-    const probMass = picks.reduce((acc, p) => acc * (1 / p.odd), 1);
+    const probMass = v.picks.reduce((acc, p) => acc * (1 / p.odd), 1);
     const logCombinedOdd = Math.log(v.projectedOdd);
     return {
     id: v.id as "V1" | "V2" | "V3" | "V4" | "V5",
@@ -114,11 +112,11 @@ export function generateVariations(
     logCombinedOdd,
     probabilityMass: probMass,
     logProbabilityMass: Math.log(probMass || 1e-10),
-    legCount: picks.length,
-    anchorPrimaryCount: picks.filter((p) => p.isAnchor).length,
+    legCount: v.picks.length,
+    anchorPrimaryCount: v.picks.filter((p) => p.isAnchor).length,
     oddsClass: v.oddsClass,
     oddsClassLabel: v.oddsClassLabel,
-    legs: picks.map((p) => {
+    legs: v.picks.map((p) => {
       const cleanP = 1 / p.odd;
       return {
         matchId: p.fixtureId ?? "",
@@ -130,12 +128,12 @@ export function generateVariations(
         fairOdd: p.odd,
         cleanProb: cleanP,
         isAnchor: p.isAnchor ?? false,
-        isMarginal: p.isMarginal ?? false,
+        isMarginal: (p as any).isMarginal ?? false,
         logOdd: Math.log(p.odd),
         logProb: Math.log(Math.max(cleanP, 1e-10)),
       };
     }),
-    transparencyNotes: picks.flatMap((p) => (p.warning ? [p.warning] : [])),
+    transparencyNotes: v.picks.filter((p) => (p as any).warning).map((p) => (p as any).warning),
     };
   });
   

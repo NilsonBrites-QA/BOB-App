@@ -22,11 +22,11 @@
 
 import { prisma } from "@/lib/db";
 import {
-  getGatewayCurrentRound,
-  getGatewayFinishedMatches,
-  getGatewaySerieBStandings,
-  getGatewayStandings,
-} from "@/lib/data/sports-data-gateway";
+  getStandings,
+  getSerieBStandings,
+  getFinishedMatches,
+} from "@/lib/bob/connectors/football-data";
+import { getCurrentRound } from "@/lib/bob/connectors";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -120,11 +120,7 @@ async function loadStandingsA(): Promise<{ data: string; status: "fresh" | "stal
 
   // Tentar atualizar da API
   try {
-    const result = await getGatewayStandings();
-    if (!result) {
-      if (cached) return { data: cached.data as string, status: "stale" };
-      return { data: "", status: "miss" };
-    }
+    const result = await getStandings();
     const table = result.standings.find((s) => s.type === "TOTAL")?.table ?? [];
     if (table.length === 0 && cached) {
       return { data: cached.data as string, status: "stale" };
@@ -155,7 +151,7 @@ async function loadStandingsB(): Promise<{ data: string; status: "fresh" | "stal
   }
 
   try {
-    const result = await getGatewaySerieBStandings();
+    const result = await getSerieBStandings();
     if (!result) {
       if (cached) return { data: cached.data as string, status: "stale" };
       return { data: "", status: "miss" };
@@ -186,7 +182,7 @@ async function loadCurrentRound(): Promise<{ data: number | null; status: "fresh
   }
 
   try {
-    const round = await getGatewayCurrentRound();
+    const round = await getCurrentRound();
     if (round !== null) {
       await writeCache(key, round, TTL.current_round, 2026, round);
       return { data: round, status: "fresh" };
@@ -208,11 +204,7 @@ async function loadFinishedRecent(): Promise<{ data: string; status: "fresh" | "
   }
 
   try {
-    const result = await getGatewayFinishedMatches(60);
-    if (!result) {
-      if (cached) return { data: cached.data as string, status: "stale" };
-      return { data: "", status: "miss" };
-    }
+    const result = await getFinishedMatches(60);
     const rows = result.matches
       .filter((m) => m.score.fullTime.home !== null)
       .slice(0, 60)

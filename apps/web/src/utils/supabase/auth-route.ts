@@ -28,10 +28,6 @@ export async function createAuthRouteClient(initialResponse: NextResponse) {
       return response;
     },
     setResponse(nextResponse: NextResponse) {
-      // Copia cookies já setados na response atual para a nova, evitando perda de sessão
-      response.cookies.getAll().forEach((c) => {
-        nextResponse.cookies.set(c.name, c.value);
-      });
       response = nextResponse;
     },
   };
