@@ -107,12 +107,27 @@ export default async function DashboardPage({
   const excludedParam = params.excluded ?? "";
   const excludedIds   = new Set(excludedParam ? excludedParam.split(",").filter(Boolean) : []);
 
-  const roundData = await loadRoundData(paramSeason, paramRound);
+  let roundData;
+  try {
+    roundData = await loadRoundData(paramSeason, paramRound);
+  } catch (err) {
+    console.error("[Dashboard] falha em loadRoundData, usando fallback demo:", err);
+    roundData = {
+      source: "demo" as const,
+      fallbackReason: "provider-fallback" as const,
+      matches: demoMatches,
+      assetsEntries: [] as Array<[string, string]>,
+      meta: null,
+    };
+  }
 
   // ── CORREÇÃO CRÍTICA: Carregar escudos do banco (DB-first, PRD §9) ──
   // Substitui o antigo crestMap que dependia de URLs vindas da API externa.
   // Uma única query carrega TODOS os times. Zero chamadas externas.
-  const badgeMap = await loadAllBadgesFromDb();
+  const badgeMap = await loadAllBadgesFromDb().catch((err) => {
+    console.error("[Dashboard] falha em loadAllBadgesFromDb:", err);
+    return new Map<string, string>();
+  });
 
   // ── CORREÇÃO CRÍTICA: Verificar se há variações CONGELADAS no banco ──
   // Antes: scoreMatch() + generateVariations() rodava em todo SSR, gerando

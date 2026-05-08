@@ -249,17 +249,7 @@ function activeOdd(match: CachedBetMatch, option: "HOME" | "DRAW" | "AWAY") {
   )?.odd ?? 0;
 }
 
-async function cachedMatchToInput(match: CachedBetMatch): Promise<MatchInput> {
-  const { homeAbsenceRate, awayAbsenceRate } = await getAbsenceRates(
-    match.homeTeam,
-    match.awayTeam,
-    match.scheduledAt,
-  );
-  const [homeBigGameAhead, awayBigGameAhead] = await Promise.all([
-    hasBigGameAhead(match.homeTeam, match.scheduledAt),
-    hasBigGameAhead(match.awayTeam, match.scheduledAt),
-  ]);
-
+function cachedMatchToInput(match: CachedBetMatch): MatchInput {
   return {
     id: match.externalId || match.id,
     match: `${match.homeTeam} x ${match.awayTeam}`,
@@ -281,10 +271,10 @@ async function cachedMatchToInput(match: CachedBetMatch): Promise<MatchInput> {
     awayGoalsScored5: 5,
     awayGoalsConceded5: 6,
     h2hHomeWinRate: 0.5,
-    homeAbsenceRate,
-    awayAbsenceRate,
-    homeBigGameAhead,
-    awayBigGameAhead,
+    homeAbsenceRate: 0.08,
+    awayAbsenceRate: 0.08,
+    homeBigGameAhead: false,
+    awayBigGameAhead: false,
     homeMomentum: 0,
     awayMomentum: 0,
     homeOdd: activeOdd(match, "HOME"),
@@ -332,7 +322,7 @@ export async function getCachedRoundDataset(
 
   return {
     ok: true,
-    data: await Promise.all(cachedMatches.map(cachedMatchToInput)),
+    data: cachedMatches.map(cachedMatchToInput),
     source: "database",
     stale: false,
     confidencePenalty: 0,
@@ -443,7 +433,7 @@ export async function getRoundDataset(
     orderBy: { scheduledAt: "asc" },
     include: { odds: { select: BET_ODDS_SAFE_SELECT } },
   });
-  const cachedMatchInputs = await Promise.all(cachedMatches.map(cachedMatchToInput));
+  const cachedMatchInputs = cachedMatches.map(cachedMatchToInput);
   const hasCompleteMarketSnapshot =
     cachedMatchInputs.length > 0 &&
     cachedMatchInputs.every((m) => m.homeOdd > 1 && m.drawOdd > 1 && m.awayOdd > 1);

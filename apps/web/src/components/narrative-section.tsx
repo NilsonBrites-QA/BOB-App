@@ -48,7 +48,13 @@ export async function NarrativeSection({
   anchors,
   variations,
 }: NarrativeSectionProps) {
-  const narrative = await generateRoundNarrative({ season, round, anchors, variations });
+  let narrative: string | null = null;
+  try {
+    narrative = await generateRoundNarrative({ season, round, anchors, variations });
+  } catch (err) {
+    console.error("[NarrativeSection] falha ao gerar narrativa:", err);
+    return null;
+  }
 
   if (!narrative) return null;
 

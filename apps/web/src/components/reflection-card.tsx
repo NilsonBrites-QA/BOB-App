@@ -47,7 +47,13 @@ export function ReflectionCardSkeleton() {
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export async function ReflectionCard({ season, round, isAdmin = false }: ReflectionCardProps) {
-  const reflection = await selfReflect(season, round);
+  let reflection = null;
+  try {
+    reflection = await selfReflect(season, round);
+  } catch (err) {
+    console.error("[ReflectionCard] falha ao carregar reflexão:", err);
+    return null;
+  }
   if (!reflection) return null;
 
   const label: Record<string, string> = {
