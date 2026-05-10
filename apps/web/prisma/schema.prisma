@@ -755,6 +755,121 @@ model CreatedBet {
   @@map("created_bets")
 }
 
+// ─── Análises da Rodada (Radar BOB) — Persistência Versionada ─────────────────
+
+/**
+ * Snapshot da análise completa de uma rodada.
+ * REGRA: append-only com versionamento explícito. Nunca DELETE.
+ * 
+ * Chave lógica: season + round + roundVersion (única)
+ * Leitura do colapso: pega versão mais recente; fallback para anterior se incompleta.
+ * 
+ * A UI consome estes dados (via GET /api/bob/round-analysis) sem chamar API externa.
+ * Atualização ocorre via POST /api/bob/round-analysis/snapshot (job cron ou admin).
+ */
+model BobRoundAnalysis {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  season            Int
+  round             Int
+  roundVersion      Int      @default(1)  @map("round_version")
+
+  // Fonte dos dados (live ou cached ou fallback)
+  dataSource        String   @default("cached") @map("data_source") // "live", "partial", "cached", "fallback"
+
+  // Status de análise
+  analysisStatus    String   @default("pending") @map("analysis_status") // "pending", "analyzing", "completed", "failed"
+  
+  // Data de análise (quando os dados foram gerados/processados)
+  analyzedAt        DateTime? @map("analyzed_at")
+
+  // Metadados de qualidade (JSON serializado)
+  apiStatus         String?  @map("api_status") @db.Text // JSON: { "odds": "ok", "lineups": "partial", ... }
+  
+  // Dados dos jogos (subordinados)
+  matchAnalyses     BobMatchAnalysis[]
+
+  // Timestamps
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([season, round, roundVersion])
+  @@index([season, round])
+  @@index([season, round, roundVersion(sort: Desc)])
+  @@map("bob_round_analysis")
+}
+
+/**
+ * Análise de um jogo específico dentro de uma rodada versionada.
+ * Subordinado a BobRoundAnalysis, cria relação 1:many.
+ */
+model BobMatchAnalysis {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  roundAnalysisId   String   @map("round_analysis_id") @db.Uuid
+  roundAnalysis     BobRoundAnalysis @relation(fields: [roundAnalysisId], references: [id], onDelete: Cascade)
+
+  // Identificação do jogo
+  matchId           String   @map("match_id") @db.Uuid // FK para BetMatch
+  fixtureId         String?  @map("fixture_id")        // ID externo (api-football)
+  homeTeam          String   @map("home_team")
+  awayTeam          String   @map("away_team")
+  homeBadgeUrl      String?  @map("home_badge_url")
+  awayBadgeUrl      String?  @map("away_badge_url")
+
+  // Agendamento
+  scheduledAt       DateTime @map("scheduled_at")
+  status            String   @default("SCHEDULED") // SCHEDULED, LIVE, FINISHED, POSTPONED, CANCELLED
+
+  // Resultado (preenchido se jogo terminado)
+  homeScore         Int?     @map("home_score")
+  awayScore         Int?     @map("away_score")
+
+  // Análise BOB
+  confidence        Int      @default(50) // 0-100 (%)
+  recommendation    String   @map("recommendation") @db.Text // Texto curto recomendando ação
+
+  // Riscos/alertas (JSON array de RiskFlag)
+  riskFlags         Json     @default("[]") @map("risk_flags")
+
+  // Insights (JSON array de InsightBlock)
+  insightBlocks     Json     @default("[]") @map("insight_blocks")
+
+  // Snapshot de mercado (relação subordinada)
+  marketSnapshot    BobMatchMarketSnapshot?
+
+  // Timestamps
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([roundAnalysisId, matchId])
+  @@index([roundAnalysisId])
+  @@index([matchId])
+  @@map("bob_match_analysis")
+}
+
+/**
+ * Snapshot de odds e contexto de mercado no momento da análise.
+ * Preserva histórico de preços para rastreabilidade.
+ */
+model BobMatchMarketSnapshot {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  matchAnalysisId   String   @unique @map("match_analysis_id") @db.Uuid
+  matchAnalysis     BobMatchAnalysis @relation(fields: [matchAnalysisId], references: [id], onDelete: Cascade)
+
+  // Odds da rodada
+  homeOdd           Decimal? @map("home_odd") @db.Decimal(6, 3)
+  drawOdd           Decimal? @map("draw_odd") @db.Decimal(6, 3)
+  awayOdd           Decimal? @map("away_odd") @db.Decimal(6, 3)
+
+  // Metadados de cobertura
+  oddSource         String?  @map("odd_source") // "live", "cached", "estimated"
+  snapshotAt        DateTime @default(now()) @map("snapshot_at")
+
+  // Histórico de movimento (para detecção de anomalias)
+  priorOdds         Json?    @map("prior_odds") // JSON: { homeOdd: 2.15, ... } da versão anterior
+
+  @@map("bob_match_market_snapshot")
+}
+
 // ─── Fase 1: Fundação — Log de Sincronização de APIs ─────────────────────────
 
 /**
